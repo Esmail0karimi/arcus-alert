@@ -39,7 +39,7 @@ Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,A
 b.setContentTitle("Arcus Alert · "+sym).setContentText("Target "+target+" · Current "+price)
 .setStyle(new Notification.BigTextStyle().bigText(body)).setSmallIcon(android.R.drawable.ic_dialog_alert)
 .setContentIntent(contentPending).setAutoCancel(true).setOngoing(false).setPriority(Notification.PRIORITY_MAX)
-.setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC)
+.setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC).setDefaults(Notification.DEFAULT_VIBRATE)
 .addAction(android.R.drawable.ic_media_pause,"Stop sound",stopPending);
 ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(notificationId,b.build());
 playCustomSound();mainHandler.removeCallbacks(autoStop);mainHandler.postDelayed(autoStop,60000);
@@ -47,7 +47,7 @@ getSharedPreferences(PREF,0).edit().putString("last_alert",body+" @ "+new Date()
 saveHistory(sym,price,target);
 }
 void playCustomSound(){stopAlarmSound();try{String u=getSharedPreferences(PREF,0).getString("sound_uri","");Uri uri=u.isEmpty()?RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM):Uri.parse(u);if(uri==null)uri=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);alarmPlayer=new MediaPlayer();if(Build.VERSION.SDK_INT>=21)alarmPlayer.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());alarmPlayer.setDataSource(this,uri);alarmPlayer.setLooping(true);alarmPlayer.setVolume(1.0f,1.0f);alarmPlayer.prepare();alarmPlayer.start();}catch(Exception e){stopAlarmSound();try{alarmPlayer=new MediaPlayer();Uri u=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);alarmPlayer.setDataSource(this,u);alarmPlayer.setLooping(true);alarmPlayer.setVolume(1.0f,1.0f);alarmPlayer.prepare();alarmPlayer.start();}catch(Exception ignored){stopAlarmSound();}}}
-void stopAlarmSound(){mainHandler.removeCallbacks(autoStop);try{if(alarmPlayer!=null){if(alarmPlayer.isPlaying())alarmPlayer.stop();alarmPlayer.release();}}catch(Exception ignored){}alarmPlayer=null;((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).cancelAll();((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(41,buildService("Watching Arcus prices · 1-second refresh"));}
+void stopAlarmSound(){mainHandler.removeCallbacks(autoStop);try{if(alarmPlayer!=null){if(alarmPlayer.isPlaying())alarmPlayer.stop();alarmPlayer.release();}}catch(Exception ignored){}alarmPlayer=null;}
 void saveHistory(String sym,double price,double target){try{JSONArray h=new JSONArray(getSharedPreferences(PREF,0).getString("history","[]"));JSONObject o=new JSONObject();o.put("symbol",sym);o.put("price",price);o.put("target",target);o.put("time",new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault()).format(new Date()));h.put(o);while(h.length()>50){JSONArray n=new JSONArray();for(int i=1;i<h.length();i++)n.put(h.get(i));h=n;}getSharedPreferences(PREF,0).edit().putString("history",h.toString()).apply();}catch(Exception ignored){}}
 public void onDestroy(){if(executor!=null)executor.shutdownNow();super.onDestroy();}
 }
