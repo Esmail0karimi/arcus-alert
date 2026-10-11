@@ -72,10 +72,12 @@ runOnUiThread(()->{chartView.setCandles(candles);chartStatus.setText(symbol+" ·
 }
 void addChartAlert(double price){
 String symbol=chartSymbol();if(symbol.isEmpty()||price<=0)return;
-new AlertDialog.Builder(this).setTitle("Add Alert").setMessage(symbol+"\nTarget price: "+String.format(Locale.US,"%.8f",price))
+new AlertDialog.Builder(this).setTitle("Add Alert").setMessage(symbol+"
+Target price: "+String.format(Locale.US,"%.8f",price))
 .setNegativeButton("Cancel",null).setPositiveButton("Add Alert",(d,w)->{try{JSONArray a=levels();JSONObject o=new JSONObject();o.put("symbol",symbol);o.put("price",price);o.put("mode",1);o.put("created",System.currentTimeMillis());o.put("enabled",true);a.put(o);save(a);Toast.makeText(this,"Alert added at "+price,Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"Could not save alert",Toast.LENGTH_SHORT).show();}}).show();
 }
-\nvoid showSettings(){
+
+void showSettings(){
 LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),0);
 TextView connection=text("●  "+(status==null?"Connecting…":status.getText().toString()),13,accent);box.addView(connection);
 TextView soundTitle=text("Alert sound",18,Color.WHITE);soundTitle.setPadding(0,dp(16),0,dp(6));box.addView(soundTitle);
@@ -150,5 +152,6 @@ public boolean onTouchEvent(android.view.MotionEvent e){if(e.getAction()==androi
 public boolean dispatchTouchEvent(android.view.MotionEvent e){if(e.getAction()==android.view.MotionEvent.ACTION_DOWN)stopAlertSound();return super.dispatchTouchEvent(e);}
 public boolean onKeyDown(int keyCode,KeyEvent event){stopAlertSound();return super.onKeyDown(keyCode,event);}
 void stopAlertSound(){try{Intent i=new Intent(this,PriceMonitorService.class);i.setAction("STOP_ALERT_SOUND");if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception ignored){}}
-protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent!=null&&intent.getBooleanExtra("open_alerts_tab",false)){showMainTab(1);renderLevels();String sym=intent.getStringExtra("alert_symbol");double target=intent.getDoubleExtra("alert_target",0);new AlertDialog.Builder(this).setTitle("Triggered alert").setMessage((sym==null?"":sym)+" · "+target).setPositiveButton("OK",null).show();}}\nprotected void onDestroy(){handler.removeCallbacks(refresh);super.onDestroy();}
+protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent!=null&&intent.getBooleanExtra("open_alerts_tab",false)){showMainTab(1);renderLevels();String sym=intent.getStringExtra("alert_symbol");double target=intent.getDoubleExtra("alert_target",0);new AlertDialog.Builder(this).setTitle("Triggered alert").setMessage((sym==null?"":sym)+" · "+target).setPositiveButton("OK",null).show();}}
+protected void onDestroy(){handler.removeCallbacks(refresh);super.onDestroy();}
 }
