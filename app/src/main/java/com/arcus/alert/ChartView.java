@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 
 public class ChartView extends View {
- public static class Candle {public final long time;public final double open,high,low,close;public Candle(long t,double o,double h,double l,double c){time=t;open=o;high=h;low=l;close=c;}}
+ public static class Candle {public final long time;public final double open,high,low,close,volume;public Candle(long t,double o,double h,double l,double c){this(t,o,h,l,c,0);}public Candle(long t,double o,double h,double l,double c,double v){time=t;open=o;high=h;low=l;close=c;volume=v;}}
  public interface OnPriceTapListener {void onPriceTap(double price);} public interface OnAlertDragListener {void onMoved(int index,double price);void onSelected(int index);} public interface OnChartSwipeListener {void onSwipe(int direction);}
  private final Paint p=new Paint(3);private final ArrayList<Candle> candles=new ArrayList<>();private final ArrayList<Double>alertPrices=new ArrayList<>(); private OnAlertDragListener dragListener; private int draggingIndex=-1; private float alertDownY;
  private OnPriceTapListener listener;private OnChartSwipeListener swipeListener;private double min=0,max=1,selectedPrice=0,verticalScale=1.0;private float crossY=-1,lastX,lastY,downX,panRemainder=0;private boolean edgeSwipe=false;private int visibleCount=90,startIndex=0;private boolean plusDown=false;
