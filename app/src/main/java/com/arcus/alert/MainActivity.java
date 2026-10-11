@@ -72,8 +72,7 @@ runOnUiThread(()->{chartView.setCandles(candles);chartStatus.setText(symbol+" ·
 }
 void addChartAlert(double price){
 String symbol=chartSymbol();if(symbol.isEmpty()||price<=0)return;
-new AlertDialog.Builder(this).setTitle("Add Alert").setMessage(symbol+"
-Target price: "+String.format(Locale.US,"%.8f",price))
+new AlertDialog.Builder(this).setTitle("Add Alert").setMessage(symbol+"\\nTarget price: "+String.format(Locale.US,"%.8f",price))
 .setNegativeButton("Cancel",null).setPositiveButton("Add Alert",(d,w)->{try{JSONArray a=levels();JSONObject o=new JSONObject();o.put("symbol",symbol);o.put("price",price);o.put("mode",1);o.put("created",System.currentTimeMillis());o.put("enabled",true);a.put(o);save(a);Toast.makeText(this,"Alert added at "+price,Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"Could not save alert",Toast.LENGTH_SHORT).show();}}).show();
 }
 
