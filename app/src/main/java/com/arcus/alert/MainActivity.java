@@ -44,8 +44,7 @@ LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),0);
 TextView connection=text("●  "+(status==null?"Connecting…":status.getText().toString()),13,accent);box.addView(connection);
 TextView soundTitle=text("Alert sound",18,Color.WHITE);soundTitle.setPadding(0,dp(16),0,dp(6));box.addView(soundTitle);
 soundName=text("",13,muted);box.addView(soundName);updateSoundName();
-Button choose=button("Choose alert sound");box.addView(choose);choose.setOnClickListener(v->{((Dialog)((View)v).getTag());});
-choose.setOnClickListener(v->pickSound());
+Button choose=button("Choose alert sound");box.addView(choose);choose.setOnClickListener(v->pickSound());
 new AlertDialog.Builder(this).setTitle("Settings").setView(box).setPositiveButton("Done",null).show();
 }
 void showNotifications(){
