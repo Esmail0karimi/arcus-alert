@@ -4,7 +4,7 @@ plugins {
 android {
     namespace 'com.arcus.alert'
     compileSdk 35
-    defaultConfig {
+    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n    defaultConfig {
         applicationId 'com.arcus.alert'
         minSdk 26
         targetSdk 35
