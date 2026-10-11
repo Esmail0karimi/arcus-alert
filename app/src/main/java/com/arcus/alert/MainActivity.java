@@ -57,13 +57,25 @@ ScrollView sv=new ScrollView(this);sv.addView(box);
 new AlertDialog.Builder(this).setTitle("Notifications").setView(sv).setNeutralButton("Clear history",(d,w)->{getSharedPreferences(PREF,0).edit().putString("history","[]").apply();renderHistory();}).setPositiveButton("Close",null).show();
 }
 String percentText(JSONObject o,int tf){
-String[] keys;
-if(tf==0)keys=new String[]{"priceChangePercent24h","changePercent24h","priceChange24hPercent","change24hPercent","priceChangePercentage24h","percentChange24h"};
-else if(tf==1)keys=new String[]{"priceChangePercent4h","changePercent4h","priceChange4hPercent","change4hPercent","percentChange4h"};
-else if(tf==2)keys=new String[]{"priceChangePercent1h","changePercent1h","priceChange1hPercent","change1hPercent","percentChange1h"};
-else keys=new String[]{"priceChangePercent15m","changePercent15m","priceChange15mPercent","change15mPercent","percentChange15m"};
-for(String k:keys)if(o.has(k)&&!o.isNull(k)){try{return String.format(Locale.US,"%+.2f%%",Double.parseDouble(o.get(k).toString()));}catch(Exception ignored){}}
-return "—";
+String wanted=new String[]{"24h","4h","1h","15m"}[Math.max(0,Math.min(3,tf))];
+String directSuffix=wanted.toLowerCase(Locale.ROOT);
+String result=findPercentRecursive(o,directSuffix,0);
+return result==null?"—":String.format(Locale.US,"%+.2f%%",result);
+}
+Double findPercentRecursive(Object value,String timeframe,int depth){
+if(depth>4||value==null||value==JSONObject.NULL)return null;
+if(value instanceof JSONObject){
+JSONObject obj=(JSONObject)value;Iterator<String> it=obj.keys();
+while(it.hasNext()){
+String key=it.next(),norm=key.toLowerCase(Locale.ROOT).replace("_","").replace("-","");
+Object v=obj.opt(key);
+if((norm.contains(timeframe)&& (norm.contains("change")||norm.contains("percent")||norm.contains("pct")||norm.contains("variation")))&&v!=null&&! (v instanceof JSONObject)&&!(v instanceof JSONArray)){
+try{return Double.parseDouble(v.toString());}catch(Exception ignored){}
+}
+}
+it=obj.keys();while(it.hasNext()){Object v=obj.opt(it.next());Double found=findPercentRecursive(v,timeframe,depth+1);if(found!=null)return found;}
+}else if(value instanceof JSONArray){JSONArray ar=(JSONArray)value;for(int i=0;i<ar.length();i++){Double found=findPercentRecursive(ar.opt(i),timeframe,depth+1);if(found!=null)return found;}}
+return null;
 }
 void renderMarketRows(){
 if(marketRows==null)return;marketRows.removeAllViews();String raw=getSharedPreferences(PREF,0).getString("markets_json","");
