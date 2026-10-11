@@ -1,7 +1,7 @@
 package com.arcus.alert;
 import android.Manifest;import android.app.*;import android.content.*;import android.content.pm.PackageManager;import android.net.Uri;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import android.text.*;import org.json.*;import java.util.*;import java.net.*;import java.io.*;
 public class MainActivity extends Activity{
-static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,chartPage,watchlistPage,pages;final HashSet<String> activeChartIndicators=new HashSet<>();Spinner marketSpinner,modeSpinner,timeframeSpinner,chartMarketSpinner,chartTfSpinner;TextView status,livePrice,soundName,chartStatus;ProChartView chartView;EditText chartSearch;LinearLayout chartTools;final ArrayList<String> chartNames=new ArrayList<>();LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
+static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,chartPage,watchlistPage,pages,appHeader,mainNav,appRoot;ScrollView mainScroll;boolean chartFullscreen=false;Button fullscreenButton;Spinner marketSpinner,modeSpinner,timeframeSpinner,chartMarketSpinner,chartTfSpinner;TextView status,livePrice,soundName,chartStatus;ProChartView chartView;EditText chartSearch;LinearLayout chartTools;final ArrayList<String> chartNames=new ArrayList<>();LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
 final Runnable refresh=new Runnable(){public void run(){refreshMarkets();handler.postDelayed(this,1000);}};
 boolean favoritesOnly=false;Button favoriteButton;int bg=Color.rgb(10,16,29),card=Color.rgb(20,30,49),muted=Color.rgb(151,166,190),accent=Color.rgb(73,190,166);
 public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);buildUi();startMonitor();handler.post(refresh);if(getIntent()!=null&&getIntent().getBooleanExtra("open_alerts_tab",false)){showMainTab(4);renderLevels();}}
@@ -11,12 +11,12 @@ LinearLayout column(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);
 EditText edit(String hint,int type){EditText e=new EditText(this);e.setSingleLine(true);e.setInputType(type);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(muted);e.setPadding(dp(12),dp(7),dp(12),dp(7));e.setBackground(shape(Color.rgb(13,23,39),10,Color.rgb(54,75,102)));return e;}
 Button button(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextSize(14);return b;}
 void buildUi(){
-ScrollView sc=new ScrollView(this);sc.setFillViewport(true);sc.setBackgroundColor(bg);root=column();root.setPadding(dp(16),dp(16),dp(16),dp(24));sc.addView(root);setContentView(sc);
-LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);root.addView(header);
+ScrollView sc=new ScrollView(this);mainScroll=sc;sc.setFillViewport(true);sc.setBackgroundColor(bg);root=column();appRoot=root;root.setPadding(dp(16),dp(16),dp(16),dp(24));sc.addView(root);setContentView(sc);
+LinearLayout header=new LinearLayout(this);appHeader=header;header.setGravity(Gravity.CENTER_VERTICAL);root.addView(header);
 LinearLayout brand=column();header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));TextView title=text("Arcus Alert",25,Color.WHITE);title.setTypeface(null,Typeface.BOLD);brand.addView(title);brand.addView(text("SMART PRICE MONITOR",10,accent));
 Button settings=button("⚙");settings.setTextSize(21);settings.setMinWidth(dp(46));header.addView(settings);settings.setOnClickListener(v->showSettings());
 Button notifications=button("🔔");notifications.setTextSize(21);notifications.setMinWidth(dp(46));header.addView(notifications);notifications.setOnClickListener(v->showNotifications());
-LinearLayout nav=new LinearLayout(this);nav.setPadding(0,dp(14),0,dp(12));root.addView(nav);
+LinearLayout nav=new LinearLayout(this);mainNav=nav;nav.setPadding(0,dp(14),0,dp(12));root.addView(nav);
 Button marketsTab=button("📊 Market"),watchlistTab=button("★ Watch"),chartTab=button("▥ Chart"),savedTab=button("🔔 Alerts"),createTab=button("＋ Create");
 nav.addView(marketsTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(watchlistTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(chartTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(savedTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(createTab,new LinearLayout.LayoutParams(0,dp(46),1));
 pages=column();root.addView(pages,new LinearLayout.LayoutParams(-1,-2));alertPage=column();savedPage=column();marketPage=column();chartPage=column();watchlistPage=column();pages.addView(alertPage);pages.addView(savedPage);pages.addView(marketPage);pages.addView(watchlistPage);pages.addView(chartPage);savedPage.setVisibility(View.GONE);marketPage.setVisibility(View.GONE);chartPage.setVisibility(View.GONE);watchlistPage.setVisibility(View.GONE);
@@ -56,11 +56,11 @@ Button searchToggle=button("⌕");searchToggle.setTextSize(19);searchToggle.setM
 chartTfSpinner=new Spinner(this);chartTfSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"1m","3m","5m","15m","30m","1h","2h","4h","1d","1w"}));chartTfSpinner.setSelection(3);top.addView(chartTfSpinner,new LinearLayout.LayoutParams(dp(70),dp(40)));
 chartSearch=edit("Search Arcus symbols…",1);chartSearch.setVisibility(View.GONE);LinearLayout.LayoutParams searchLp=new LinearLayout.LayoutParams(-1,dp(42));searchLp.setMargins(dp(5),dp(2),dp(5),dp(3));controls.addView(chartSearch,searchLp);
 LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);controls.addView(actions,new LinearLayout.LayoutParams(-1,dp(34)));
-Button resetChart=button("↺"),indicatorMenu=button("ƒx"),refreshChart=button("↻");
-for(Button b:new Button[]{resetChart,indicatorMenu,refreshChart}){b.setTextSize(13);b.setMinWidth(dp(38));b.setMinHeight(dp(30));b.setPadding(0,0,0,0);actions.addView(b,new LinearLayout.LayoutParams(dp(38),dp(30)));}
+Button resetChart=button("↺"),refreshChart=button("↻");fullscreenButton=button("⛶");
+for(Button b:new Button[]{resetChart,fullscreenButton,refreshChart}){b.setTextSize(13);b.setMinWidth(dp(38));b.setMinHeight(dp(30));b.setPadding(0,0,0,0);actions.addView(b,new LinearLayout.LayoutParams(dp(38),dp(30)));}
 resetChart.setOnClickListener(v->{if(chartView!=null)chartView.resetView();});
+fullscreenButton.setOnClickListener(v->toggleChartFullscreen());
 refreshChart.setOnClickListener(v->loadChart());
-indicatorMenu.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,indicatorMenu);String[] names={"SMA 20","EMA 20","Bollinger Bands","RSI 14","Volume"};String[] keys={"sma","ema","bb","rsi","volume"};for(int i=0;i<names.length;i++){android.view.MenuItem mi=menu.getMenu().add(0,i,i,names[i]);mi.setCheckable(true);mi.setChecked(activeChartIndicators.contains(keys[i]));}menu.setOnMenuItemClickListener(item->{String key=keys[item.getItemId()];boolean enabled=!activeChartIndicators.contains(key);if(enabled)activeChartIndicators.add(key);else activeChartIndicators.remove(key);item.setChecked(enabled);chartView.setIndicator(key,enabled);return true;});menu.show();});
 searchToggle.setOnClickListener(v->{chartSearch.setVisibility(chartSearch.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);if(chartSearch.getVisibility()==View.VISIBLE){chartSearch.requestFocus();((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(chartSearch,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);}});
 chartSearch.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence x,int st,int c,int a){}public void onTextChanged(CharSequence x,int st,int before,int count){String old=chartSymbol(),q=x.toString().trim().toLowerCase(Locale.ROOT);chartNames.clear();for(String n:allNames)if(q.isEmpty()||n.toLowerCase(Locale.ROOT).contains(q))chartNames.add(n);chartMarketSpinner.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,chartNames));int p=chartNames.indexOf(old);if(p>=0)chartMarketSpinner.setSelection(p);else if(!chartNames.isEmpty())chartMarketSpinner.setSelection(0);}public void afterTextChanged(Editable e){}});
 chartStatus=text("",10,muted);chartStatus.setPadding(dp(6),0,dp(6),0);chartPage.addView(chartStatus,new LinearLayout.LayoutParams(-1,dp(17)));
@@ -70,6 +70,21 @@ chartMarketSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnIt
 chartTfSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){if(chartPage.getVisibility()==View.VISIBLE)loadChart();}});
 }
 String chartSymbol(){return chartMarketSpinner==null||chartMarketSpinner.getSelectedItem()==null?"":chartMarketSpinner.getSelectedItem().toString();}
+void toggleChartFullscreen(){
+chartFullscreen=!chartFullscreen;
+if(appHeader!=null)appHeader.setVisibility(chartFullscreen?View.GONE:View.VISIBLE);
+if(mainNav!=null)mainNav.setVisibility(chartFullscreen?View.GONE:View.VISIBLE);
+if(chartStatus!=null)chartStatus.setVisibility(chartFullscreen?View.GONE:View.VISIBLE);
+if(fullscreenButton!=null)fullscreenButton.setText(chartFullscreen?"⤢":"⛶");
+if(appRoot!=null)appRoot.setPadding(chartFullscreen?0:dp(16),chartFullscreen?0:dp(16),chartFullscreen?0:dp(16),chartFullscreen?0:dp(24));
+int screenH=getResources().getDisplayMetrics().heightPixels;
+if(pages!=null){LinearLayout.LayoutParams pp=(LinearLayout.LayoutParams)pages.getLayoutParams();pp.height=chartFullscreen?screenH:-2;pages.setLayoutParams(pp);}
+if(chartPage!=null){LinearLayout.LayoutParams cp=(LinearLayout.LayoutParams)chartPage.getLayoutParams();cp.height=chartFullscreen?screenH:-2;chartPage.setLayoutParams(cp);}
+if(chartView!=null){LinearLayout.LayoutParams vp=(LinearLayout.LayoutParams)chartView.getLayoutParams();vp.height=chartFullscreen?Math.max(dp(220),screenH-dp(82)):dp(535);chartView.setLayoutParams(vp);chartView.requestLayout();}
+int flags=chartFullscreen?(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY):0;
+getWindow().getDecorView().setSystemUiVisibility(flags);
+if(mainScroll!=null)mainScroll.post(()->mainScroll.scrollTo(0,0));
+}
 void loadChart(){
 if(chartView==null||chartSymbol().isEmpty()){if(chartStatus!=null)chartStatus.setText("Waiting for Arcus market list…");return;}
 final String symbol=chartSymbol(),tf=chartTfSpinner.getSelectedItem().toString();chartStatus.setText("Loading "+symbol+" · "+tf+" candles…");
