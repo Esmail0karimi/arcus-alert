@@ -59,7 +59,8 @@ public class ProChartView extends WebView {
                 item.put("open", candle.open);
                 item.put("high", candle.high);
                 item.put("low", candle.low);
-                item.put("close", candle.close);\n                item.put("volume", candle.volume);
+                item.put("close", candle.close);
+                item.put("volume", candle.volume);
                 data.put(item);
             } catch (Exception ignored) { }
         }
