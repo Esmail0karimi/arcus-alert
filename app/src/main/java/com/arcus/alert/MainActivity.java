@@ -59,8 +59,8 @@ new AlertDialog.Builder(this).setTitle("Notifications").setView(sv).setNeutralBu
 String percentText(JSONObject o,int tf){
 String wanted=new String[]{"24h","4h","1h","15m"}[Math.max(0,Math.min(3,tf))];
 String directSuffix=wanted.toLowerCase(Locale.ROOT);
-String result=findPercentRecursive(o,directSuffix,0);
-return result==null?"—":String.format(Locale.US,"%+.2f%%",result);
+Double result=findPercentRecursive(o,directSuffix,0);
+return result==null?"—":String.format(Locale.US,"%+.2f%%",result.doubleValue());
 }
 Double findPercentRecursive(Object value,String timeframe,int depth){
 if(depth>4||value==null||value==JSONObject.NULL)return null;
