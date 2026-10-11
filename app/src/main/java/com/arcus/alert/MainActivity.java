@@ -1,7 +1,7 @@
 package com.arcus.alert;
 import android.Manifest;import android.app.*;import android.content.*;import android.content.pm.PackageManager;import android.net.Uri;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import android.text.*;import org.json.*;import java.util.*;
 public class MainActivity extends Activity{
-static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,pages;Spinner marketSpinner,modeSpinner,timeframeSpinner;TextView status,livePrice,soundName;LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
+static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,chartPage,pages;Spinner marketSpinner,modeSpinner,timeframeSpinner,chartMarketSpinner,chartTfSpinner;TextView status,livePrice,soundName,chartStatus;ChartView chartView;LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
 final Runnable refresh=new Runnable(){public void run(){refreshMarkets();handler.postDelayed(this,1000);}};
 boolean favoritesOnly=false;Button favoriteButton;int bg=Color.rgb(10,16,29),card=Color.rgb(20,30,49),muted=Color.rgb(151,166,190),accent=Color.rgb(73,190,166);
 public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);buildUi();startMonitor();handler.post(refresh);}
@@ -17,12 +17,12 @@ LinearLayout brand=column();header.addView(brand,new LinearLayout.LayoutParams(0
 Button settings=button("⚙");settings.setTextSize(21);settings.setMinWidth(dp(46));header.addView(settings);settings.setOnClickListener(v->showSettings());
 Button notifications=button("🔔");notifications.setTextSize(21);notifications.setMinWidth(dp(46));header.addView(notifications);notifications.setOnClickListener(v->showNotifications());
 LinearLayout nav=new LinearLayout(this);nav.setPadding(0,dp(14),0,dp(12));root.addView(nav);
-Button createTab=button("＋  Create"),savedTab=button("🔔  My Alerts"),marketsTab=button("📊  Market");
-nav.addView(createTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(savedTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(marketsTab,new LinearLayout.LayoutParams(0,dp(46),1));
-pages=column();root.addView(pages,new LinearLayout.LayoutParams(-1,-2));alertPage=column();savedPage=column();marketPage=column();pages.addView(alertPage);pages.addView(savedPage);pages.addView(marketPage);savedPage.setVisibility(View.GONE);marketPage.setVisibility(View.GONE);
-createTab.setOnClickListener(v->{showMainTab(0);createTab.setBackground(shape(accent,12,0));savedTab.setBackgroundColor(Color.TRANSPARENT);marketsTab.setBackgroundColor(Color.TRANSPARENT);});
-savedTab.setOnClickListener(v->{showMainTab(1);savedTab.setBackground(shape(accent,12,0));createTab.setBackgroundColor(Color.TRANSPARENT);marketsTab.setBackgroundColor(Color.TRANSPARENT);renderLevels();});
-marketsTab.setOnClickListener(v->{showMainTab(2);marketsTab.setBackground(shape(accent,12,0));createTab.setBackgroundColor(Color.TRANSPARENT);savedTab.setBackgroundColor(Color.TRANSPARENT);renderMarketRows();});
+Button createTab=button("＋ Create"),savedTab=button("🔔 Alerts"),marketsTab=button("📊 Market"),chartTab=button("▥ Chart");
+nav.addView(createTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(savedTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(marketsTab,new LinearLayout.LayoutParams(0,dp(46),1));nav.addView(chartTab,new LinearLayout.LayoutParams(0,dp(46),1));
+pages=column();root.addView(pages,new LinearLayout.LayoutParams(-1,-2));alertPage=column();savedPage=column();marketPage=column();chartPage=column();pages.addView(alertPage);pages.addView(savedPage);pages.addView(marketPage);pages.addView(chartPage);savedPage.setVisibility(View.GONE);marketPage.setVisibility(View.GONE);chartPage.setVisibility(View.GONE);
+createTab.setOnClickListener(v->{showMainTab(0);createTab.setBackground(shape(accent,12,0));savedTab.setBackgroundColor(Color.TRANSPARENT);marketsTab.setBackgroundColor(Color.TRANSPARENT);chartTab.setBackgroundColor(Color.TRANSPARENT);});
+savedTab.setOnClickListener(v->{showMainTab(1);savedTab.setBackground(shape(accent,12,0));createTab.setBackgroundColor(Color.TRANSPARENT);marketsTab.setBackgroundColor(Color.TRANSPARENT);chartTab.setBackgroundColor(Color.TRANSPARENT);renderLevels();});
+marketsTab.setOnClickListener(v->{showMainTab(2);marketsTab.setBackground(shape(accent,12,0));createTab.setBackgroundColor(Color.TRANSPARENT);savedTab.setBackgroundColor(Color.TRANSPARENT);chartTab.setBackgroundColor(Color.TRANSPARENT);renderMarketRows();});chartTab.setOnClickListener(v->{showMainTab(3);chartTab.setBackground(shape(accent,12,0));createTab.setBackgroundColor(Color.TRANSPARENT);savedTab.setBackgroundColor(Color.TRANSPARENT);marketsTab.setBackgroundColor(Color.TRANSPARENT);loadChart();});
 createTab.setBackground(shape(accent,12,0));
 root=alertPage;
 LinearLayout market=card();market.addView(label("SEARCH MARKET"));searchBox=edit("Type symbol · BTC, ETH…",1);market.addView(searchBox);market.addView(label("SELECT MARKET"));marketSpinner=new Spinner(this);marketSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,shownNames));market.addView(marketSpinner);livePrice=text("Current price: waiting…",19,Color.WHITE);livePrice.setTypeface(null,Typeface.BOLD);livePrice.setPadding(0,dp(12),0,dp(2));market.addView(livePrice);favoriteButton=button("☆  Add to favorites");favoriteButton.setTextColor(Color.WHITE);market.addView(favoriteButton);LinearLayout marketTabs=new LinearLayout(this);Button allTab=button("All symbols");Button favTab=button("★ Favorites");marketTabs.addView(allTab,new LinearLayout.LayoutParams(0,dp(42),1));marketTabs.addView(favTab,new LinearLayout.LayoutParams(0,dp(42),1));market.addView(marketTabs);allTab.setOnClickListener(v->{favoritesOnly=false;filterMarkets();});favTab.setOnClickListener(v->{favoritesOnly=true;filterMarkets();});favoriteButton.setOnClickListener(v->toggleFavorite(selected()));
@@ -41,8 +41,41 @@ marketSearch=edit("Search markets…",1);marketPage.addView(marketSearch);market
 timeframeSpinner=new Spinner(this);timeframeSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"24 hours","4 hours","1 hour","15 minutes"}));marketPage.addView(timeframeSpinner);timeframeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){renderMarketRows();}});
 LinearLayout tableHead=new LinearLayout(this);tableHead.setGravity(Gravity.CENTER_VERTICAL);tableHead.setPadding(dp(12),dp(10),dp(12),dp(10));tableHead.addView(text("MARKET",10,muted),new LinearLayout.LayoutParams(0,-2,1));tableHead.addView(text("LAST PRICE",10,muted));marketPage.addView(tableHead);marketRows=column();marketPage.addView(marketRows);
 }
-void showMainTab(int tab){alertPage.setVisibility(tab==0?View.VISIBLE:View.GONE);savedPage.setVisibility(tab==1?View.VISIBLE:View.GONE);marketPage.setVisibility(tab==2?View.VISIBLE:View.GONE);}
-void showSettings(){
+void showMainTab(int tab){alertPage.setVisibility(tab==0?View.VISIBLE:View.GONE);savedPage.setVisibility(tab==1?View.VISIBLE:View.GONE);marketPage.setVisibility(tab==2?View.VISIBLE:View.GONE);chartPage.setVisibility(tab==3?View.VISIBLE:View.GONE);}
+
+void buildChartPage(){
+LinearLayout top=column();top.setPadding(dp(14),dp(12),dp(14),dp(12));top.setBackground(shape(card,16,Color.rgb(38,54,78)));chartPage.addView(top);
+top.addView(text("Arcus Candlestick Chart",19,Color.WHITE));top.addView(text("Live market candles · tap chart to add a price alert",11,muted));
+chartMarketSpinner=new Spinner(this);chartMarketSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,allNames));top.addView(chartMarketSpinner);
+chartTfSpinner=new Spinner(this);chartTfSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"1m","3m","5m","15m","30m","1h","2h","4h","1d","1w"}));chartTfSpinner.setSelection(3);top.addView(chartTfSpinner);
+Button refreshChart=button("↻  Refresh chart");top.addView(refreshChart);refreshChart.setOnClickListener(v->loadChart());
+chartStatus=text("Choose a market and load candles.",12,muted);chartStatus.setPadding(0,dp(8),0,dp(8));chartPage.addView(chartStatus);
+chartView=new ChartView(this);chartView.setBackground(shape(Color.rgb(9,15,27),14,Color.rgb(38,54,78)));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(350));cp.bottomMargin=dp(12);chartPage.addView(chartView,cp);
+chartView.setOnPriceTapListener(price->addChartAlert(price));
+chartMarketSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){if(chartPage.getVisibility()==View.VISIBLE)loadChart();}});
+chartTfSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){if(chartPage.getVisibility()==View.VISIBLE)loadChart();}});
+}
+String chartSymbol(){return chartMarketSpinner==null||chartMarketSpinner.getSelectedItem()==null?"":chartMarketSpinner.getSelectedItem().toString();}
+void loadChart(){
+if(chartView==null||chartSymbol().isEmpty()){if(chartStatus!=null)chartStatus.setText("Waiting for Arcus market list…");return;}
+final String symbol=chartSymbol(),tf=chartTfSpinner.getSelectedItem().toString();chartStatus.setText("Loading "+symbol+" · "+tf+" candles…");
+new Thread(()->{HttpURLConnection c=null;try{
+long to=System.currentTimeMillis()*1000L;URL u=new URL("https://api.arcus.xyz/v1/candles?market="+java.net.URLEncoder.encode(symbol,"UTF-8")+"&timeframe="+tf+"&to="+to+"&countback=180");
+c=(HttpURLConnection)u.openConnection();c.setConnectTimeout(10000);c.setReadTimeout(10000);c.setRequestProperty("Accept","application/json");
+int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);
+if(code<200||code>=300)throw new Exception("Arcus API HTTP "+code+": "+out.toString("UTF-8"));
+JSONObject response=new JSONObject(out.toString("UTF-8"));JSONArray arr=response.optJSONArray("candles");if(arr==null)throw new Exception("No candles field in Arcus response");
+ArrayList<ChartView.Candle> candles=new ArrayList<>();for(int i=0;i<arr.length();i++){JSONObject o=arr.optJSONObject(i);if(o==null)continue;try{candles.add(new ChartView.Candle(o.optLong("openTime"),Double.parseDouble(o.getString("open")),Double.parseDouble(o.getString("high")),Double.parseDouble(o.getString("low")),Double.parseDouble(o.getString("close"))));}catch(Exception ignored){}}
+Collections.sort(candles,(a,b1)->Long.compare(a.time,b1.time));if(candles.isEmpty())throw new Exception("No candle data returned");
+runOnUiThread(()->{chartView.setCandles(candles);chartStatus.setText(symbol+" · "+tf+" · "+candles.size()+" candles · Tap chart to add alert");});
+}catch(Exception e){String msg=e.getMessage()==null?"Chart loading failed":e.getMessage();runOnUiThread(()->chartStatus.setText("Chart error: "+msg));}finally{if(c!=null)c.disconnect();}}).start();
+}
+void addChartAlert(double price){
+String symbol=chartSymbol();if(symbol.isEmpty()||price<=0)return;
+new AlertDialog.Builder(this).setTitle("Add Alert").setMessage(symbol+"\nTarget price: "+String.format(Locale.US,"%.8f",price))
+.setNegativeButton("Cancel",null).setPositiveButton("Add Alert",(d,w)->{try{JSONArray a=levels();JSONObject o=new JSONObject();o.put("symbol",symbol);o.put("price",price);o.put("mode",1);o.put("created",System.currentTimeMillis());o.put("enabled",true);a.put(o);save(a);Toast.makeText(this,"Alert added at "+price,Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"Could not save alert",Toast.LENGTH_SHORT).show();}}).show();
+}
+\nvoid showSettings(){
 LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),0);
 TextView connection=text("●  "+(status==null?"Connecting…":status.getText().toString()),13,accent);box.addView(connection);
 TextView soundTitle=text("Alert sound",18,Color.WHITE);soundTitle.setPadding(0,dp(16),0,dp(6));box.addView(soundTitle);
