@@ -89,6 +89,7 @@ public class ProChartView extends WebView {
     public void setDrawingTool(String tool) {
         runChartJs("setDrawingTool(" + JSONObject.quote(tool) + ");");
     }
+    public void clearDrawings() { runChartJs("clearDrawings();"); }
 
     public void resetView() { runChartJs("fitContent();"); }
     public void zoomHorizontal(float factor) { runChartJs("zoomTime(" + factor + ");"); }
