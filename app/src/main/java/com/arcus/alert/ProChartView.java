@@ -119,7 +119,7 @@ public class ProChartView extends WebView {
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090f1b;color:#dce6f5;font-family:Arial,sans-serif}
 #root{height:100%;display:flex;flex-direction:column;background:#090f1b}
-#hud{height:27px;flex:none;padding:5px 8px;font-size:10px;color:#9aabc3;white-space:nowrap;overflow:hidden}
+#hud{height:27px;flex:none;padding:5px 8px;font-size:10px;color:#9aabc3;white-space:nowrap;overflow:hidden}#symbolTag{position:absolute;top:5px;right:9px;z-index:10;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:600;letter-spacing:.25px;color:#8293aa;opacity:.72;pointer-events:none}
 #mainWrap{position:relative;flex:1;min-height:150px;touch-action:none}
 #main{position:absolute;inset:0}
 
@@ -134,7 +134,7 @@ public class ProChartView extends WebView {
 #status{position:absolute;left:8px;bottom:4px;z-index:8;color:#8fa3bd;font-size:9px;pointer-events:none}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
-</head><body><div id="root"><div id="hud">Arcus Pro Chart · waiting for market data</div>
+</head><body><div id="root"><div id="hud">Arcus Pro Chart · waiting for market data</div><div id="symbolTag"></div>
 <div id="mainWrap"><div id="main"></div><div id="overlay"><div id="legend"></div><canvas id="drawCanvas"></canvas><div id="alertLayer"></div><button id="crossPlus">+</button><div id="status"></div></div></div></div>
 <script>
 (function(){
@@ -154,7 +154,7 @@ function redrawAlerts(){alertLayer.querySelectorAll('.alertLine').forEach(line=>
 function clearPricePicker(){if(pickerLine){pickerLine.remove();pickerLine=null;}pickedPrice=0;}
 function showPricePicker(y){let p=candle.coordinateToPrice(y);if(p===null||!isFinite(p))return;clearPricePicker();pickedPrice=p;pickerLine=document.createElement('div');pickerLine.className='newAlertLine';pickerLine.style.top=y+'px';let tag=document.createElement('span');tag.className='newAlertTag';tag.textContent=fmt(p);let add=document.createElement('button');add.className='pricePickPlus';add.type='button';add.textContent='+';add.addEventListener('pointerdown',e=>e.stopPropagation());add.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();let chosen=pickedPrice;if(chosen>0&&window.ArcusNative)ArcusNative.onPriceTap(chosen);clearPricePicker();});pickerLine.appendChild(tag);pickerLine.appendChild(add);alertLayer.appendChild(pickerLine);}
 function movePricePicker(y){if(!pickerLine)return;let yy=Math.max(0,Math.min(wrap.clientHeight,y)),p=candle.coordinateToPrice(yy);if(p===null||!isFinite(p))return;pickedPrice=p;pickerLine.style.top=yy+'px';let tag=pickerLine.querySelector('.newAlertTag');if(tag)tag.textContent=fmt(p);}
-function setSymbol(s){symbol=s||'';try{drawings=JSON.parse(localStorage.getItem('arcus-draw-'+symbol)||'[]');}catch(e){drawings=[];}redrawDrawings();}
+function setSymbol(s){symbol=s||'';document.getElementById('symbolTag').textContent=symbol;try{drawings=JSON.parse(localStorage.getItem('arcus-draw-'+symbol)||'[]');}catch(e){drawings=[];}redrawDrawings();}
 function setChartType(type){chartType=type;if(type==='line'){let data=raw.map(x=>({time:x.time,value:x.close}));chart.removeSeries(candle);candle=chart.addSeries(L.LineSeries,{color:'#48c6a7',lineWidth:2,priceLineVisible:true});candle.setData(data);}else if(type==='bars'){let data=raw;chart.removeSeries(candle);candle=chart.addSeries(L.BarSeries,{upColor:'#34d399',downColor:'#f87171',openVisible:true,thinBars:false});candle.setData(data);}else{chart.removeSeries(candle);candle=chart.addSeries(L.CandlestickSeries,{upColor:'#34d399',downColor:'#f87171',borderUpColor:'#34d399',borderDownColor:'#f87171',wickUpColor:'#34d399',wickDownColor:'#f87171'});candle.setData(raw);}redrawAlerts();redrawDrawings();}
 function clearDrawings(){drawings=[];draft=null;saveDrawings();redrawDrawings();drawTool='';canvas.style.pointerEvents='none';chart.applyOptions({handleScroll:true,handleScale:true});document.getElementById('status').textContent='';}\nfunction setDrawingTool(t){drawTool=t||'';canvas.style.pointerEvents=drawTool?'auto':'none';chart.applyOptions({handleScroll:!drawTool,handleScale:!drawTool});document.getElementById('status').textContent=drawTool?'Drawing: '+drawTool+' · tap/drag on chart':'';
 }
