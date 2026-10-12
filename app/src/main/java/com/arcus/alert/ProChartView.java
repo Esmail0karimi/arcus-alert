@@ -6,6 +6,8 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.content.Intent;
+import android.net.Uri;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
@@ -99,6 +101,7 @@ public class ProChartView extends WebView {
     }
 
     private final class Bridge {
+        @JavascriptInterface public void openAttribution() { post(() -> { try { getContext().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tradingview.com/"))); } catch (Exception ignored) { } }); }
         @JavascriptInterface public void onPriceTap(final double price) {
             post(() -> { if (priceTapListener != null && price > 0) priceTapListener.onPriceTap(price); });
         }
@@ -131,17 +134,17 @@ public class ProChartView extends WebView {
 .alertTag{position:absolute;right:2px;top:1px;background:#245b87;color:#fff;border-radius:4px;padding:3px 5px;font-size:9px}.newAlertLine{position:absolute;left:0;right:0;height:30px;transform:translateY(-15px);pointer-events:none;z-index:9}.newAlertLine:before{content:'';position:absolute;left:0;right:0;top:14px;border-top:1px solid #f6c65b}.newAlertTag{position:absolute;right:34px;top:2px;background:#8a6822;color:#fff;border-radius:4px;padding:4px 6px;font-size:9px;font-weight:bold}.pricePickPlus{position:absolute;right:3px;top:0;width:28px;height:28px;border:0;border-radius:6px;background:#f6c65b;color:#17202d;font-size:22px;font-weight:bold;line-height:26px;padding:0;pointer-events:auto;touch-action:manipulation}
 #crossPlus{display:none!important;position:absolute;right:4px;width:25px;height:25px;border:0;border-radius:50%;background:#34d399;color:#071b17;font-size:20px;font-weight:bold;z-index:8;padding:0}
 #legend{position:absolute;left:5px;top:4px;z-index:6;font-size:9px;color:#d6e2f2;background:#0d1726cc;padding:4px 6px;border-radius:4px;pointer-events:none}
-#status{position:absolute;left:8px;bottom:4px;z-index:8;color:#8fa3bd;font-size:9px;pointer-events:none}
+#status{position:absolute;left:8px;bottom:4px;z-index:8;color:#8fa3bd;font-size:9px;pointer-events:none}\n#tvCredit{position:absolute;right:7px;bottom:4px;z-index:8;color:#71849d;font-size:9px;text-decoration:none;background:#090f1bcc;padding:2px 4px;border-radius:3px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
 </head><body><div id="root"><div id="hud">Arcus Pro Chart · waiting for market data</div><div id="symbolTag"></div>
-<div id="mainWrap"><div id="main"></div><div id="overlay"><div id="legend"></div><canvas id="drawCanvas"></canvas><div id="alertLayer"></div><button id="crossPlus">+</button><div id="status"></div></div></div></div>
+<div id="mainWrap"><div id="main"></div><div id="overlay"><div id="legend"></div><canvas id="drawCanvas"></canvas><div id="alertLayer"></div><button id="crossPlus">+</button><div id="status"></div><a id="tvCredit" href="#" onclick="if(window.ArcusNative)ArcusNative.openAttribution();return false;">Charting by TradingView</a></div></div></div>
 <script>
 (function(){
 const hud=document.getElementById('hud'),mainEl=document.getElementById('main'),wrap=document.getElementById('mainWrap');
 if(!window.LightweightCharts){document.getElementById('status').textContent='Chart library could not load. Check internet connection.';return;}
 const L=window.LightweightCharts;
-const chart=L.createChart(mainEl,{width:mainEl.clientWidth,height:mainEl.clientHeight,layout:{background:{type:'solid',color:'#090f1b'},textColor:'#9aabc3',fontSize:10},attributionLogo:false,grid:{vertLines:{color:'#18263a'},horzLines:{color:'#18263a'}},rightPriceScale:{borderColor:'#26364e',scaleMargins:{top:.08,bottom:.12}},timeScale:{borderColor:'#26364e',timeVisible:true,secondsVisible:false,rightOffset:30},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#eabf58',style:2},horzLine:{color:'#eabf58',style:2}},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true}});
+const chart=L.createChart(mainEl,{width:mainEl.clientWidth,height:mainEl.clientHeight,layout:{background:{type:'solid',color:'#090f1b'},textColor:'#9aabc3',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#18263a'},horzLines:{color:'#18263a'}},rightPriceScale:{borderColor:'#26364e',scaleMargins:{top:.08,bottom:.12}},timeScale:{borderColor:'#26364e',timeVisible:true,secondsVisible:false,rightOffset:30},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#eabf58',style:2},horzLine:{color:'#eabf58',style:2}},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true}});
 let candle=chart.addSeries(L.CandlestickSeries,{upColor:'#34d399',downColor:'#f87171',borderUpColor:'#34d399',borderDownColor:'#f87171',wickUpColor:'#34d399',wickDownColor:'#f87171',priceLineVisible:true});
 let raw=[],alerts=[],priceLines=[],chartType='candles',symbol='',drawTool='',drawings=[],draft=null,dragAlert=-1,pickedPrice=0,pickerLine=null,pressTimer=null,pressOrigin=null,pickerActive=false,pickerPointer=-1;
 const canvas=document.getElementById('drawCanvas'),ctx=canvas.getContext('2d'),alertLayer=document.getElementById('alertLayer'),plus=document.getElementById('crossPlus');
