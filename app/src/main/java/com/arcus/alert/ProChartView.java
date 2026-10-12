@@ -167,9 +167,11 @@ canvas.addEventListener('pointermove',e=>{if(!draft)return;let p=pointAt(e);if(p
 canvas.addEventListener('pointerup',()=>{if(draft){drawings.push(draft);draft=null;saveDrawings();redrawDrawings();}});
 chart.subscribeCrosshairMove(param=>{if(!param||!param.point)return;let d=param.seriesData.get(candle);if(d&&d.open!==undefined)hud.textContent='O '+fmt(d.open)+'  H '+fmt(d.high)+'  L '+fmt(d.low)+'  C '+fmt(d.close);});
 wrap.addEventListener('pointerdown',e=>{if(drawTool||e.target.closest('.alertLine')||e.target.closest('.pricePickPlus'))return;clearTimeout(pressTimer);pressOrigin={x:e.clientX,y:e.clientY};pickerActive=false;pickerPointer=e.pointerId;let rect=wrap.getBoundingClientRect();let y=e.clientY-rect.top;pressTimer=setTimeout(()=>{if(!pressOrigin||pickerPointer!==e.pointerId)return;pickerActive=true;chart.applyOptions({handleScroll:false,handleScale:false});try{wrap.setPointerCapture(e.pointerId);}catch(ignore){}showPricePicker(y);},450);});
-wrap.addEventListener('pointermove',e=>{if(!pressOrigin||pickerPointer!==e.pointerId)return;let dx=e.clientX-pressOrigin.x,dy=e.clientY-pressOrigin.y;if(!pickerActive){if(Math.hypot(dx,dy)>9){clearTimeout(pressTimer);pressTimer=null;pressOrigin=null;pickerPointer=-1;}return;}let rect=wrap.getBoundingClientRect();movePricePicker(e.clientY-rect.top);});
+// Track the active pointer at the document level so chart/canvas child handlers
+// cannot interrupt draft-line movement after the long-press has activated.
+document.addEventListener('pointermove',e=>{if(!pressOrigin||pickerPointer!==e.pointerId)return;let dx=e.clientX-pressOrigin.x,dy=e.clientY-pressOrigin.y;if(!pickerActive){if(Math.hypot(dx,dy)>9){clearTimeout(pressTimer);pressTimer=null;pressOrigin=null;pickerPointer=-1;}return;}e.preventDefault();let rect=wrap.getBoundingClientRect();movePricePicker(e.clientY-rect.top);},{capture:true,passive:false});
 const finishPriceHold=e=>{if(pickerPointer!==e.pointerId)return;clearTimeout(pressTimer);pressTimer=null;if(pickerActive){chart.applyOptions({handleScroll:true,handleScale:true});}pressOrigin=null;pickerPointer=-1;pickerActive=false;};
-wrap.addEventListener('pointerup',finishPriceHold);wrap.addEventListener('pointercancel',finishPriceHold);
+document.addEventListener('pointerup',finishPriceHold,true);document.addEventListener('pointercancel',finishPriceHold,true);
 
 // Native Lightweight Charts touch gestures provide direct chart dragging and pinch zoom.
 chart.timeScale().subscribeVisibleTimeRangeChange(()=>{redrawDrawings();redrawAlerts();});
