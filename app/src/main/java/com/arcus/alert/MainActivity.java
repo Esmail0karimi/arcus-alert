@@ -70,11 +70,12 @@ buildChartQuickBar();
 }
 void buildChartQuickBar(){
 chartQuickBar.removeAllViews();chartQuickBar.setBackgroundColor(Color.rgb(14,22,37));chartQuickBar.setPadding(dp(8),dp(3),dp(8),dp(3));
-LinearLayout stack=column();stack.setGravity(Gravity.CENTER);chartQuickBar.addView(stack,new LinearLayout.LayoutParams(0,-1,1));
+LinearLayout stack=column();stack.setGravity(Gravity.CENTER);chartQuickBar.addView(stack,new LinearLayout.LayoutParams(-1,-1));
 chartPrevSymbolLabel=text("—",10,Color.rgb(105,122,146));chartPrevSymbolLabel.setGravity(Gravity.CENTER);chartPrevSymbolLabel.setSingleLine(true);chartPrevSymbolLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);chartPrevSymbolLabel.setAlpha(.52f);stack.addView(chartPrevSymbolLabel,new LinearLayout.LayoutParams(-1,0,1));chartPrevSymbolLabel.setOnClickListener(v->navigateWatchlist(-1));
-chartSymbolButton=text("Select market",14,Color.WHITE);chartSymbolButton.setTypeface(null,Typeface.BOLD);chartSymbolButton.setGravity(Gravity.CENTER);chartSymbolButton.setSingleLine(true);chartSymbolButton.setEllipsize(android.text.TextUtils.TruncateAt.END);stack.addView(chartSymbolButton,new LinearLayout.LayoutParams(-1,0,1.35f));chartSymbolButton.setOnClickListener(v->showChartSymbolPicker());
+LinearLayout middleRow=new LinearLayout(this);middleRow.setGravity(Gravity.CENTER_VERTICAL);stack.addView(middleRow,new LinearLayout.LayoutParams(-1,0,1.35f));
+chartSymbolButton=text("Select market",14,Color.WHITE);chartSymbolButton.setTypeface(null,Typeface.BOLD);chartSymbolButton.setGravity(Gravity.CENTER);chartSymbolButton.setSingleLine(true);chartSymbolButton.setEllipsize(android.text.TextUtils.TruncateAt.END);middleRow.addView(chartSymbolButton,new LinearLayout.LayoutParams(0,-1,1));chartSymbolButton.setOnClickListener(v->showChartSymbolPicker());
+chartTimeframeLabel=text("15m ▾",12,Color.WHITE);chartTimeframeLabel.setTypeface(null,Typeface.BOLD);chartTimeframeLabel.setGravity(Gravity.CENTER);chartTimeframeLabel.setPadding(dp(10),0,dp(8),0);middleRow.addView(chartTimeframeLabel,new LinearLayout.LayoutParams(dp(68),-1));chartTimeframeLabel.setOnClickListener(v->showChartTimeframeMenu());
 chartNextSymbolLabel=text("—",10,Color.rgb(105,122,146));chartNextSymbolLabel.setGravity(Gravity.CENTER);chartNextSymbolLabel.setSingleLine(true);chartNextSymbolLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);chartNextSymbolLabel.setAlpha(.52f);stack.addView(chartNextSymbolLabel,new LinearLayout.LayoutParams(-1,0,1));chartNextSymbolLabel.setOnClickListener(v->navigateWatchlist(1));
-chartTimeframeLabel=text("15m ▾",12,Color.WHITE);chartTimeframeLabel.setTypeface(null,Typeface.BOLD);chartTimeframeLabel.setGravity(Gravity.CENTER);chartTimeframeLabel.setPadding(dp(12),0,dp(8),0);chartQuickBar.addView(chartTimeframeLabel,new LinearLayout.LayoutParams(dp(68),-1));chartTimeframeLabel.setOnClickListener(v->showChartTimeframeMenu());
 if(chartTfSpinner!=null)chartTfSpinner.setVisibility(View.GONE);updateChartQuickBar();
 }
 void updateChartQuickBar(){
