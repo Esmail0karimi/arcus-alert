@@ -114,9 +114,9 @@ if(mainScroll!=null)mainScroll.post(()->mainScroll.scrollTo(0,0));
 void loadChart(){
 final long requestId=++chartLoadRequestId;
 if(chartView==null||chartSymbol().isEmpty()){if(chartStatus!=null)chartStatus.setText("Waiting for Arcus market list…");return;}
-final String symbol=chartSymbol(),tf=chartTfSpinner.getSelectedItem().toString();updateChartQuickBar();chartStatus.setText("Loading "+symbol+" · "+tf+" candles…");
+final String symbol=chartSymbol(),tf=chartTfSpinner.getSelectedItem().toString();updateChartQuickBar();chartView.setSymbol(symbol);chartStatus.setText("Loading "+symbol+" · "+tf+" candles…");
 new Thread(()->{HttpURLConnection c=null;try{
-long to=System.currentTimeMillis()*1000L;URL u=new URL("https://api.arcus.xyz/v1/candles?market="+java.net.URLEncoder.encode(symbol,"UTF-8")+"&timeframe="+tf+"&to="+to+"&countback=180");
+long to=System.currentTimeMillis()*1000L;URL u=new URL("https://api.arcus.xyz/v1/candles?market="+java.net.URLEncoder.encode(symbol,"UTF-8")+"&timeframe="+tf+"&to="+to+"&countback=500");
 c=(HttpURLConnection)u.openConnection();c.setConnectTimeout(5000);c.setReadTimeout(7000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");
 int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);
 if(code<200||code>=300)throw new Exception("Arcus API HTTP "+code+": "+out.toString("UTF-8"));
