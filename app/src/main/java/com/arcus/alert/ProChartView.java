@@ -124,8 +124,8 @@ public class ProChartView extends WebView {
 #overlay{position:absolute;inset:0;pointer-events:none;z-index:5}
 #drawCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #alertLayer{position:absolute;inset:0;pointer-events:none}
-.alertLine{position:absolute;left:0;right:0;height:22px;transform:translateY(-11px);pointer-events:auto;touch-action:none}
-.alertLine:before{content:'';position:absolute;left:0;right:0;top:10px;border-top:1px dashed #4aaaff}
+.alertLine{position:absolute;left:0;right:0;height:40px;transform:translateY(-20px);pointer-events:auto;touch-action:none;cursor:ns-resize}
+.alertLine:before{content:'';position:absolute;left:0;right:0;top:19px;border-top:1px dashed #4aaaff}
 .alertTag{position:absolute;right:2px;top:1px;background:#245b87;color:#fff;border-radius:4px;padding:3px 5px;font-size:9px}.newAlertLine{position:absolute;left:0;right:0;height:30px;transform:translateY(-15px);pointer-events:none;z-index:9}.newAlertLine:before{content:'';position:absolute;left:0;right:0;top:14px;border-top:1px solid #f6c65b}.newAlertTag{position:absolute;right:34px;top:2px;background:#8a6822;color:#fff;border-radius:4px;padding:4px 6px;font-size:9px;font-weight:bold}.pricePickPlus{position:absolute;right:3px;top:0;width:28px;height:28px;border:0;border-radius:6px;background:#f6c65b;color:#17202d;font-size:22px;font-weight:bold;line-height:26px;padding:0;pointer-events:auto;touch-action:manipulation}
 #crossPlus{display:none!important;position:absolute;right:4px;width:25px;height:25px;border:0;border-radius:50%;background:#34d399;color:#071b17;font-size:20px;font-weight:bold;z-index:8;padding:0}
 #legend{position:absolute;left:5px;top:4px;z-index:6;font-size:9px;color:#d6e2f2;background:#0d1726cc;padding:4px 6px;border-radius:4px;pointer-events:none}
