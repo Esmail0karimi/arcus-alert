@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, ipcMain, net } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, ipcMain, net, dialog } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
@@ -135,3 +135,5 @@ ipcMain.on('arcus:alert', (_event, payload) => {
   }
 });
 ipcMain.on('arcus:stop-sound', () => { if (alarmTimer) clearInterval(alarmTimer); alarmTimer = null; alarmUntil = 0; });
+
+ipcMain.handle('arcus:choose-sound', async () => { const result = await dialog.showOpenDialog(mainWindow, { title: 'Choose alert sound', properties: ['openFile'], filters: [{ name: 'Audio', extensions: ['mp3','wav','ogg','m4a'] }] }); return result.canceled || !result.filePaths[0] ? null : result.filePaths[0]; });
