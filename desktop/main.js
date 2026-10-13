@@ -3,7 +3,28 @@ const path = require('path');
 
 let mainWindow = null;
 let tray = null;
-let quitting = false;\nlet pollTimer = null;\nlet alarmTimer = null;\nlet alarmUntil = 0;\nasync function pollArcusPrices() {\n  try {\n    const response = await fetch('https://api.arcus.xyz/v1/prices', { headers: { Accept: 'application/json' }, cache: 'no-store' });\n    if (!response.ok) throw new Error('Arcus HTTP ' + response.status);\n    const data = await response.json();\n    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected Arcus response');\n    const prices = {};\n    for (const [marketId, item] of Object.entries(data)) {\n      if (!item || !item.marketDisplayName) continue;\n      const raw = item.markPrice ?? item.oraclePrice;\n      const price = Number(raw);\n      if (Number.isFinite(price)) prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId };\n    }\n    if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');\n    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });\n  } catch (error) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:price-error', error.message); }\n}\n
+let quitting = false;
+let pollTimer = null;
+let alarmTimer = null;
+let alarmUntil = 0;
+async function pollArcusPrices() {
+  try {
+    const response = await fetch('https://api.arcus.xyz/v1/prices', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error('Arcus HTTP ' + response.status);
+    const data = await response.json();
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected Arcus response');
+    const prices = {};
+    for (const [marketId, item] of Object.entries(data)) {
+      if (!item || !item.marketDisplayName) continue;
+      const raw = item.markPrice ?? item.oraclePrice;
+      const price = Number(raw);
+      if (Number.isFinite(price)) prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId };
+    }
+    if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });
+  } catch (error) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:price-error', error.message); }
+}
+
 
 const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#09182a"/><path d="M5 26 15 5h5l7 21h-6l-4-13-6 13z" fill="#00dcd2"/></svg>`;
 
@@ -69,4 +90,18 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => { quitting = true; if (pollTimer) clearInterval(pollTimer); });
 app.on('window-all-closed', event => { event.preventDefault?.(); });
-app.on('activate', showWindow);\nipcMain.on('arcus:minimize-to-tray', () => { if (mainWindow) mainWindow.hide(); });\nipcMain.on('arcus:alert', (_event, payload) => {\n  const title = String(payload?.title || 'Arcus Alert');\n  const body = String(payload?.body || 'Price alert triggered');\n  if (Notification.isSupported()) new Notification({ title, body, urgency: 'critical' }).show();\n  if (alarmTimer) clearInterval(alarmTimer);\n  alarmUntil = Date.now() + 60000;\n  shell.beep();\n  alarmTimer = setInterval(() => {\n    if (Date.now() >= alarmUntil) { clearInterval(alarmTimer); alarmTimer = null; return; }\n    shell.beep();\n  }, 5000);\n});\nipcMain.on('arcus:stop-sound', () => { if (alarmTimer) clearInterval(alarmTimer); alarmTimer = null; alarmUntil = 0; });
+app.on('activate', showWindow);
+ipcMain.on('arcus:minimize-to-tray', () => { if (mainWindow) mainWindow.hide(); });
+ipcMain.on('arcus:alert', (_event, payload) => {
+  const title = String(payload?.title || 'Arcus Alert');
+  const body = String(payload?.body || 'Price alert triggered');
+  if (Notification.isSupported()) new Notification({ title, body, urgency: 'critical' }).show();
+  if (alarmTimer) clearInterval(alarmTimer);
+  alarmUntil = Date.now() + 60000;
+  shell.beep();
+  alarmTimer = setInterval(() => {
+    if (Date.now() >= alarmUntil) { clearInterval(alarmTimer); alarmTimer = null; return; }
+    shell.beep();
+  }, 5000);
+});
+ipcMain.on('arcus:stop-sound', () => { if (alarmTimer) clearInterval(alarmTimer); alarmTimer = null; alarmUntil = 0; });
