@@ -86,6 +86,9 @@ app.whenReady().then(() => {
   Notification.requestPermission?.();
   createTray();
   createWindow();
+  // Start Arcus market polling immediately and keep the desktop feed fresh.
+  pollArcusPrices();
+  pollTimer = setInterval(pollArcusPrices, 1000);
 });
 
 app.on('before-quit', () => { quitting = true; if (pollTimer) clearInterval(pollTimer); });
