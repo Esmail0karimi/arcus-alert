@@ -10,6 +10,9 @@ let pollDelay = 15000;
 let pollInFlight = false;
 let alarmTimer = null;
 let alarmUntil = 0;
+let notificationRepeatTimer = null;
+let activeNotification = null;
+let activeNotificationSymbol = '';
 async function pollArcusPrices() {
   if (pollInFlight) return;
   pollInFlight = true;
@@ -118,10 +121,44 @@ app.on('before-quit', () => { quitting = true; if (pollTimer) clearTimeout(pollT
 app.on('window-all-closed', event => { event.preventDefault?.(); });
 app.on('activate', showWindow);
 ipcMain.on('arcus:minimize-to-tray', () => { if (mainWindow) mainWindow.hide(); });
+function clearPersistentNotification() {
+  if (notificationRepeatTimer) clearInterval(notificationRepeatTimer);
+  notificationRepeatTimer = null;
+  if (activeNotification) { try { activeNotification.close(); } catch {} }
+  activeNotification = null;
+}
+function showPersistentNotification() {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({
+    title: activeNotification?.__title || 'Arcus Alert',
+    body: activeNotification?.__body || 'Price alert triggered',
+    urgency: 'critical',
+    silent: true
+  });
+  activeNotification = notification;
+  notification.on('click', () => {
+    const targetSymbol = activeNotificationSymbol;
+    clearPersistentNotification();
+    showWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const sendNavigation = () => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:notification-clicked', targetSymbol);
+      };
+      if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', sendNavigation);
+      else setTimeout(sendNavigation, 250);
+    }
+  });
+  notification.show();
+}
 ipcMain.on('arcus:alert', (_event, payload) => {
   const title = String(payload?.title || 'Arcus Alert');
   const body = String(payload?.body || 'Price alert triggered');
-  if (Notification.isSupported()) new Notification({ title, body, urgency: 'critical', silent: true }).show();
+  activeNotificationSymbol = String(payload?.symbol || '');
+  clearPersistentNotification();
+  // Re-show the Windows toast periodically until the user clicks it.
+  activeNotification = { __title: title, __body: body };
+  showPersistentNotification();
+  notificationRepeatTimer = setInterval(() => showPersistentNotification(), 10000);
   if (alarmTimer) clearInterval(alarmTimer);
   alarmUntil = Date.now() + 60000;
   const sound = String(payload?.sound || 'double');
