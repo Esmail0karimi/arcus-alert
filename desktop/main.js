@@ -120,13 +120,18 @@ ipcMain.on('arcus:minimize-to-tray', () => { if (mainWindow) mainWindow.hide(); 
 ipcMain.on('arcus:alert', (_event, payload) => {
   const title = String(payload?.title || 'Arcus Alert');
   const body = String(payload?.body || 'Price alert triggered');
-  if (Notification.isSupported()) new Notification({ title, body, urgency: 'critical' }).show();
+  if (Notification.isSupported()) new Notification({ title, body, urgency: 'critical', silent: true }).show();
   if (alarmTimer) clearInterval(alarmTimer);
   alarmUntil = Date.now() + 60000;
-  shell.beep();
-  alarmTimer = setInterval(() => {
-    if (Date.now() >= alarmUntil) { clearInterval(alarmTimer); alarmTimer = null; return; }
-    shell.beep();
-  }, 5000);
+  const sound = String(payload?.sound || 'double');
+  const pattern = sound === 'triple' ? [0, 350, 700] : sound === 'double' ? [0, 500] : sound === 'beep' ? [0] : [];
+  if (pattern.length) {
+    const play = () => pattern.forEach(delay => setTimeout(() => { if (Date.now() < alarmUntil) shell.beep(); }, delay));
+    play();
+    alarmTimer = setInterval(() => {
+      if (Date.now() >= alarmUntil) { clearInterval(alarmTimer); alarmTimer = null; return; }
+      play();
+    }, 5000);
+  }
 });
 ipcMain.on('arcus:stop-sound', () => { if (alarmTimer) clearInterval(alarmTimer); alarmTimer = null; alarmUntil = 0; });
