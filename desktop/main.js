@@ -5,9 +5,14 @@ let mainWindow = null;
 let tray = null;
 let quitting = false;
 let pollTimer = null;
+let pollDelay = 5000;
+let pollInFlight = false;
 let alarmTimer = null;
 let alarmUntil = 0;
 async function pollArcusPrices() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  let failed = false;
   try {
     // Use Electron's Chromium-backed network stack instead of Node's global fetch.
     const response = await net.fetch('https://api.arcus.xyz/v1/prices', {
@@ -15,6 +20,7 @@ async function pollArcusPrices() {
       cache: 'no-store'
     });
     if (!response.ok) {
+      failed = true;
       const detail = (await response.text()).slice(0, 240);
       throw new Error('Arcus HTTP ' + response.status + (detail ? ': ' + detail : ''));
     }
@@ -29,7 +35,12 @@ async function pollArcusPrices() {
     }
     if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });
-  } catch (error) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:price-error', error.message); }
+  } catch (error) { failed = true; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:price-error', error.message); }
+  finally {
+    pollInFlight = false;
+    pollDelay = failed ? Math.min(Math.max(pollDelay * 2, 10000), 60000) : 5000;
+    if (!quitting) { clearTimeout(pollTimer); pollTimer = setTimeout(pollArcusPrices, pollDelay); }
+  }
 }
 
 
@@ -41,7 +52,7 @@ function createWindow() {
     height: 820,
     minWidth: 760,
     minHeight: 620,
-    show: false,
+    show: true,
     backgroundColor: '#0b1220',
     autoHideMenuBar: true,
     webPreferences: {
@@ -95,10 +106,10 @@ app.whenReady().then(() => {
   createWindow();
   // Start Arcus market polling immediately and keep the desktop feed fresh.
   pollArcusPrices();
-  pollTimer = setInterval(pollArcusPrices, 1000);
+  pollTimer = setTimeout(pollArcusPrices, 5000);
 });
 
-app.on('before-quit', () => { quitting = true; if (pollTimer) clearInterval(pollTimer); });
+app.on('before-quit', () => { quitting = true; if (pollTimer) clearTimeout(pollTimer); });
 app.on('window-all-closed', event => { event.preventDefault?.(); });
 app.on('activate', showWindow);
 ipcMain.on('arcus:minimize-to-tray', () => { if (mainWindow) mainWindow.hide(); });
