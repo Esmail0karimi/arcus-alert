@@ -1,13 +1,10 @@
 name: Build Arcus Alert Windows Portable
-
 on:
   workflow_dispatch:
   push:
     paths:
       - 'desktop/**'
-      - 'index.html'
       - '.github/workflows/build-windows.yml'
-
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -20,12 +17,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Prepare desktop app files
-        run: |
-          New-Item -ItemType Directory -Force desktop/app | Out-Null
-          Copy-Item index.html desktop/app/index.html
-          Copy-Item manifest.webmanifest desktop/app/manifest.webmanifest
-          Copy-Item sw.js desktop/app/sw.js
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - name: Install dependencies
         working-directory: desktop
         run: npm install
