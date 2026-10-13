@@ -6,11 +6,15 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win portable"
+    "dist:win": "npm run build && electron-builder --win portable",
+    "build": "vite build"
   },
   "devDependencies": {
     "electron": "35.7.5",
-    "electron-builder": "26.0.12"
+    "electron-builder": "26.0.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
   },
   "build": {
     "appId": "xyz.arcus.alert.desktop",
@@ -21,18 +25,23 @@
     "files": [
       "main.js",
       "preload.js",
-      "app/index.html",
-      "app/manifest.webmanifest",
-      "app/sw.js"
+      "renderer/**/*"
     ],
     "win": {
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "Arcus-Alert-Windows-Portable-${version}.${ext}"
     }
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lightweight-charts": "^5.0.8"
   }
 }
