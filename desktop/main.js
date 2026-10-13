@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, ipcMain, net } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
@@ -9,8 +9,15 @@ let alarmTimer = null;
 let alarmUntil = 0;
 async function pollArcusPrices() {
   try {
-    const response = await fetch('https://api.arcus.xyz/v1/prices', { headers: { Accept: 'application/json' }, cache: 'no-store' });
-    if (!response.ok) throw new Error('Arcus HTTP ' + response.status);
+    // Use Electron's Chromium-backed network stack instead of Node's global fetch.
+    const response = await net.fetch('https://api.arcus.xyz/v1/prices', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 240);
+      throw new Error('Arcus HTTP ' + response.status + (detail ? ': ' + detail : ''));
+    }
     const data = await response.json();
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected Arcus response');
     const prices = {};
