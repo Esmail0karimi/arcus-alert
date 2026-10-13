@@ -13,6 +13,8 @@ let alarmUntil = 0;
 let notificationRepeatTimer = null;
 let activeNotification = null;
 let activeNotificationSymbol = '';
+let activeNotificationTitle = 'Arcus Alert';
+let activeNotificationBody = 'Price alert triggered';
 async function pollArcusPrices() {
   if (pollInFlight) return;
   pollInFlight = true;
@@ -129,9 +131,10 @@ function clearPersistentNotification() {
 }
 function showPersistentNotification() {
   if (!Notification.isSupported()) return;
+  if (activeNotification) { try { activeNotification.close(); } catch {} }
   const notification = new Notification({
-    title: activeNotification?.__title || 'Arcus Alert',
-    body: activeNotification?.__body || 'Price alert triggered',
+    title: activeNotificationTitle,
+    body: activeNotificationBody,
     urgency: 'critical',
     silent: true
   });
@@ -156,7 +159,8 @@ ipcMain.on('arcus:alert', (_event, payload) => {
   activeNotificationSymbol = String(payload?.symbol || '');
   clearPersistentNotification();
   // Re-show the Windows toast periodically until the user clicks it.
-  activeNotification = { __title: title, __body: body };
+  activeNotificationTitle = title;
+  activeNotificationBody = body;
   showPersistentNotification();
   notificationRepeatTimer = setInterval(() => showPersistentNotification(), 10000);
   if (alarmTimer) clearInterval(alarmTimer);
