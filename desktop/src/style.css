@@ -9,3 +9,7 @@ nav{position:relative;flex:0 0 76px;min-height:76px;z-index:20;box-shadow:0 -8px
 .positive{color:#00d7ae;font-size:12px;font-weight:700}
 .negative{color:#f06470;font-size:12px;font-weight:700}
 .connection{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.chartbox{position:relative}
+.chart-crosshair-add{position:absolute;right:4px;z-index:40;width:30px;height:30px;padding:0;border:1px solid #00e2cc;border-radius:7px;background:#00c9b5;color:#03131d;font-size:22px;font-weight:800;line-height:28px;box-shadow:0 2px 12px #0009;cursor:pointer}
+.chart-crosshair-add:hover{filter:brightness(1.15);transform:scale(1.04)}
