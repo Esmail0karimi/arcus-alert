@@ -5,7 +5,7 @@ let mainWindow = null;
 let tray = null;
 let quitting = false;
 let pollTimer = null;
-let pollDelay = 5000;
+let pollDelay = 15000;
 let pollInFlight = false;
 let alarmTimer = null;
 let alarmUntil = 0;
@@ -31,14 +31,18 @@ async function pollArcusPrices() {
       if (!item || !item.marketDisplayName) continue;
       const raw = item.markPrice ?? item.oraclePrice;
       const price = Number(raw);
-      if (Number.isFinite(price)) prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId };
+      if (Number.isFinite(price)) {
+        const changeRaw = item.priceChangePercent24h ?? item.change24hPercent ?? item.priceChange24hPercent ?? item.changePercent24h;
+        const change24h = changeRaw == null ? null : Number(changeRaw);
+        prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId, change24h: Number.isFinite(change24h) ? change24h : null };
+      }
     }
     if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });
-  } catch (error) { failed = true; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:price-error', error.message); }
+  } catch (error) { failed = true; if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) mainWindow.webContents.send('arcus:price-error', error.message); }
   finally {
     pollInFlight = false;
-    pollDelay = failed ? Math.min(Math.max(pollDelay * 2, 10000), 60000) : 5000;
+    pollDelay = failed ? Math.min(Math.max(pollDelay * 2, 30000), 120000) : 15000;
     if (!quitting) { clearTimeout(pollTimer); pollTimer = setTimeout(pollArcusPrices, pollDelay); }
   }
 }
@@ -106,7 +110,7 @@ app.whenReady().then(() => {
   createWindow();
   // Start Arcus market polling immediately and keep the desktop feed fresh.
   pollArcusPrices();
-  pollTimer = setTimeout(pollArcusPrices, 5000);
+  pollTimer = setTimeout(pollArcusPrices, 15000);
 });
 
 app.on('before-quit', () => { quitting = true; if (pollTimer) clearTimeout(pollTimer); });
