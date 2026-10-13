@@ -21,9 +21,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "../index.html",
-      "../manifest.webmanifest",
-      "../sw.js"
+      "app/index.html",
+      "app/manifest.webmanifest",
+      "app/sw.js"
     ],
     "win": {
       "target": [
