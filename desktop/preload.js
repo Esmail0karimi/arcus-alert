@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('arcusDesktop', Object.freeze({
   onPrices: callback => ipcRenderer.on('arcus:prices', (_event, data) => callback(data)),
   onPriceError: callback => ipcRenderer.on('arcus:price-error', (_event, message) => callback(message)),
   alert: payload => ipcRenderer.send('arcus:alert', payload),
+  chooseSound: () => ipcRenderer.invoke('arcus:choose-sound'),
   stopSound: () => ipcRenderer.send('arcus:stop-sound')
 }));
