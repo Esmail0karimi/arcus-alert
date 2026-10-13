@@ -27,7 +27,7 @@ Iterator<String> it=stats.keys();while(it.hasNext()){String symbol=it.next();JSO
 }
 JSONObject find(JSONObject d,String symbol){Iterator<String> it=d.keys();while(it.hasNext()){String key=it.next();JSONObject o=d.optJSONObject(key);if(o!=null&&(symbol.equalsIgnoreCase(key)||symbol.equalsIgnoreCase(o.optString("marketDisplayName"))||symbol.equalsIgnoreCase(o.optString("symbol"))||symbol.equalsIgnoreCase(o.optString("marketId"))))return o;}return null;}
 void alert(String sym,double target,double price){
-String direction=price>=target?"above":"below";String body=sym+" "+direction+" "+String.format(Locale.US,"%,.8f",target)+" · Current price "+String.format(Locale.US,"%,.8f",price);
+String direction="cross";String body=sym+" "+direction+" "+String.format(Locale.US,"%,.0f",target)+" · Current price "+String.format(Locale.US,"%,.0f",price);
 String key=sym+"|"+target+"|"+System.currentTimeMillis();
 int notificationId=10000+(key.hashCode()&0x3fffffff);
 Intent openIntent=new Intent(this,MainActivity.class);openIntent.putExtra("open_chart_alert",true);openIntent.putExtra("alert_symbol",sym);openIntent.putExtra("alert_target",target);openIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -36,7 +36,7 @@ PendingIntent contentPending=PendingIntent.getActivity(this,notificationId,openI
 Intent stopIntent=new Intent(this,PriceMonitorService.class);stopIntent.setAction("STOP_ALERT_SOUND");
 PendingIntent stopPending=PendingIntent.getService(this,notificationId,stopIntent,flags);
 Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,ALERT_CHANNEL):new Notification.Builder(this);
-b.setContentTitle(sym+" "+direction+" "+String.format(Locale.US,"%,.8f",target)).setContentText("Current price "+String.format(Locale.US,"%,.8f",price))
+b.setContentTitle(sym+" "+direction+" "+String.format(Locale.US,"%,.0f",target)).setContentText("Current price "+String.format(Locale.US,"%,.0f",price))
 .setStyle(new Notification.BigTextStyle().bigText(body)).setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
 .setContentIntent(contentPending).setAutoCancel(true).setOngoing(false).setPriority(Notification.PRIORITY_MAX)
 .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC).setDefaults(Notification.DEFAULT_VIBRATE)

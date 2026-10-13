@@ -1,0 +1,48 @@
+{
+  "name": "arcus-alert-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arcus Alert portable desktop app for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "npm run build && electron-builder --win portable",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "electron": "35.7.5",
+    "electron-builder": "26.0.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
+  },
+  "build": {
+    "appId": "xyz.arcus.alert.desktop",
+    "productName": "Arcus Alert",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Arcus-Alert-Windows-Portable-${version}.${ext}",
+      "icon": "arcus.ico"
+    }
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lightweight-charts": "^5.0.8"
+  }
+}
