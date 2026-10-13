@@ -1,0 +1,38 @@
+{
+  "name": "arcus-alert-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arcus Alert portable desktop app for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "35.7.5",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "xyz.arcus.alert.desktop",
+    "productName": "Arcus Alert",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "../index.html",
+      "../manifest.webmanifest",
+      "../sw.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Arcus-Alert-Windows-Portable-${version}.${ext}"
+    }
+  }
+}
