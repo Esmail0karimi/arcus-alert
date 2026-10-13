@@ -36,7 +36,8 @@
           ]
         }
       ],
-      "artifactName": "Arcus-Alert-Windows-Portable-${version}.${ext}"
+      "artifactName": "Arcus-Alert-Windows-Portable-${version}.${ext}",
+      "icon": "arcus.ico"
     }
   },
   "dependencies": {
