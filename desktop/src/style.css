@@ -52,7 +52,7 @@ main:has(.chart-workspace){width:100%;max-width:none;margin:0;padding:8px 12px 1
 /* Minimal chart workspace: one horizontal-line tool, full-height plot */
 main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .chartbar{gap:7px;margin-bottom:3px}
-.chart-workspace{height:calc(100dvh - 170px);grid-template-columns:34px minmax(0,1fr) 225px;gap:6px;min-height:0}
+.chart-workspace{height:calc(100dvh - 170px);grid-template-columns:34px minmax(0,1fr) 245px;gap:6px;min-height:0}
 .drawing-rail{height:100%;align-items:center;justify-content:flex-start;gap:7px;padding:7px 2px;overflow:visible}
 .drawing-rail button{width:29px;height:32px;min-height:32px;font-size:19px}
 .drawing-style{display:flex;align-items:center;justify-content:center;width:29px;height:29px;cursor:pointer}
@@ -77,7 +77,7 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 
 /* Focused refinements: preserve existing app layout and features */
 .watchlist-panel{min-width:0}
-.watch-items button{grid-template-columns:minmax(78px,1fr) 54px 78px!important;gap:4px!important;padding:9px 5px!important}
+.watch-items button{grid-template-columns:minmax(85px,1fr) 48px 76px!important;gap:4px!important;padding:9px 5px!important}
 .watch-items button b{white-space:nowrap;overflow:visible;text-overflow:clip;font-size:10px;letter-spacing:-.2px}
 .watch-items button i,.watch-items button span{white-space:nowrap;text-align:right;font-size:10px;font-variant-numeric:tabular-nums}
 .watch-items button em{display:none!important}
@@ -99,5 +99,5 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .line-editor input[type=color]{width:54px;height:34px;padding:3px;background:#071526;border:1px solid #2a4560;border-radius:7px}
 .line-editor-actions{display:flex;justify-content:flex-end;align-items:center;gap:7px;margin-top:5px;flex-wrap:wrap}
 .line-editor-actions button{padding:8px 12px;font-size:11px}
-@media(max-width:900px){.watch-items button{grid-template-columns:minmax(70px,1fr) 48px 70px!important}.marketrow{grid-template-columns:minmax(90px,1fr) 65px 100px!important}}
+@media(max-width:900px){.chart-workspace{grid-template-columns:32px minmax(0,1fr) 225px}.watch-items button{grid-template-columns:minmax(78px,1fr) 46px 68px!important}.marketrow{grid-template-columns:minmax(90px,1fr) 65px 100px!important}}
 @media(max-width:680px){.watch-items button{grid-template-columns:minmax(76px,1fr) 52px 74px!important}.marketrow{grid-template-columns:minmax(90px,1fr) 60px 90px!important}}
