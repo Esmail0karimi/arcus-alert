@@ -38,10 +38,31 @@ async function pollArcusPrices() {
       const raw = item.markPrice ?? item.oraclePrice;
       const price = Number(raw);
       if (Number.isFinite(price)) {
-        const changeRaw = item.priceChangePercent24h ?? item.priceChangePercent24H ?? item.change24hPercent ?? item.priceChange24hPercent ?? item.changePercent24h ?? item.percentChange24h ?? item.change24hPct ?? item.priceChange24hPct ?? item.priceChange24h ?? item.change24h;
-        const change24h = changeRaw == null ? null : Number(changeRaw);
-        prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId, change24h: Number.isFinite(change24h) ? change24h : null };
+        prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId, change24h: null };
       }
+    }
+    // Arcus exposes 24h market statistics on /v1/markets (not /v1/prices).
+    // priceChange24h is a fraction, so convert it to percentage points for the UI.
+    try {
+      const marketResponse = await net.fetch('https://api.arcus.xyz/v1/markets', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      if (marketResponse.ok) {
+        const marketPayload = await marketResponse.json();
+        const markets = Array.isArray(marketPayload) ? marketPayload : marketPayload.markets;
+        if (Array.isArray(markets)) {
+          for (const market of markets) {
+            const name = String(market?.marketDisplayName || '').toUpperCase();
+            if (!name || !prices[name]) continue;
+            const rawChange = market.priceChange24h;
+            const fraction = rawChange == null ? NaN : Number(rawChange);
+            prices[name].change24h = Number.isFinite(fraction) ? fraction * 100 : null;
+          }
+        }
+      }
+    } catch (marketStatsError) {
+      // Keep live prices available if the separate 24h statistics request fails.
     }
     if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });
