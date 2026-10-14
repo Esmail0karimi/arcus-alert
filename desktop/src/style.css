@@ -101,3 +101,14 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .line-editor-actions button{padding:8px 12px;font-size:11px}
 @media(max-width:900px){.chart-workspace{grid-template-columns:32px minmax(0,1fr) 225px}.watch-items button{grid-template-columns:minmax(78px,1fr) 46px 68px!important}.marketrow{grid-template-columns:minmax(90px,1fr) 65px 100px!important}}
 @media(max-width:680px){.watch-items button{grid-template-columns:minmax(76px,1fr) 52px 74px!important}.marketrow{grid-template-columns:minmax(90px,1fr) 60px 90px!important}}
+
+
+/* Compact market favorite control and fit all watchlist columns without horizontal scrolling */
+.marketrow{grid-template-columns:minmax(0,1fr) 22px 62px 92px!important;gap:7px!important}
+.marketrow>.market-favorite{width:22px!important;min-width:22px!important;height:22px!important;min-height:22px!important;padding:0!important;display:flex!important;align-items:center;justify-content:center;background:transparent!important;border:0!important;border-radius:5px!important;color:#a9bfd8!important;font-size:15px!important;line-height:1!important}
+.marketrow>.market-favorite:hover{background:#17334b!important;color:#00dcd2!important}
+.watch-items{overflow-x:hidden!important}
+.watch-items button{grid-template-columns:minmax(0,1fr) 43px 62px!important;gap:3px!important;padding:8px 4px!important;min-width:0}
+.watch-items button b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;letter-spacing:-.25px}
+.watch-items button i,.watch-items button span{min-width:0;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:9px}
+@media(max-width:900px){.marketrow{grid-template-columns:minmax(0,1fr) 20px 56px 82px!important;gap:4px!important}.watch-items button{grid-template-columns:minmax(0,1fr) 39px 56px!important;gap:2px!important}}
