@@ -38,7 +38,7 @@ async function pollArcusPrices() {
       const raw = item.markPrice ?? item.oraclePrice;
       const price = Number(raw);
       if (Number.isFinite(price)) {
-        const changeRaw = item.priceChangePercent24h ?? item.change24hPercent ?? item.priceChange24hPercent ?? item.changePercent24h;
+        const changeRaw = item.priceChangePercent24h ?? item.priceChangePercent24H ?? item.change24hPercent ?? item.priceChange24hPercent ?? item.changePercent24h ?? item.percentChange24h ?? item.change24hPct ?? item.priceChange24hPct ?? item.priceChange24h ?? item.change24h;
         const change24h = changeRaw == null ? null : Number(changeRaw);
         prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId, change24h: Number.isFinite(change24h) ? change24h : null };
       }
