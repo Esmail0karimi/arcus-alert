@@ -112,3 +112,8 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .watch-items button b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;letter-spacing:-.25px}
 .watch-items button i,.watch-items button span{min-width:0;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:9px}
 @media(max-width:900px){.marketrow{grid-template-columns:minmax(0,1fr) 20px 56px 82px!important;gap:4px!important}.watch-items button{grid-template-columns:minmax(0,1fr) 39px 56px!important;gap:2px!important}}
+
+
+/* Hide the native watchlist scrollbar while preserving wheel and middle-button scrolling */
+.watch-items{scrollbar-width:none!important;-ms-overflow-style:none!important;overflow-y:auto!important;overscroll-behavior:contain}
+.watch-items::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
