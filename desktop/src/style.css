@@ -48,3 +48,29 @@ main:has(.chart-workspace){width:100%;max-width:none;margin:0;padding:8px 12px 1
 .chartbox.drawing-active{cursor:crosshair}.drawing-overlay{position:absolute;inset:0;width:100%;height:100%;z-index:12;overflow:visible;touch-action:none}.drawing-overlay line{vector-effect:non-scaling-stroke}.alert-price-overlay{z-index:18}
 @media(max-width:900px){.chart-workspace{grid-template-columns:35px minmax(0,1fr) 190px}.watchlist-panel{padding:6px}.watch-items button{padding:7px 4px}.chartbar{gap:5px}}
 @media(max-width:680px){main:has(.chart-workspace){padding:6px}.chart-workspace{grid-template-columns:32px minmax(0,1fr);height:auto}.watchlist-panel{grid-column:2;max-height:175px;height:175px}.chart-center .chartbox{height:44vh;min-height:240px;flex:none}.indicator-panels{grid-template-columns:1fr}.chartbar{flex-wrap:wrap}.chart-symbol-area{min-width:100%}}
+
+/* Minimal chart workspace: one horizontal-line tool, full-height plot */
+main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
+.chartbar{gap:7px;margin-bottom:3px}
+.chart-workspace{height:calc(100dvh - 170px);grid-template-columns:34px minmax(0,1fr) 225px;gap:6px;min-height:0}
+.drawing-rail{height:100%;align-items:center;justify-content:flex-start;gap:7px;padding:7px 2px;overflow:visible}
+.drawing-rail button{width:29px;height:32px;min-height:32px;font-size:19px}
+.drawing-style{display:flex;align-items:center;justify-content:center;width:29px;height:29px;cursor:pointer}
+.drawing-style input{width:23px;height:23px;padding:0;border:0;background:transparent;cursor:pointer}
+.drawing-width{width:29px!important;min-width:29px!important;padding:4px 1px!important;font-size:10px!important}
+.chart-center{display:flex;flex-direction:column;min-width:0;min-height:0}
+.chart-center .chartbox{height:auto;min-height:0;flex:1 1 auto;width:100%}
+.chartnote{padding:2px 2px 4px;font-size:10px;flex:0 0 auto}
+.chartfoot{padding:3px 2px;font-size:10px;flex:0 0 auto}
+.watchlist-panel{height:100%;max-height:none;min-height:0;overflow:hidden}
+.watch-tabs{grid-template-columns:1fr 1fr}
+.watch-items button{display:grid;grid-template-columns:minmax(0,1fr) 64px 78px 18px;align-items:center;gap:5px}
+.watch-items button b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watch-items button i{font-style:normal;text-align:right;font-size:10px;font-weight:700;white-space:nowrap}
+.watch-items button span{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.watch-items button em{justify-self:end}
+.marketrow{display:grid;grid-template-columns:minmax(0,1fr) 85px 125px 34px;align-items:center;gap:12px}
+.marketrow>small{text-align:right;white-space:nowrap}
+.marketrow>strong{text-align:right;white-space:nowrap}
+@media(max-width:900px){.chart-workspace{grid-template-columns:32px minmax(0,1fr) 195px;gap:5px}.watch-items button{grid-template-columns:minmax(0,1fr) 52px 68px 15px;gap:3px}}
+@media(max-width:680px){main:has(.chart-workspace){padding:5px}.chart-workspace{grid-template-columns:30px minmax(0,1fr);height:auto}.watchlist-panel{grid-column:2;max-height:160px;height:160px}.chart-center .chartbox{height:48vh;min-height:250px;flex:none}.drawing-rail{grid-row:1}.marketrow{grid-template-columns:minmax(0,1fr) 65px 95px 28px;gap:6px}}
