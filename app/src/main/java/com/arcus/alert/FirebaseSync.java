@@ -13,6 +13,7 @@ import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.SetOptions;
+import com.google.firebase.messaging.FirebaseMessaging;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.*;
@@ -43,6 +44,7 @@ public final class FirebaseSync {
             }
             auth = FirebaseAuth.getInstance();
             db = FirebaseFirestore.getInstance();
+            FirebaseMessaging.getInstance().getToken().addOnSuccessListener(FirebaseSync::saveFcmToken);
             auth.addAuthStateListener(a -> {
                 if (listener != null) { listener.remove(); listener = null; }
                 if (a.getCurrentUser() == null) {
