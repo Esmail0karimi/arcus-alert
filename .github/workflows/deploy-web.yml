@@ -30,6 +30,8 @@ jobs:
         run: npm install
       - name: Build web app
         working-directory: desktop
+        env:
+          VITE_FIREBASE_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5
