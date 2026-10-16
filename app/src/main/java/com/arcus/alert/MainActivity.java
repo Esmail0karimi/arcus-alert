@@ -4,7 +4,7 @@ public class MainActivity extends Activity{
 static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,chartPage,watchlistPage,pages,appHeader,mainNav,appRoot,chartQuickBar;Button[] navButtons;TextView chartSymbolButton,chartPrevSymbolLabel,chartNextSymbolLabel,chartTimeframeLabel;ScrollView mainScroll;long chartLoadRequestId=0;long chartLoadStartedAt=0;String pendingAlertSymbol="";double pendingAlertTarget=0;boolean chartFullscreen=false;Button fullscreenButton;Spinner marketSpinner,modeSpinner,timeframeSpinner,chartMarketSpinner,chartTfSpinner;TextView status,livePrice,soundName,chartStatus;ProChartView chartView;EditText chartSearch;LinearLayout chartTools;final ArrayList<String> chartNames=new ArrayList<>();LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
 final Runnable refresh=new Runnable(){public void run(){refreshMarkets();handler.postDelayed(this,1000);}};
 boolean favoritesOnly=false;Button favoriteButton;int bg=Color.rgb(4,12,25),card=Color.rgb(9,24,42),muted=Color.rgb(137,160,184),accent=Color.rgb(0,220,210);
-public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);buildUi();startMonitor();handler.post(refresh);if(getIntent()!=null&&getIntent().getBooleanExtra("open_chart_alert",false))handleTriggeredAlertIntent(getIntent());}
+public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);buildUi();FirebaseSync.init(this,message->{if(status!=null)status.setText("●  "+message);});startMonitor();handler.post(refresh);if(getIntent()!=null&&getIntent().getBooleanExtra("open_chart_alert",false))handleTriggeredAlertIntent(getIntent());}
 int dp(float v){return(int)(v*getResources().getDisplayMetrics().density);}GradientDrawable shape(int color,int radius,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(stroke!=0)d.setStroke(dp(1),stroke);return d;}
 TextView text(String s,int z,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(color);return t;}TextView label(String s){TextView t=text(s,13,muted);t.setPadding(0,dp(12),0,dp(5));return t;}
 LinearLayout column(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;}LinearLayout card(){LinearLayout l=column();l.setPadding(dp(15),dp(13),dp(15),dp(13));l.setBackground(shape(card,16,Color.rgb(38,54,78)));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(l,p);return l;}
@@ -136,10 +136,21 @@ void moveChartAlert(int chartIndex,double price){try{JSONArray a=levels();String
 void showSettings(){
 LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),0);
 TextView connection=text("●  "+(status==null?"Connecting…":status.getText().toString()),13,accent);box.addView(connection);
+Button account=button(FirebaseSync.signedIn()?"Sign out · "+FirebaseSync.accountEmail():"Sign in / Create account");box.addView(account);
+account.setOnClickListener(v->{if(FirebaseSync.signedIn()){new AlertDialog.Builder(this).setMessage("Sign out from Arcus Alert cloud sync?").setNegativeButton("Cancel",null).setPositiveButton("Sign out",(d,w)->{FirebaseSync.signOut();account.setText("Sign in / Create account");}).show();}else showAccountDialog();});
 TextView soundTitle=text("Alert sound",18,Color.WHITE);soundTitle.setPadding(0,dp(16),0,dp(6));box.addView(soundTitle);
 soundName=text("",13,muted);box.addView(soundName);updateSoundName();
 Button choose=button("Choose alert sound");box.addView(choose);choose.setOnClickListener(v->pickSound());
 new AlertDialog.Builder(this).setTitle("Settings").setView(box).setPositiveButton("Done",null).show();
+}
+void showAccountDialog(){
+LinearLayout box=column();box.setPadding(dp(16),dp(8),dp(16),0);
+EditText email=edit("Email address",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);box.addView(email);
+EditText password=edit("Password · at least 6 characters",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);box.addView(password);
+new AlertDialog.Builder(this).setTitle("Arcus Alert account").setView(box)
+.setNeutralButton("Create account",(d,w)->FirebaseSync.signUp(email.getText().toString(),password.getText().toString(),(ok,msg)->runOnUiThread(()->{Toast.makeText(this,msg,Toast.LENGTH_LONG).show();if(ok)FirebaseSync.syncNow();})))
+.setPositiveButton("Sign in",(d,w)->FirebaseSync.signIn(email.getText().toString(),password.getText().toString(),(ok,msg)->runOnUiThread(()->{Toast.makeText(this,msg,Toast.LENGTH_LONG).show();if(ok)FirebaseSync.syncNow();})))
+.setNegativeButton("Cancel",null).show();
 }
 void showNotifications(){
 LinearLayout box=column();box.setPadding(dp(12),dp(6),dp(12),dp(6));
@@ -185,7 +196,7 @@ if(shown==0){TextView empty=text("No matching markets.",13,muted);empty.setPaddi
 }
 double readPrice(JSONObject o){Object v=o.has("markPrice")&&!o.isNull("markPrice")?o.opt("markPrice"):o.opt("oraclePrice");try{return v==null?0:Double.parseDouble(v.toString());}catch(Exception e){return 0;}}
 void startMonitor(){try{Intent i=new Intent(this,PriceMonitorService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){if(status!=null)status.setText("Service error: "+e.getMessage());}}
-JSONArray levels(){try{return new JSONArray(getSharedPreferences(PREF,0).getString("levels","[]"));}catch(Exception e){return new JSONArray();}}void save(JSONArray a){getSharedPreferences(PREF,0).edit().putString("levels",a.toString()).apply();}
+JSONArray levels(){try{return new JSONArray(getSharedPreferences(PREF,0).getString("levels","[]"));}catch(Exception e){return new JSONArray();}}void save(JSONArray a){getSharedPreferences(PREF,0).edit().putString("levels",a.toString()).apply();FirebaseSync.syncNow();}
 String selected(){return marketSpinner==null||marketSpinner.getSelectedItem()==null?"":marketSpinner.getSelectedItem().toString();}
 void filterMarkets(){String q=searchBox.getText().toString().trim().toLowerCase(Locale.ROOT),old=selected();shownNames.clear();for(String n:allNames)if((q.isEmpty()||n.toLowerCase(Locale.ROOT).contains(q))&&(!favoritesOnly||isFavorite(n)))shownNames.add(n);marketSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,shownNames));int p=shownNames.indexOf(old);if(p>=0)marketSpinner.setSelection(p);updatePrice();}
 JSONObject find(JSONObject d,String symbol){if(symbol==null||symbol.isEmpty())return null;Iterator<String> it=d.keys();while(it.hasNext()){String key=it.next();JSONObject o=d.optJSONObject(key);if(o!=null&&(symbol.equalsIgnoreCase(key)||symbol.equalsIgnoreCase(o.optString("marketDisplayName"))||symbol.equalsIgnoreCase(o.optString("symbol"))||symbol.equalsIgnoreCase(o.optString("marketId"))))return o;}return null;}
