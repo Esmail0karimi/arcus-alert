@@ -161,6 +161,12 @@ public final class FirebaseSync {
                         o.put("time",String.valueOf(m.get("time")));
                         h.put(o);
                     }
+                    if (firstCloudSnapshot) {
+                        JSONArray localHistory = new JSONArray(p.getString("history", "[]"));
+                        Set<String> seen = new HashSet<>();
+                        for (int i=0;i<h.length();i++) { JSONObject o=h.optJSONObject(i); if(o!=null) seen.add(o.optString("symbol")+"|"+o.optString("target",o.optString("price"))+"|"+o.optString("time")); }
+                        for (int i=0;i<localHistory.length();i++) { JSONObject o=localHistory.optJSONObject(i); if(o==null) continue; String key=o.optString("symbol")+"|"+o.optString("target",o.optString("price"))+"|"+o.optString("time"); if(seen.add(key)) h.put(o); }
+                    }
                     p.edit().putString("history",h.toString()).apply();
                 }
                 notifyStatus(currentStatus, "Cloud sync active · " + accountEmail());
