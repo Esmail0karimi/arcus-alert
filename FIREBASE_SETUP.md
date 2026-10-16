@@ -7,7 +7,7 @@ This branch keeps the existing chart and alert UI while adding per-user Firestor
 1. Open the `arcus-alert` Firebase project.
 2. In Authentication → Sign-in method, enable **Email/Password**.
 3. Create the Cloud Firestore database.
-4. In Project settings → General → Your apps, register an **Android app** with package name `com.arcus.alert`. Use its Android Firebase App ID / native configuration for FCM. The current checked-in web Firebase config is suitable for the web renderer; Android push delivery must use the Android app registration (do not reuse the web App ID for Android FCM).
+4. In Project settings → General → Your apps, register an **Android app** with package name `com.arcus.alert`. Use its Android Firebase App ID / native configuration for FCM. The current checked-in web Firebase config is suitable for Auth/Firestore initialization; Android push delivery uses the Android App ID supplied at build time as `FIREBASE_ANDROID_APP_ID` (do not reuse the web App ID for Android FCM).
 5. In Project settings → Cloud Messaging → Web Push certificates, generate or copy the public VAPID key.
 
 ## Deploy Firestore rules and the scheduled worker
@@ -27,7 +27,7 @@ Add a repository Actions variable named `FIREBASE_WEB_VAPID_KEY` containing the 
 
 ## Android FCM registration
 
-The Android client registers its FCM token under `users/{uid}/devices/{token}`. Before relying on push on Android, complete the Android app registration in Firebase Console and verify the Android Firebase App ID / native app configuration is supplied to the Android build. The account and Firestore sync code is initialized independently.
+The Android client registers its FCM token under `users/{uid}/devices/{token}`. Set the repository Actions variable `FIREBASE_ANDROID_APP_ID` to the Android App ID from Firebase Console → Project settings → Your apps, or set the same environment variable for local Gradle builds. The package name must be `com.arcus.alert`. Without this value, email login and Firestore sync still build, but Android FCM token registration is intentionally skipped.
 
 ## Data layout
 
