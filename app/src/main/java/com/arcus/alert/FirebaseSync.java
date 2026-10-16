@@ -41,7 +41,7 @@ public final class FirebaseSync {
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 FirebaseOptions options = new FirebaseOptions.Builder()
                     .setApiKey("AIzaSyA4eRekhLCoY-MtBtapmVJcln5s987Ssro")
-                    .setApplicationId("1:248498715281:web:45fcd1ff7c3c1b827fdd30")
+                    .setApplicationId(BuildConfig.FIREBASE_ANDROID_APP_ID.isEmpty() ? "1:248498715281:web:45fcd1ff7c3c1b827fdd30" : BuildConfig.FIREBASE_ANDROID_APP_ID)
                     .setProjectId("arcus-alert")
                     .setGcmSenderId("248498715281")
                     .build();
@@ -50,7 +50,7 @@ public final class FirebaseSync {
             auth = FirebaseAuth.getInstance();
             db = FirebaseFirestore.getInstance();
             initialized = true;
-            FirebaseMessaging.getInstance().getToken().addOnSuccessListener(FirebaseSync::saveFcmToken);
+            if (!BuildConfig.FIREBASE_ANDROID_APP_ID.isEmpty()) FirebaseMessaging.getInstance().getToken().addOnSuccessListener(FirebaseSync::saveFcmToken);
             auth.addAuthStateListener(a -> {
                 if (listener != null) { listener.remove(); listener = null; }
                 cloudInitialized = false;
