@@ -19,10 +19,10 @@ public class ArcusMessagingService extends FirebaseMessagingService {
         String current = data.getOrDefault("current", "");
         String title = data.getOrDefault("title", "Arcus Alert");
         String body = data.getOrDefault("body", symbol + " crossed " + target + " · Current " + current);
-        String channel = "arcus_alert_notifications_v2";
+        String channel = "arcus_cloud_push_v1";
         NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(channel) == null) {
-            NotificationChannel c = new NotificationChannel(channel, "Arcus price alerts", NotificationManager.IMPORTANCE_HIGH);
+            NotificationChannel c = new NotificationChannel(channel, "Arcus cloud price alerts", NotificationManager.IMPORTANCE_HIGH);
             c.enableVibration(true);
             manager.createNotificationChannel(c);
         }
