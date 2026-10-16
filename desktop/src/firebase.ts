@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA4eRekhLCoY-MtBtapmVJcl5n987Ssro",
+  apiKey: "AIzaSyA4eRekhLCoY-MtBtapmVJcln5s987Ssro",
   authDomain: "arcus-alert.firebaseapp.com",
   projectId: "arcus-alert",
   storageBucket: "arcus-alert.firebasestorage.app",
