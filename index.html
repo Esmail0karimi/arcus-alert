@@ -9,6 +9,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:900px;margin:auto;padding:24px}.hero{padding:26px;border:1px solid var(--line);background:linear-gradient(135deg,#14213a,#101827);border-radius:20px}h1{margin:0 0 8px;font-size:30px}h2{margin:0 0 14px;font-size:19px}.muted{color:var(--muted);font-size:14px;line-height:1.7}.panel{margin-top:16px;padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:18px}.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}input,select,button{font:inherit;border-radius:11px;padding:12px;width:100%;border:1px solid var(--line);background:#0b1424;color:var(--text)}button{background:#2563eb;border:0;font-weight:650;cursor:pointer;margin-top:10px}button:hover{filter:brightness(1.1)}button.secondary{background:#26344b}button.danger{background:#7f1d1d;width:auto;margin:0;padding:8px 12px}.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.status{margin-top:14px;padding:12px;border-radius:12px;background:#0b1424;font-size:13px}.item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}.item strong{display:block}.pill{font-size:12px;color:#bfdbfe;background:#1e3a5f;border-radius:99px;padding:4px 8px;display:inline-block;margin-top:6px}small{color:var(--muted)}.empty{padding:22px;text-align:center;color:var(--muted)}.eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#93c5fd;font-size:11px;font-weight:700;margin-bottom:8px}.count{color:#bfdbfe;font-size:14px;font-weight:600;margin-left:6px}@media(max-width:560px){main{padding:12px}.form{grid-template-columns:1fr}.hero{padding:19px}.panel{padding:15px}}
 </style></head><body><main>
 <section class="hero"><div class="eyebrow">Price monitoring prototype</div><h1>🔔 Arcus Alert</h1><div class="muted">Manage price levels, organize alert conditions, and test browser notifications.</div><div class="status" id="status">Connecting to Arcus live prices…</div><div class="muted" style="margin-top:8px">Live prices refresh automatically every 1 second while this page is open.</div></section>
+<section class="panel" id="cloudPanel"><h2>☁ Cloud Sync</h2><div class="muted" id="cloudStatus">Sign in to sync alerts between web and Android.</div><div class="form" style="margin-top:12px"><div><label for="cloudEmail">Email</label><input id="cloudEmail" type="email" autocomplete="username" placeholder="you@example.com"></div><div><label for="cloudPassword">Password</label><input id="cloudPassword" type="password" autocomplete="current-password" placeholder="Firebase account password"></div></div><div class="actions"><button id="cloudSignIn">Sign in</button><button id="cloudSignUp" class="secondary">Create account</button></div><button id="cloudSignOut" class="secondary" style="display:none">Sign out</button><div class="muted" id="cloudAccount" style="margin-top:8px"></div></section>
 <section class="panel"><h2>Add a price level</h2><div class="form"><div><label for="symbol">Choose Arcus market</label><select id="symbol" required><option value="">Loading markets…</option></select></div><div><label for="price">Target price</label><input id="price" type="number" min="0" step="any" placeholder="e.g. 65000"></div><div><label for="mode">Alert condition</label><select id="mode"><option value="CROSS">Crosses the level</option><option value="TOUCH">Touches the level</option><option value="NEAR">Approaches the level</option></select></div><div><label for="near">Proximity threshold (%)</label><input id="near" type="number" min="0" step="any" value="0.1"></div></div><button id="add">Add price level</button><button id="cancelEdit" class="secondary" style="display:none">Cancel edit</button><div class="muted">Levels are saved in this browser. Live market prices are matched by Arcus symbol (for example BTC-USD). Alerts are checked while this page is open.</div></section>
 <section class="panel"><h2>Tools</h2><div class="actions"><button id="notify" class="secondary">Enable notifications</button><button id="test" class="secondary">Send test notification</button><button id="export" class="secondary">Export CSV</button><button id="importBtn" class="secondary">Import CSV</button></div><input id="csvFile" type="file" accept=".csv,text/csv" hidden><div class="muted">CSV columns: symbol, price, mode, nearPct. Imported levels are added to your existing list.</div></section>
 <section class="panel"><h2>Saved levels <span id="count" class="count">0</span></h2><div id="levels"><div class="empty">No price levels yet. Add one above to get started.</div></div><button id="clear" class="secondary">Clear all levels</button></section>
@@ -17,7 +18,8 @@
 <footer class="muted" style="text-align:center;padding:20px 0 8px">Arcus Alert · Early prototype</footer>
 </main><script>
 const $=id=>document.getElementById(id),KEY='arcus-alert-levels-v1',HISTORY_KEY='arcus-alert-notifications-v1';let levels=[];let livePrices={};let previousPrices={};let nearActive=new Set();let touchActive=new Set();let activeAlerts=new Set();let notificationHistory=[];let lastPriceUpdate=0;let editingIndex=-1;try{levels=JSON.parse(localStorage.getItem(KEY)||'[]')}catch{}try{notificationHistory=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')}catch{}
-function save(){localStorage.setItem(KEY,JSON.stringify(levels));render()}function addHistory(title,body){notificationHistory.unshift({title,body,time:Date.now()});notificationHistory=notificationHistory.slice(0,100);localStorage.setItem(HISTORY_KEY,JSON.stringify(notificationHistory));renderHistory()}function renderHistory(){$('notificationCount').textContent=notificationHistory.length;if(!notificationHistory.length){$('notificationHistory').innerHTML='<div class="empty">No notifications yet.</div>';return}$('notificationHistory').innerHTML=notificationHistory.map(n=>'<div class="item"><div><strong>'+esc(n.title)+'</strong><div class="muted">'+esc(n.body)+'</div><small>'+esc(new Date(n.time).toLocaleString())+'</small></div></div>').join('')}function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function modeName(m){return ({CROSS:'Cross',TOUCH:'Touch',NEAR:'Approach'})[m]||m}
+function save(){levels=levels.map(l=>({...l,id:l.id||((crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(36).slice(2)),enabled:l.enabled!==false}));localStorage.setItem(KEY,JSON.stringify(levels));if(window.arcusCloud)window.arcusCloud.save(levels);render()}
+window.arcusApplyCloudLevels=(next)=>{levels=next;render();};function addHistory(title,body){notificationHistory.unshift({title,body,time:Date.now()});notificationHistory=notificationHistory.slice(0,100);localStorage.setItem(HISTORY_KEY,JSON.stringify(notificationHistory));renderHistory()}function renderHistory(){$('notificationCount').textContent=notificationHistory.length;if(!notificationHistory.length){$('notificationHistory').innerHTML='<div class="empty">No notifications yet.</div>';return}$('notificationHistory').innerHTML=notificationHistory.map(n=>'<div class="item"><div><strong>'+esc(n.title)+'</strong><div class="muted">'+esc(n.body)+'</div><small>'+esc(new Date(n.time).toLocaleString())+'</small></div></div>').join('')}function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function modeName(m){return ({CROSS:'Cross',TOUCH:'Touch',NEAR:'Approach'})[m]||m}
 function render(){$('count').textContent=levels.length;if(!levels.length){$('levels').innerHTML='<div class="empty">No price levels yet. Add one above to get started.</div>';return}$('levels').innerHTML=levels.map((l,i)=>{const p=livePrices[l.symbol];return '<div class="item"><div><strong>'+esc(l.symbol)+' · Target '+esc(l.price)+'</strong><div class="muted">Live price: '+(p?esc(p.price)+' <small>('+esc(p.source)+')</small>':'<small>Waiting for market price…</small>')+'</div><span class="pill">'+modeName(l.mode)+(l.mode==='NEAR'?' · '+esc(l.nearPct)+'% threshold':'')+'</span></div><div style="display:flex;gap:6px"><button class="secondary" data-edit="'+i+'" style="margin:0;padding:8px 12px;width:auto">Edit</button><button class="danger" data-del="'+i+'">Remove</button></div></div>'}).join('');$('levels').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.del);levels.splice(i,1);if(editingIndex===i)resetForm();else if(editingIndex>i)editingIndex--;save()});$('levels').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>startEdit(Number(b.dataset.edit)))}
 function resetForm(){$('symbol').value='';$('price').value='';$('mode').value='CROSS';$('near').value='0.1';editingIndex=-1;$('add').textContent='Add price level';$('cancelEdit').style.display='none'}
 function startEdit(i){const l=levels[i];if(!l)return;editingIndex=i;$('symbol').value=l.symbol;$('price').value=l.price;$('mode').value=l.mode;$('near').value=l.nearPct??0.1;$('add').textContent='Save changes';$('cancelEdit').style.display='block';document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}
@@ -42,4 +44,95 @@ $('test').onclick=()=>{playAlertSound();if(!('Notification'in window)||Notificat
 $('export').onclick=()=>{const rows=[['symbol','price','mode','nearPct'],...levels.map(l=>[l.symbol,l.price,l.mode,l.nearPct])],csv='\uFEFF'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='arcus-levels.csv';a.click();URL.revokeObjectURL(a.href)};
 $('importBtn').onclick=()=>$('csvFile').click();$('csvFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const t=await f.text(),lines=t.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean),parse=line=>{const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&line[i+1]==='"'&&q){cur+='"';i++}else if(c==='"')q=!q;else if(c===','&&!q){out.push(cur);cur=''}else cur+=c}out.push(cur);return out},head=parse(lines.shift()).map(x=>x.trim().toLowerCase());let added=0;for(const line of lines){const r=parse(line),o={};head.forEach((k,i)=>o[k]=r[i]);const symbol=(o.symbol||'').trim().toUpperCase(),price=Number(o.price),mode=(o.mode||'CROSS').trim().toUpperCase();if(symbol&&price>0&&['CROSS','TOUCH','NEAR'].includes(mode)){levels.push({symbol,price,mode,nearPct:Math.max(0,Number(o.nearpct)||0.1)});added++}}save();$('status').textContent=added+' level(s) imported from CSV.';e.target.value=''};
 $('clear').onclick=()=>{if(confirm('Remove all saved price levels?')){levels=[];save()}};$('clearNotifications').onclick=()=>{notificationHistory=[];localStorage.setItem(HISTORY_KEY,'[]');renderHistory()};if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});render();renderHistory();refreshPrices();setInterval(refreshPrices,1000);
-</script></body></html>
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA4eRekhLCoY-MtBtapmVJcln5s987Ssro",
+  authDomain: "arcus-alert.firebaseapp.com",
+  projectId: "arcus-alert",
+  storageBucket: "arcus-alert.firebasestorage.app",
+  messagingSenderId: "248498715281",
+  appId: "1:248498715281:web:45fcd1ff7c3c1b827fdd30"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+let stopSnapshot = null, cloudReady = false, applyingCloud = false, currentUid = null;
+const statusEl = document.getElementById("cloudStatus");
+const accountEl = document.getElementById("cloudAccount");
+const signOutBtn = document.getElementById("cloudSignOut");
+function status(message){statusEl.textContent=message;}
+function normalize(list){return (Array.isArray(list)?list:[]).filter(x=>x&&x.symbol&&Number(x.price)>0).map(x=>({...x,id:String(x.id||((crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2))),symbol:String(x.symbol).toUpperCase(),price:Number(x.price),mode:["CROSS","TOUCH","NEAR"].includes(x.mode)?x.mode:"CROSS",nearPct:Number(x.nearPct??0.1),enabled:x.enabled!==false}));}
+function mergeLevels(remote,local){
+ const out=[], seen=new Set();
+ for(const item of [...normalize(remote),...normalize(local)]){
+   const sig=item.id||[item.symbol,item.price,item.mode].join("|");
+   const fallback=[item.symbol,item.price,item.mode].join("|");
+   if(seen.has(sig)||seen.has(fallback))continue;
+   seen.add(sig);seen.add(fallback);out.push(item);
+ }
+ return out;
+}
+function localLevels(){try{return JSON.parse(localStorage.getItem("arcus-alert-levels-v1")||"[]")}catch{return[]}}
+function applyRemote(list){
+ const next=normalize(list);
+ applyingCloud=true;
+ localStorage.setItem("arcus-alert-levels-v1",JSON.stringify(next));
+ if(typeof window.arcusApplyCloudLevels==="function") window.arcusApplyCloudLevels(next);
+ applyingCloud=false;
+}
+async function writeLevels(list){
+ if(!auth.currentUser||!cloudReady||applyingCloud)return;
+ const levels=normalize(list);
+ try{
+   await setDoc(doc(db,"users",auth.currentUser.uid,"appData","state"),{levels,schemaVersion:1,updatedAt:serverTimestamp()},{merge:true});
+   status("Cloud sync active · alerts saved");
+ }catch(e){status("Cloud sync error: "+e.message);}
+}
+window.arcusCloud={save:writeLevels};
+document.getElementById("cloudSignIn").onclick=async()=>{
+ const email=document.getElementById("cloudEmail").value.trim(),password=document.getElementById("cloudPassword").value;
+ if(!email||!password){status("Enter your email and password.");return;}
+ status("Signing in…");
+ try{await signInWithEmailAndPassword(auth,email,password);}catch(e){status("Sign-in error: "+e.message);}
+};
+document.getElementById("cloudSignUp").onclick=async()=>{
+ const email=document.getElementById("cloudEmail").value.trim(),password=document.getElementById("cloudPassword").value;
+ if(!email||password.length<6){status("Enter an email and a password of at least 6 characters.");return;}
+ status("Creating account…");
+ try{await createUserWithEmailAndPassword(auth,email,password);}catch(e){status("Account error: "+e.message);}
+};
+signOutBtn.onclick=()=>signOut(auth);
+onAuthStateChanged(auth,user=>{
+ if(stopSnapshot){stopSnapshot();stopSnapshot=null;}
+ cloudReady=false;currentUid=user?.uid||null;
+ if(!user){accountEl.textContent="";signOutBtn.style.display="none";status("Signed out · alerts are stored on this device only.");return;}
+ accountEl.textContent="Signed in: "+user.email+" · UID: "+user.uid.slice(0,6)+"…"+user.uid.slice(-4);
+ signOutBtn.style.display="block";status("Connecting to cloud…");
+ const ref=doc(db,"users",user.uid,"appData","state");
+ let first=true;
+ stopSnapshot=onSnapshot(ref,async snap=>{
+  if(!snap.exists()){
+    const local=normalize(localLevels());
+    try{await setDoc(ref,{levels:local,schemaVersion:1,updatedAt:serverTimestamp()},{merge:true});applyRemote(local);cloudReady=true;status("Cloud connected · "+local.length+" alert(s) uploaded.");}
+    catch(e){status("Cloud sync error: "+e.message);}
+    first=false;return;
+  }
+  const remote=normalize(snap.data().levels||[]);
+  if(first){
+    const merged=mergeLevels(remote,localLevels());
+    applyRemote(merged);cloudReady=true;first=false;
+    if(merged.length!==remote.length || merged.some((x,i)=>x.id!==remote[i]?.id)) await writeLevels(merged);
+    status("Cloud sync active · "+merged.length+" alert(s)");
+  }else{
+    applyRemote(remote);cloudReady=true;
+    status("Cloud sync active · "+remote.length+" alert(s)");
+  }
+ },e=>{cloudReady=false;status("Cloud sync error: "+e.message);});
+});
+</script>
+</body></html>
