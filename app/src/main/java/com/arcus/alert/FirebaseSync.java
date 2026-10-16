@@ -26,12 +26,16 @@ public final class FirebaseSync {
     private static ListenerRegistration listener;
     private static Context appContext;
     private static boolean applying;
+    private static boolean initialized;
+    private static Status currentStatus;
     private static String pendingFcmToken = "";
     private static final Handler main = new Handler(Looper.getMainLooper());
     private FirebaseSync() {}
 
     public static synchronized void init(Context context, Status status) {
         appContext = context.getApplicationContext();
+        currentStatus = status;
+        if (initialized) { notifyStatus(currentStatus, signedIn() ? "Signed in · cloud sync active" : "Not signed in · this device only"); return; }
         try {
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 FirebaseOptions options = new FirebaseOptions.Builder()
@@ -44,13 +48,14 @@ public final class FirebaseSync {
             }
             auth = FirebaseAuth.getInstance();
             db = FirebaseFirestore.getInstance();
+            initialized = true;
             FirebaseMessaging.getInstance().getToken().addOnSuccessListener(FirebaseSync::saveFcmToken);
             auth.addAuthStateListener(a -> {
                 if (listener != null) { listener.remove(); listener = null; }
                 if (a.getCurrentUser() == null) {
-                    notifyStatus(status, "Not signed in · this device only");
+                    notifyStatus(currentStatus, "Not signed in · this device only");
                 } else {
-                    notifyStatus(status, "Signed in · syncing Arcus alerts");
+                    notifyStatus(currentStatus, "Signed in · syncing Arcus alerts");
                     attachCloudListener(status);
                     syncNow();
                     if (!pendingFcmToken.isEmpty()) saveFcmToken(pendingFcmToken);
@@ -61,7 +66,7 @@ public final class FirebaseSync {
                 syncNow();
             } else notifyStatus(status, "Not signed in · this device only");
         } catch (Exception e) {
-            notifyStatus(status, "Firebase setup error: " + e.getMessage());
+            notifyStatus(currentStatus, "Firebase setup error: " + e.getMessage());
         }
     }
 
@@ -101,7 +106,7 @@ public final class FirebaseSync {
     private static void attachCloudListener(Status status) {
         if (listener != null || !signedIn()) return;
         listener = stateRef().addSnapshotListener((snapshot, error) -> {
-            if (error != null) { notifyStatus(status, "Cloud sync error: " + error.getMessage()); return; }
+            if (error != null) { notifyStatus(currentStatus, "Cloud sync error: " + error.getMessage()); return; }
             if (snapshot == null || !snapshot.exists()) { syncNow(); return; }
             try {
                 applying = true;
@@ -150,8 +155,8 @@ public final class FirebaseSync {
                     }
                     p.edit().putString("history",h.toString()).apply();
                 }
-                notifyStatus(status, "Cloud sync active · " + accountEmail());
-            } catch (Exception e) { notifyStatus(status, "Cloud data error: " + e.getMessage()); }
+                notifyStatus(currentStatus, "Cloud sync active · " + accountEmail());
+            } catch (Exception e) { notifyStatus(currentStatus, "Cloud data error: " + e.getMessage()); }
             finally { applying = false; }
         });
     }
