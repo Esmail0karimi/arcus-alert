@@ -115,7 +115,7 @@ public final class FirebaseSync {
         if (listener != null || !signedIn()) return;
         listener = stateRef().addSnapshotListener((snapshot, error) -> {
             if (error != null) { notifyStatus(currentStatus, "Cloud sync error: " + error.getMessage()); return; }
-            if (snapshot == null || !snapshot.exists()) { syncNow(); return; }
+            if (snapshot == null || !snapshot.exists()) { cloudInitialized = true; syncNow(); return; }
             boolean firstCloudSnapshot = !cloudInitialized;
             try {
                 applying = true;
@@ -135,6 +135,7 @@ public final class FirebaseSync {
                             Object id = m.get("id");
                             long created = parseLong(id, System.currentTimeMillis());
                             o.put("created", created);
+                            o.put("cloudId", String.valueOf(id));
                             o.put("enabled", m.get("enabled") == null || Boolean.parseBoolean(String.valueOf(m.get("enabled"))));
                             cloud.put(o);
                         }
@@ -179,7 +180,7 @@ public final class FirebaseSync {
     }
 
     public static void syncNow() {
-        if (!signedIn() || applying || db == null || appContext == null) return;
+        if (!signedIn() || applying || !cloudInitialized || db == null || appContext == null) return;
         try {
             SharedPreferences p = appContext.getSharedPreferences("arcus_native", 0);
             JSONArray local = new JSONArray(p.getString("levels", "[]"));
@@ -188,7 +189,7 @@ public final class FirebaseSync {
                 JSONObject o=local.optJSONObject(i); if(o==null) continue;
                 int mode=o.optInt("mode",0);
                 Map<String,Object> item=new HashMap<>();
-                item.put("id",String.valueOf(o.optLong("created",System.currentTimeMillis())));
+                item.put("id",o.optString("cloudId",String.valueOf(o.optLong("created",System.currentTimeMillis()))));
                 item.put("symbol",o.optString("symbol"));
                 item.put("price",o.optDouble("price",0));
                 item.put("mode",mode==2?"NEAR":mode==1?"TOUCH":"CROSS");
