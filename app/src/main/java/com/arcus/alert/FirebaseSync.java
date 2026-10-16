@@ -44,7 +44,7 @@ public final class FirebaseSync {
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 FirebaseOptions options = new FirebaseOptions.Builder()
                     .setApiKey("AIzaSyA4eRekhLCoY-MtBtapmVJcln5s987Ssro")
-                    .setApplicationId(BuildConfig.FIREBASE_ANDROID_APP_ID.isEmpty() ? "1:248498715281:web:45fcd1ff7c3c1b827fdd30" : BuildConfig.FIREBASE_ANDROID_APP_ID)
+                    .setApplicationId(BuildConfig.FIREBASE_ANDROID_APP_ID.isEmpty() ? "1:248498715281:android:f616760cb1e918367fdd30" : BuildConfig.FIREBASE_ANDROID_APP_ID)
                     .setProjectId("arcus-alert")
                     .setGcmSenderId("248498715281")
                     .build();
