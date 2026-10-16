@@ -30,6 +30,9 @@ public final class FirebaseSync {
     private static boolean cloudInitialized;
     private static Status currentStatus;
     private static String pendingFcmToken = "";
+    private static String lastStatus = "Not initialized";
+    private static int cloudAlertCount = -1;
+    private static long lastSyncAt = 0;
     private static final Handler main = new Handler(Looper.getMainLooper());
     private FirebaseSync() {}
 
@@ -55,6 +58,7 @@ public final class FirebaseSync {
                 if (listener != null) { listener.remove(); listener = null; }
                 cloudInitialized = false;
                 if (a.getCurrentUser() == null) {
+                    cloudAlertCount = -1; lastSyncAt = 0;
                     notifyStatus(currentStatus, "Not signed in · this device only");
                 } else {
                     String uid = a.getCurrentUser().getUid();
@@ -79,7 +83,17 @@ public final class FirebaseSync {
     }
 
     private static void notifyStatus(Status s, String message) {
-        if (s != null) main.post(() -> s.changed(message));
+        lastStatus = message == null ? "Unknown" : message;
+        if (s != null) main.post(() -> s.changed(lastStatus));
+    }
+
+    public static String syncStatus() { return lastStatus; }
+    public static int cloudAlertCount() { return cloudAlertCount; }
+    public static long lastSyncAt() { return lastSyncAt; }
+    public static String accountUidShort() {
+        if (!signedIn()) return "—";
+        String uid = auth.getCurrentUser().getUid();
+        return uid.length() <= 12 ? uid : uid.substring(0, 6) + "…" + uid.substring(uid.length() - 4);
     }
 
     public static boolean signedIn() { return auth != null && auth.getCurrentUser() != null; }
@@ -115,8 +129,11 @@ public final class FirebaseSync {
         if (listener != null || !signedIn()) return;
         listener = stateRef().addSnapshotListener((snapshot, error) -> {
             if (error != null) { notifyStatus(currentStatus, "Cloud sync error: " + error.getMessage()); return; }
-            if (snapshot == null || !snapshot.exists()) { cloudInitialized = true; syncNow(); return; }
+            if (snapshot == null || !snapshot.exists()) { cloudAlertCount = 0; lastSyncAt = System.currentTimeMillis(); cloudInitialized = true; notifyStatus(currentStatus, "Cloud connected · no cloud alerts yet"); syncNow(); return; }
             boolean firstCloudSnapshot = !cloudInitialized;
+            Object cloudLevelsValue = snapshot.get("levels");
+            cloudAlertCount = cloudLevelsValue instanceof List ? ((List<?>) cloudLevelsValue).size() : 0;
+            lastSyncAt = System.currentTimeMillis();
             try {
                 applying = true;
                 SharedPreferences p = appContext.getSharedPreferences("arcus_native", 0);
@@ -215,7 +232,8 @@ public final class FirebaseSync {
             data.put("levels",levels); data.put("favorites",favorites); data.put("history",history);
             data.put("schemaVersion",1); data.put("updatedAt",FieldValue.serverTimestamp());
             stateRef().set(data, com.google.firebase.firestore.SetOptions.merge())
-                .addOnFailureListener(e -> {});
+                .addOnSuccessListener(v -> { cloudAlertCount = levels.size(); lastSyncAt = System.currentTimeMillis(); notifyStatus(currentStatus, "Cloud sync active · " + accountEmail()); })
+                .addOnFailureListener(e -> notifyStatus(currentStatus, "Cloud sync error: " + e.getMessage()));
         } catch (Exception ignored) {}
     }
 
