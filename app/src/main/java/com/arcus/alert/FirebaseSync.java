@@ -95,6 +95,13 @@ public final class FirebaseSync {
         String uid = auth.getCurrentUser().getUid();
         return uid.length() <= 12 ? uid : uid.substring(0, 6) + "…" + uid.substring(uid.length() - 4);
     }
+    public static void refreshCloud() {
+        if (!signedIn()) { notifyStatus(currentStatus, "Not signed in · this device only"); return; }
+        if (listener != null) { listener.remove(); listener = null; }
+        cloudInitialized = false;
+        notifyStatus(currentStatus, "Refreshing cloud connection…");
+        attachCloudListener(currentStatus);
+    }
 
     public static boolean signedIn() { return auth != null && auth.getCurrentUser() != null; }
     public static String accountEmail() { return signedIn() ? auth.getCurrentUser().getEmail() : ""; }
