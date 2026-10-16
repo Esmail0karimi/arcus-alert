@@ -27,6 +27,7 @@ public final class FirebaseSync {
     private static Context appContext;
     private static boolean applying;
     private static boolean initialized;
+    private static boolean cloudInitialized;
     private static Status currentStatus;
     private static String pendingFcmToken = "";
     private static final Handler main = new Handler(Looper.getMainLooper());
@@ -52,6 +53,7 @@ public final class FirebaseSync {
             FirebaseMessaging.getInstance().getToken().addOnSuccessListener(FirebaseSync::saveFcmToken);
             auth.addAuthStateListener(a -> {
                 if (listener != null) { listener.remove(); listener = null; }
+                cloudInitialized = false;
                 if (a.getCurrentUser() == null) {
                     notifyStatus(currentStatus, "Not signed in · this device only");
                 } else {
@@ -108,6 +110,7 @@ public final class FirebaseSync {
         listener = stateRef().addSnapshotListener((snapshot, error) -> {
             if (error != null) { notifyStatus(currentStatus, "Cloud sync error: " + error.getMessage()); return; }
             if (snapshot == null || !snapshot.exists()) { syncNow(); return; }
+            boolean firstCloudSnapshot = !cloudInitialized;
             try {
                 applying = true;
                 SharedPreferences p = appContext.getSharedPreferences("arcus_native", 0);
@@ -133,12 +136,12 @@ public final class FirebaseSync {
                     JSONArray local = new JSONArray(p.getString("levels", "[]"));
                     LinkedHashMap<String, JSONObject> merged = new LinkedHashMap<>();
                     for (int i=0;i<cloud.length();i++) { JSONObject o=cloud.optJSONObject(i); if(o!=null) merged.put(levelKey(o),o); }
-                    for (int i=0;i<local.length();i++) { JSONObject o=local.optJSONObject(i); if(o!=null) merged.putIfAbsent(levelKey(o),o); }
+                    if (firstCloudSnapshot) for (int i=0;i<local.length();i++) { JSONObject o=local.optJSONObject(i); if(o!=null) merged.putIfAbsent(levelKey(o),o); }
                     JSONArray result = new JSONArray(); for(JSONObject o:merged.values()) result.put(o);
                     p.edit().putString("levels", result.toString()).apply();
                 }
                 if (snapshot.contains("favorites")) {
-                    Set<String> merged = new HashSet<>(p.getStringSet("favorites", new HashSet<>()));
+                    Set<String> merged = firstCloudSnapshot ? new HashSet<>(p.getStringSet("favorites", new HashSet<>())) : new HashSet<>();
                     Object v = snapshot.get("favorites");
                     if (v instanceof List) for (Object s : (List<?>)v) if(s!=null) merged.add(String.valueOf(s));
                     p.edit().putStringSet("favorites", merged).apply();
@@ -156,8 +159,10 @@ public final class FirebaseSync {
                     p.edit().putString("history",h.toString()).apply();
                 }
                 notifyStatus(currentStatus, "Cloud sync active · " + accountEmail());
+                cloudInitialized = true;
             } catch (Exception e) { notifyStatus(currentStatus, "Cloud data error: " + e.getMessage()); }
             finally { applying = false; }
+            if (firstCloudSnapshot) main.postDelayed(FirebaseSync::syncNow, 400);
         });
     }
 
