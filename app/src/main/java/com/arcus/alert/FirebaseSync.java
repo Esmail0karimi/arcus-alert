@@ -63,14 +63,15 @@ public final class FirebaseSync {
                     if (!previousUid.isEmpty() && !previousUid.equals(uid)) accountPrefs.edit().remove("levels").remove("favorites").remove("history").apply();
                     accountPrefs.edit().putString("firebase_uid", uid).apply();
                     notifyStatus(currentStatus, "Signed in · syncing Arcus alerts");
+                    // Wait for the first Firestore snapshot before uploading local state.
+                    // Uploading here can overwrite alerts created on the web before they are downloaded.
                     attachCloudListener(status);
-                    syncNow();
                     if (!pendingFcmToken.isEmpty()) saveFcmToken(pendingFcmToken);
                 }
             });
             if (auth.getCurrentUser() != null) {
+                // The snapshot listener decides when a first upload is safe.
                 attachCloudListener(status);
-                syncNow();
             } else notifyStatus(status, "Not signed in · this device only");
         } catch (Exception e) {
             notifyStatus(currentStatus, "Firebase setup error: " + e.getMessage());
