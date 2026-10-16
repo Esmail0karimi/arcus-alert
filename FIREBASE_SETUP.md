@@ -6,9 +6,10 @@ This branch keeps the existing chart and alert UI while adding per-user Firestor
 
 1. Open the `arcus-alert` Firebase project.
 2. In Authentication → Sign-in method, enable **Email/Password**.
-3. Create the Cloud Firestore database.
-4. In Project settings → General → Your apps, register an **Android app** with package name `com.arcus.alert`. Use its Android Firebase App ID / native configuration for FCM. The current checked-in web Firebase config is suitable for Auth/Firestore initialization; Android push delivery uses the Android App ID supplied at build time as `FIREBASE_ANDROID_APP_ID` (do not reuse the web App ID for Android FCM).
-5. In Project settings → Cloud Messaging → Web Push certificates, generate or copy the public VAPID key.
+3. In Authentication → Settings → Authorized domains, add `esmail0karimi.github.io` for the GitHub Pages web app.
+4. Create the Cloud Firestore database.
+5. In Project settings → General → Your apps, register an **Android app** with package name `com.arcus.alert`. Use its Android Firebase App ID / native configuration for FCM. The current checked-in web Firebase config is suitable for Auth/Firestore initialization; Android push delivery uses the Android App ID supplied at build time as `FIREBASE_ANDROID_APP_ID` (do not reuse the web App ID for Android FCM).
+6. In Project settings → Cloud Messaging → Web Push certificates, generate or copy the public VAPID key.
 
 ## Deploy Firestore rules and the scheduled worker
 
