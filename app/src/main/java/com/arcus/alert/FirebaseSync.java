@@ -103,7 +103,7 @@ public final class FirebaseSync {
             .addOnSuccessListener(x -> result.done(true, "Account created successfully"))
             .addOnFailureListener(e -> result.done(false, e.getMessage()));
     }
-    public static void signOut() { if (auth != null) auth.signOut(); }
+    public static void signOut() { if (auth == null) return; if (signedIn() && !pendingFcmToken.isEmpty()) db.collection("users").document(auth.getCurrentUser().getUid()).collection("devices").document(pendingFcmToken).delete().addOnCompleteListener(task -> auth.signOut()); else auth.signOut(); }
 
     private static DocumentReference stateRef() {
         return db.collection("users").document(auth.getCurrentUser().getUid())
