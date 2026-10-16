@@ -57,6 +57,11 @@ public final class FirebaseSync {
                 if (a.getCurrentUser() == null) {
                     notifyStatus(currentStatus, "Not signed in · this device only");
                 } else {
+                    String uid = a.getCurrentUser().getUid();
+                    SharedPreferences accountPrefs = appContext.getSharedPreferences("arcus_native", 0);
+                    String previousUid = accountPrefs.getString("firebase_uid", "");
+                    if (!previousUid.isEmpty() && !previousUid.equals(uid)) accountPrefs.edit().remove("levels").remove("favorites").remove("history").apply();
+                    accountPrefs.edit().putString("firebase_uid", uid).apply();
                     notifyStatus(currentStatus, "Signed in · syncing Arcus alerts");
                     attachCloudListener(status);
                     syncNow();
