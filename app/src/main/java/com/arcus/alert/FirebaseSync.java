@@ -12,6 +12,7 @@ import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
+import com.google.firebase.firestore.SetOptions;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.*;
@@ -24,6 +25,7 @@ public final class FirebaseSync {
     private static ListenerRegistration listener;
     private static Context appContext;
     private static boolean applying;
+    private static String pendingFcmToken = "";
     private static final Handler main = new Handler(Looper.getMainLooper());
     private FirebaseSync() {}
 
@@ -49,6 +51,7 @@ public final class FirebaseSync {
                     notifyStatus(status, "Signed in · syncing Arcus alerts");
                     attachCloudListener(status);
                     syncNow();
+                    if (!pendingFcmToken.isEmpty()) saveFcmToken(pendingFcmToken);
                 }
             });
             if (auth.getCurrentUser() != null) {
@@ -66,6 +69,13 @@ public final class FirebaseSync {
 
     public static boolean signedIn() { return auth != null && auth.getCurrentUser() != null; }
     public static String accountEmail() { return signedIn() ? auth.getCurrentUser().getEmail() : ""; }
+    public static void saveFcmToken(String token) {
+        pendingFcmToken = token == null ? "" : token;
+        if (!signedIn() || pendingFcmToken.isEmpty()) return;
+        Map<String,Object> data = new HashMap<>();
+        data.put("token", pendingFcmToken); data.put("platform", "android"); data.put("updatedAt", FieldValue.serverTimestamp());
+        db.collection("users").document(auth.getCurrentUser().getUid()).collection("devices").document(pendingFcmToken).set(data, SetOptions.merge());
+    }
 
     public static void signIn(String email, String password, Result result) {
         if (auth == null) { result.done(false, "Firebase is not initialized"); return; }
@@ -131,7 +141,7 @@ public final class FirebaseSync {
                     for (Object item : (List<?>)snapshot.get("history")) if(item instanceof Map) {
                         Map<?,?> m=(Map<?,?>)item; JSONObject o=new JSONObject();
                         o.put("symbol",String.valueOf(m.get("symbol")));
-                        o.put("price",number(m.get("price")));
+                        o.put("price",number(m.get("actual") == null ? m.get("price") : m.get("actual")));
                         o.put("target",number(m.get("price")));
                         o.put("time",String.valueOf(m.get("time")));
                         h.put(o);
