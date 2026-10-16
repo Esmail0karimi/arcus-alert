@@ -117,3 +117,20 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 /* Hide the native watchlist scrollbar while preserving wheel and middle-button scrolling */
 .watch-items{scrollbar-width:none!important;-ms-overflow-style:none!important;overflow-y:auto!important;overscroll-behavior:contain}
 .watch-items::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+
+/* Firebase account dialog */
+.auth-overlay{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:18px;background:#020812cc;backdrop-filter:blur(4px)}
+.auth-panel{width:min(420px,100%);display:flex;flex-direction:column;gap:13px;padding:22px;background:#091a2d;border:1px solid #294663;border-radius:16px;box-shadow:0 20px 60px #000b;color:#e8f1fc}
+.auth-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:5px}
+.auth-heading small{color:#00dcd2;letter-spacing:1.5px;font-size:10px}
+.auth-heading h2{font-size:22px;margin:6px 0}
+.auth-heading p{margin:0;color:#8fa6c0;font-size:12px}
+.auth-heading>button{width:32px;height:32px;padding:0;background:#142b42;border:1px solid #2a4660;color:#eaf4ff;font-size:21px}
+.auth-panel>label{display:flex;flex-direction:column;gap:6px;color:#9eb3cc;font-size:12px}
+.auth-panel input{width:100%;padding:11px;background:#061526;border:1px solid #2a4560;color:#f2f7ff;border-radius:8px}
+.auth-panel .primary{width:100%;margin-top:4px;padding:12px;background:#00c9b5;color:#03131d;font-weight:800;border:0;border-radius:9px}
+.auth-panel .primary:disabled{opacity:.6;cursor:wait}
+.auth-switch{width:100%;padding:9px;background:transparent;border:0;color:#66d8d1;font-size:12px}
+.auth-error{padding:10px;border:1px solid #743342;border-radius:8px;background:#321b25;color:#ffb4bd;font-size:12px;line-height:1.5}
+.account-button{border:1px solid #24536a;color:#9ceee5}
+@media(max-width:700px){.auth-panel{padding:18px}.account-button{font-size:11px;padding:8px}}
