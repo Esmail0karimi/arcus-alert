@@ -148,7 +148,7 @@ LinearLayout box=column();box.setPadding(dp(16),dp(8),dp(16),0);
 EditText email=edit("Email address",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);box.addView(email);
 EditText password=edit("Password · at least 6 characters",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);box.addView(password);
 new AlertDialog.Builder(this).setTitle("Arcus Alert account").setView(box)
-.setNeutralButton("Create account",(d,w)->FirebaseSync.signUp(email.getText().toString(),password.getText().toString(),(ok,msg)->runOnUiThread(()->{Toast.makeText(this,msg,Toast.LENGTH_LONG).show();if(ok)FirebaseSync.syncNow();})))
+.setNeutralButton("Create account",(d,w)->FirebaseSync.signUp(email.getText().toString(),password.getText().toString(),(ok,msg)->runOnUiThread(()->{Toast.makeText(this,msg,Toast.LENGTH_LONG).show();})))
 .setPositiveButton("Sign in",(d,w)->FirebaseSync.signIn(email.getText().toString(),password.getText().toString(),(ok,msg)->runOnUiThread(()->{Toast.makeText(this,msg,Toast.LENGTH_LONG).show();if(ok)FirebaseSync.syncNow();})))
 .setNegativeButton("Cancel",null).show();
 }
