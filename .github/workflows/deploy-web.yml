@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/web-platform
+      - feature/firebase-sync-full-web
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
