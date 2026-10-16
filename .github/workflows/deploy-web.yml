@@ -1,19 +1,16 @@
-name: Build and deploy Arcus Alert Web
+name: Build Arcus Alert Web Preview
 on:
   workflow_dispatch:
   push:
     branches:
-      - feature/web-platform
       - feature/firebase-sync-full-web
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
-  group: pages
+  group: arcus-web-preview
   cancel-in-progress: true
 jobs:
   build:
@@ -25,25 +22,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - name: Install dependencies
         working-directory: desktop
-        run: npm install
-      - name: Build web app
+        run: npm ci
+      - name: Build full web app
         working-directory: desktop
         run: npm run build
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload web preview
+        uses: actions/upload-artifact@v4
         with:
-          path: desktop/renderer
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          name: Arcus-Alert-Web-Preview
+          path: desktop/renderer/
+          if-no-files-found: error
+          retention-days: 14
