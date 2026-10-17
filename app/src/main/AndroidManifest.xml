@@ -4,10 +4,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <application android:icon="@drawable/arcus_logo" android:roundIcon="@drawable/arcus_logo" android:allowBackup="true" android:label="Arcus Alert" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
+    <application android:name=".ArcusApplication" android:icon="@drawable/arcus_logo" android:roundIcon="@drawable/arcus_logo" android:allowBackup="true" android:label="Arcus Alert" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <service android:name=".ArcusMessagingService" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service>
         <service android:name=".PriceMonitorService" android:exported="false" android:foregroundServiceType="dataSync"/>
     </application>
 </manifest>
