@@ -1,0 +1,54 @@
+name: Build Arcus Alert QR Fix
+on:
+  push:
+    branches:
+      - feature/android-qr-alert-sync
+    paths:
+      - 'app/**'
+      - 'desktop/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - '.github/workflows/qr-fix-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android debug APK
+        run: gradle assembleDebug
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build web version
+        working-directory: desktop
+        run: |
+          npm install
+          npm run build
+      - name: Upload corrected Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arcus-Alert-Android-QR-Fix
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload corrected web version
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arcus-Alert-Web-QR-Fix
+          path: desktop/renderer/
+          if-no-files-found: error
+          retention-days: 30
