@@ -1,0 +1,38 @@
+name: Verify Arcus Alert Web QR Build
+on:
+  push:
+    branches:
+      - feature/web-qr-alert-sync
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/web-qr-build.yml'
+  pull_request:
+    branches:
+      - feature/web-platform
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/web-qr-build.yml'
+permissions:
+  contents: read
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+      - name: Build web app
+        working-directory: desktop
+        run: npm run build
+      - name: Upload web build for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcus-alert-web-qr-preview
+          path: desktop/renderer
+          if-no-files-found: error
