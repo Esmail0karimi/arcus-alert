@@ -15,8 +15,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
-    "@types/qrcode": "^1.5.5",
-    "@types/jsqr": "^1.4.0"
+    "@types/qrcode": "^1.5.5"
   },
   "build": {
     "appId": "xyz.arcus.alert.desktop",
