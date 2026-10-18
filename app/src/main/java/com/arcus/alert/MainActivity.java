@@ -198,30 +198,63 @@ void addLevel(EditText input){String sym=selected();double p;try{p=Double.parseD
 void editLevel(int index){try{JSONArray a=levels();JSONObject old=a.getJSONObject(index);LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),0);EditText sym=edit("Market symbol",1);sym.setText(old.optString("symbol"));box.addView(sym);EditText price=edit("Target price",8194);price.setText(old.optString("price"));box.addView(price);Spinner mode=new Spinner(this);mode.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"At price","Touch / cross","Near · 0.1%"}));mode.setSelection(old.optInt("mode",0));box.addView(mode);new AlertDialog.Builder(this).setTitle("Edit alert").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->{try{String s=sym.getText().toString().trim();double p=Double.parseDouble(price.getText().toString().trim());if(s.isEmpty()||p<=0)throw new Exception();old.put("symbol",s);old.put("price",p);old.put("mode",mode.getSelectedItemPosition());old.put("created",System.currentTimeMillis());a.put(index,old);save(a);renderLevels();}catch(Exception e){new AlertDialog.Builder(this).setMessage("Enter a valid market and target price.").setPositiveButton("OK",null).show();}}).show();}catch(Exception ignored){}}
 void toggleLevel(int index,boolean enabled){try{JSONArray a=levels();JSONObject o=a.getJSONObject(index);o.put("enabled",enabled);a.put(index,o);save(a);renderLevels();}catch(Exception ignored){}}
 void renderLevels(){if(list==null)return;list.removeAllViews();JSONArray a=levels();if(a.length()==0){TextView e=text("No alerts yet. Add your first price level above.",14,muted);list.addView(e);return;}for(int i=0;i<a.length();i++)try{final int idx=i;JSONObject o=a.getJSONObject(i);LinearLayout c=column();c.setPadding(dp(14),dp(12),dp(14),dp(12));c.setBackground(shape(card,14,Color.rgb(38,54,78)));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.bottomMargin=dp(9);list.addView(c,cp);LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);c.addView(top);TextView symbol=text(o.optString("symbol"),16,Color.WHITE);symbol.setTypeface(null,Typeface.BOLD);top.addView(symbol,new LinearLayout.LayoutParams(0,-2,1));Switch sw=new Switch(this);sw.setChecked(o.optBoolean("enabled",true));top.addView(sw);sw.setOnCheckedChangeListener((v,on)->toggleLevel(idx,on));TextView p=text(String.format(Locale.US,"%.8f",o.optDouble("price")),22,accent);p.setPadding(0,dp(6),0,dp(2));c.addView(p);TextView mode=text(new String[]{"AT PRICE","TOUCH / CROSS","NEAR 0.1%"}[Math.max(0,Math.min(2,o.optInt("mode")))]+"  ·  "+(o.optBoolean("enabled",true)?"ACTIVE":"PAUSED"),10,muted);c.addView(mode);LinearLayout actions=new LinearLayout(this);Button edit=button("Edit");Button del=button("Delete");actions.addView(edit,new LinearLayout.LayoutParams(0,dp(42),1));actions.addView(del,new LinearLayout.LayoutParams(0,dp(42),1));c.addView(actions);edit.setOnClickListener(v->editLevel(idx));del.setOnClickListener(v->new AlertDialog.Builder(this).setMessage("Delete this alert?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{JSONArray prev=levels(),next=new JSONArray();for(int j=0;j<prev.length();j++)if(j!=idx)next.put(prev.opt(j));save(next);renderLevels();}).show());}catch(Exception ignored){}}
+String encodeCompressedQrPayload(JSONObject payload)throws Exception{
+ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+GZIPOutputStream gzip=new GZIPOutputStream(bytes);
+gzip.write(payload.toString().getBytes("UTF-8"));gzip.close();
+return "ARCUS2:"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP);
+}
+JSONObject decodeQrPayload(String raw)throws Exception{
+if(raw!=null&&raw.startsWith("ARCUS2:")){
+byte[] compressed=android.util.Base64.decode(raw.substring(7),android.util.Base64.DEFAULT);
+GZIPInputStream gzip=new GZIPInputStream(new ByteArrayInputStream(compressed));
+ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[4096];int n;
+while((n=gzip.read(buffer))!=-1)out.write(buffer,0,n);gzip.close();
+return new JSONObject(out.toString("UTF-8"));
+}
+return new JSONObject(raw);
+}
 void showAlertsQr(){
 try{
-JSONArray a=levels();ArrayList<JSONArray> batches=new ArrayList<>();JSONArray out=new JSONArray();
-for(int i=0;i<a.length();i++){JSONObject l=a.optJSONObject(i);if(l==null||!l.optBoolean("enabled",true))continue;String symbol=l.optString("symbol","").trim();double price=l.optDouble("price",0);if(symbol.isEmpty()||price<=0)continue;int m=l.optInt("mode",0);JSONObject item=new JSONObject();item.put("symbol",symbol);item.put("price",price);item.put("mode",m==2?"NEAR":(m==1?"TOUCH":"CROSS"));out.put(item);if(out.length()==5){batches.add(out);out=new JSONArray();}}
-if(out.length()>0)batches.add(out);
-if(batches.isEmpty()){new AlertDialog.Builder(this).setTitle("No active alerts").setMessage("Create or enable at least one alert before generating a QR code.").setPositiveButton("OK",null).show();return;}
-showAlertsQrBatch(batches,0);
-}catch(Exception e){new AlertDialog.Builder(this).setMessage("Could not generate QR code: "+e.getMessage()).setPositiveButton("OK",null).show();}
+JSONArray a=levels(),out=new JSONArray();
+for(int i=0;i<a.length();i++){
+JSONObject l=a.optJSONObject(i);if(l==null||!l.optBoolean("enabled",true))continue;
+String symbol=l.optString("symbol","").trim();double price=l.optDouble("price",0);
+if(symbol.isEmpty()||price<=0)continue;
+int m=l.optInt("mode",0);JSONObject item=new JSONObject();
+item.put("symbol",symbol);item.put("price",price);
+item.put("mode",m==2?"NEAR":(m==1?"TOUCH":"CROSS"));
+item.put("nearPct",l.optDouble("nearPct",0.1));
+String id=l.optString("id","");if(!id.isEmpty())item.put("id",id);
+out.put(item);
 }
-void showAlertsQrBatch(ArrayList<JSONArray> batches,int index){
-try{
-JSONObject payload=new JSONObject();payload.put("app","arcus-alert");payload.put("version",1);payload.put("alerts",batches.get(index));
-Map<EncodeHintType,Object> hints=new EnumMap<>(EncodeHintType.class);hints.put(EncodeHintType.ERROR_CORRECTION,ErrorCorrectionLevel.L);hints.put(EncodeHintType.MARGIN,4);
-BitMatrix matrix=new QRCodeWriter().encode(payload.toString(),BarcodeFormat.QR_CODE,900,900,hints);int w=matrix.getWidth(),h=matrix.getHeight();int[] pixels=new int[w*h];for(int y=0;y<h;y++)for(int x=0;x<w;x++)pixels[y*w+x]=matrix.get(x,y)?Color.BLACK:Color.WHITE;
-Bitmap bitmap=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);ImageView image=new ImageView(this);image.setImageBitmap(bitmap);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setPadding(dp(12),dp(12),dp(12),dp(12));
-LinearLayout box=column();box.setPadding(dp(12),dp(4),dp(12),dp(8));box.addView(text("Scan batch "+(index+1)+" of "+batches.size()+". Each QR contains up to 5 alerts.",14,Color.WHITE));box.addView(image,new LinearLayout.LayoutParams(-1,dp(300)));
-AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Sync alerts · "+(index+1)+"/"+batches.size()).setView(box).setNegativeButton("Close",null).setNeutralButton(index>0?"Previous":"",null).setPositiveButton(index<batches.size()-1?"Next batch":"Done",null).create();
-dialog.setOnShowListener(v->{Button prev=dialog.getButton(AlertDialog.BUTTON_NEUTRAL);if(index==0)prev.setVisibility(View.GONE);else prev.setOnClickListener(q->{dialog.dismiss();showAlertsQrBatch(batches,index-1);});Button next=dialog.getButton(AlertDialog.BUTTON_POSITIVE);next.setOnClickListener(q->{dialog.dismiss();if(index<batches.size()-1)showAlertsQrBatch(batches,index+1);});});dialog.show();
-}catch(Exception e){new AlertDialog.Builder(this).setTitle("QR generation failed").setMessage(e.getMessage()==null?"Could not generate this QR batch.":e.getMessage()).setPositiveButton("OK",null).show();}
+if(out.length()==0){new AlertDialog.Builder(this).setTitle("No active alerts").setMessage("Create or enable at least one alert before generating a QR code.").setPositiveButton("OK",null).show();return;}
+JSONObject payload=new JSONObject();payload.put("app","arcus-alert");payload.put("version",2);payload.put("alerts",out);
+String encoded=encodeCompressedQrPayload(payload);
+Map<EncodeHintType,Object> hints=new EnumMap<>(EncodeHintType.class);
+hints.put(EncodeHintType.ERROR_CORRECTION,ErrorCorrectionLevel.L);
+hints.put(EncodeHintType.MARGIN,4);
+BitMatrix matrix=new QRCodeWriter().encode(encoded,BarcodeFormat.QR_CODE,1100,1100,hints);
+int w=matrix.getWidth(),h=matrix.getHeight();int[] pixels=new int[w*h];
+for(int y=0;y<h;y++)for(int x=0;x<w;x++)pixels[y*w+x]=matrix.get(x,y)?Color.BLACK:Color.WHITE;
+Bitmap bitmap=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);
+ImageView image=new ImageView(this);image.setImageBitmap(bitmap);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+image.setPadding(dp(8),dp(8),dp(8),dp(8));
+LinearLayout box=column();box.setPadding(dp(12),dp(4),dp(12),dp(8));
+box.addView(text(out.length()+" active alerts · compressed into one QR code.",14,Color.WHITE));
+box.addView(text("Scan once from the other Arcus Alert app. Very large backups may exceed QR capacity.",11,muted));
+box.addView(image,new LinearLayout.LayoutParams(-1,dp(330)));
+new AlertDialog.Builder(this).setTitle("Transfer all alerts").setView(box).setPositiveButton("Done",null).show();
+}catch(Exception e){
+String message=e.getMessage()==null?"Could not generate the compressed QR code.":e.getMessage();
+if(message.toLowerCase(Locale.ROOT).contains("data too big")||message.toLowerCase(Locale.ROOT).contains("code length"))message="There are too many alerts for a single QR code. Reduce the number of active alerts and try again.";
+new AlertDialog.Builder(this).setTitle("QR generation failed").setMessage(message).setPositiveButton("OK",null).show();
+}
 }
 void scanAlertsQr(){try{IntentIntegrator scanner=new IntentIntegrator(this);scanner.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);scanner.setPrompt("Scan an Arcus Alert QR code");scanner.setBeepEnabled(false);scanner.setOrientationLocked(false);scanner.initiateScan();}catch(Exception e){new AlertDialog.Builder(this).setMessage("Could not start QR scanner. Check camera permission and try again.").setPositiveButton("OK",null).show();}}
 void importAlertsQr(String raw){
 try{
-JSONObject payload=new JSONObject(raw);if(!"arcus-alert".equals(payload.optString("app"))||payload.optInt("version")!=1||!(payload.opt("alerts") instanceof JSONArray))throw new Exception("This QR code is not a valid Arcus Alert backup.");
+JSONObject payload=decodeQrPayload(raw);int payloadVersion=payload.optInt("version");if(!"arcus-alert".equals(payload.optString("app"))||(payloadVersion!=1&&payloadVersion!=2)||!(payload.opt("alerts") instanceof JSONArray))throw new Exception("This QR code is not a valid Arcus Alert backup.");
 JSONArray incoming=payload.getJSONArray("alerts"),current=levels();int added=0,skipped=0;
 for(int i=0;i<incoming.length();i++){JSONObject item=incoming.optJSONObject(i);if(item==null)continue;String symbol=item.optString("symbol","").trim(),modeText=item.optString("mode","CROSS").toUpperCase(Locale.ROOT);double price=item.optDouble("price",0);if(symbol.isEmpty()||price<=0||!(modeText.equals("CROSS")||modeText.equals("TOUCH")||modeText.equals("NEAR")))continue;int mode=modeText.equals("NEAR")?2:(modeText.equals("TOUCH")?1:0);boolean duplicate=false;for(int j=0;j<current.length();j++){JSONObject old=current.optJSONObject(j);if(old!=null&&symbol.equalsIgnoreCase(old.optString("symbol"))&&Double.compare(price,old.optDouble("price",0))==0&&mode==old.optInt("mode",0)){duplicate=true;break;}}if(duplicate){skipped++;continue;}JSONObject fresh=new JSONObject();fresh.put("id",item.optString("id",UUID.randomUUID().toString()));fresh.put("symbol",symbol);fresh.put("price",price);fresh.put("mode",mode);fresh.put("nearPct",item.optDouble("nearPct",0.1));fresh.put("created",System.currentTimeMillis()+i);fresh.put("enabled",true);current.put(fresh);added++;}
 if(added>0){save(current);renderLevels();updateChartAlertLines();}
