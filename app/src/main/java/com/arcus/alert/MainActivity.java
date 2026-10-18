@@ -201,9 +201,9 @@ void renderLevels(){if(list==null)return;list.removeAllViews();JSONArray a=level
 void showAlertsQr(){
 try{
 JSONArray a=levels(),out=new JSONArray();
-for(int i=0;i<a.length();i++){JSONObject l=a.optJSONObject(i);if(l==null||!l.optBoolean("enabled",true))continue;String symbol=l.optString("symbol","").trim();double price=l.optDouble("price",0);if(symbol.isEmpty()||price<=0)continue;int m=l.optInt("mode",0);JSONObject item=new JSONObject();item.put("id",l.optString("id","native-"+l.optLong("created",System.currentTimeMillis())+"-"+i));item.put("symbol",symbol);item.put("price",price);item.put("mode",m==2?"NEAR":(m==1?"TOUCH":"CROSS"));item.put("nearPct",0.1);out.put(item);}
+for(int i=0;i<a.length();i++){JSONObject l=a.optJSONObject(i);if(l==null||!l.optBoolean("enabled",true))continue;String symbol=l.optString("symbol","").trim();double price=l.optDouble("price",0);if(symbol.isEmpty()||price<=0)continue;int m=l.optInt("mode",0);JSONObject item=new JSONObject();item.put("symbol",symbol);item.put("price",price);item.put("mode",m==2?"NEAR":(m==1?"TOUCH":"CROSS"));out.put(item);}
 if(out.length()==0){new AlertDialog.Builder(this).setTitle("No active alerts").setMessage("Create or enable at least one alert before generating a QR code.").setPositiveButton("OK",null).show();return;}
-JSONObject payload=new JSONObject();payload.put("app","arcus-alert");payload.put("version",1);payload.put("exportedAt",System.currentTimeMillis());payload.put("alerts",out);
+JSONObject payload=new JSONObject();payload.put("app","arcus-alert");payload.put("version",1);payload.put("alerts",out);
 Map<EncodeHintType,Object> hints=new EnumMap<>(EncodeHintType.class);hints.put(EncodeHintType.ERROR_CORRECTION,ErrorCorrectionLevel.L);hints.put(EncodeHintType.MARGIN,2);
 BitMatrix matrix=new QRCodeWriter().encode(payload.toString(),BarcodeFormat.QR_CODE,900,900,hints);int w=matrix.getWidth(),h=matrix.getHeight();int[] pixels=new int[w*h];for(int y=0;y<h;y++)for(int x=0;x<w;x++)pixels[y*w+x]=matrix.get(x,y)?Color.BLACK:Color.WHITE;
 Bitmap bitmap=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);ImageView image=new ImageView(this);image.setImageBitmap(bitmap);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setPadding(dp(12),dp(12),dp(12),dp(12));
