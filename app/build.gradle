@@ -3,6 +3,8 @@ plugins {
 }
 dependencies {
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+    // ZXing CaptureActivity uses ContextCompat at runtime; include AndroidX Core explicitly.
+    implementation 'androidx.core:core:1.15.0'
 }
 android {
     namespace 'com.arcus.alert'
