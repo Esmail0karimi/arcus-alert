@@ -2,7 +2,8 @@ package com.arcus.alert;
 import android.Manifest;import android.app.*;import android.content.*;import android.content.pm.PackageManager;import android.net.Uri;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import android.text.*;import org.json.*;import java.util.*;import java.net.*;import java.io.*;
 public class MainActivity extends Activity{
 static final String PREF="arcus_native";static final int PICK_SOUND=77;LinearLayout root,list,historyList,alertPage,savedPage,marketPage,chartPage,watchlistPage,pages;Spinner marketSpinner,modeSpinner,timeframeSpinner,chartMarketSpinner,chartTfSpinner;TextView status,livePrice,soundName,chartStatus;ChartView chartView;EditText chartSearch;LinearLayout chartTools;final ArrayList<String> chartNames=new ArrayList<>();LinearLayout marketRows;EditText searchBox,marketSearch;final ArrayList<String> allNames=new ArrayList<>(),shownNames=new ArrayList<>();final Handler handler=new Handler(Looper.getMainLooper());
-final Runnable refresh=new Runnable(){public void run(){refreshMarkets();handler.postDelayed(this,1000);}};
+long seenLevelsApplied=0;
+final Runnable refresh=new Runnable(){public void run(){refreshMarkets();long applied=getSharedPreferences(PREF,0).getLong("levels_applied_at",0);if(applied!=seenLevelsApplied){seenLevelsApplied=applied;renderLevels();updateChartAlertLines();}handler.postDelayed(this,1000);}};
 boolean favoritesOnly=false;Button favoriteButton;int bg=Color.rgb(10,16,29),card=Color.rgb(20,30,49),muted=Color.rgb(151,166,190),accent=Color.rgb(73,190,166);
 public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);buildUi();startMonitor();handler.post(refresh);if(getIntent()!=null&&getIntent().getBooleanExtra("open_alerts_tab",false)){showMainTab(4);renderLevels();}}
 int dp(float v){return(int)(v*getResources().getDisplayMetrics().density);}GradientDrawable shape(int color,int radius,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(stroke!=0)d.setStroke(dp(1),stroke);return d;}
@@ -89,7 +90,25 @@ TextView connection=text("●  "+(status==null?"Connecting…":status.getText().
 TextView soundTitle=text("Alert sound",18,Color.WHITE);soundTitle.setPadding(0,dp(16),0,dp(6));box.addView(soundTitle);
 soundName=text("",13,muted);box.addView(soundName);updateSoundName();
 Button choose=button("Choose alert sound");box.addView(choose);choose.setOnClickListener(v->pickSound());
-new AlertDialog.Builder(this).setTitle("Settings").setView(box).setPositiveButton("Done",null).show();
+TextView cloudTitle=text("Cloud sync",18,Color.WHITE);cloudTitle.setPadding(0,dp(20),0,dp(6));box.addView(cloudTitle);
+final TextView cloudStatus=text("",13,muted);box.addView(cloudStatus);
+final EditText cloudEmail=edit("Email",33),cloudPassword=edit("Password",129);
+final Button cloudSignIn=button("Sign in"),cloudSignUp=button("Create account"),cloudSignOut=button("Sign out");
+LinearLayout.LayoutParams fieldLp=new LinearLayout.LayoutParams(-1,-2);fieldLp.topMargin=dp(8);
+box.addView(cloudEmail,fieldLp);box.addView(cloudPassword,fieldLp);box.addView(cloudSignIn);box.addView(cloudSignUp);box.addView(cloudSignOut);
+final Runnable updateCloud=()->{boolean in=CloudSync.isSignedIn(this);String s=CloudSync.status(this);cloudStatus.setText(in?"●  Signed in as "+CloudSync.email(this)+(s.isEmpty()?"":"\n"+s):"Sign in to sync alerts with the web app.\nUse the same account as the web page."+(s.isEmpty()?"":"\n"+s));int formVisibility=in?View.GONE:View.VISIBLE;cloudEmail.setVisibility(formVisibility);cloudPassword.setVisibility(formVisibility);cloudSignIn.setVisibility(formVisibility);cloudSignUp.setVisibility(formVisibility);cloudSignOut.setVisibility(in?View.VISIBLE:View.GONE);};
+updateCloud.run();
+cloudSignIn.setOnClickListener(v->cloudAuth(false,cloudEmail,cloudPassword,cloudStatus,updateCloud));
+cloudSignUp.setOnClickListener(v->cloudAuth(true,cloudEmail,cloudPassword,cloudStatus,updateCloud));
+cloudSignOut.setOnClickListener(v->{CloudSync.signOut(this);updateCloud.run();});
+ScrollView settingsScroll=new ScrollView(this);settingsScroll.addView(box);
+new AlertDialog.Builder(this).setTitle("Settings").setView(settingsScroll).setPositiveButton("Done",null).show();
+}
+void cloudAuth(boolean create,EditText email,EditText password,TextView cloudStatus,Runnable update){
+final String e=email.getText().toString().trim(),pw=password.getText().toString();
+if(e.isEmpty()||pw.length()<6){cloudStatus.setText("Enter an email and a password of at least 6 characters.");return;}
+cloudStatus.setText(create?"Creating account…":"Signing in…");
+new Thread(()->{String err=CloudSync.signIn(this,e,pw,create);runOnUiThread(()->{password.setText("");if(err!=null)cloudStatus.setText(err);else update.run();});}).start();
 }
 void showNotifications(){
 LinearLayout box=column();box.setPadding(dp(12),dp(6),dp(12),dp(6));
@@ -135,7 +154,7 @@ if(shown==0){TextView empty=text("No matching markets.",13,muted);empty.setPaddi
 }
 double readPrice(JSONObject o){Object v=o.has("markPrice")&&!o.isNull("markPrice")?o.opt("markPrice"):o.opt("oraclePrice");try{return v==null?0:Double.parseDouble(v.toString());}catch(Exception e){return 0;}}
 void startMonitor(){try{Intent i=new Intent(this,PriceMonitorService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){if(status!=null)status.setText("Service error: "+e.getMessage());}}
-JSONArray levels(){try{return new JSONArray(getSharedPreferences(PREF,0).getString("levels","[]"));}catch(Exception e){return new JSONArray();}}void save(JSONArray a){getSharedPreferences(PREF,0).edit().putString("levels",a.toString()).apply();}
+JSONArray levels(){try{return new JSONArray(getSharedPreferences(PREF,0).getString("levels","[]"));}catch(Exception e){return new JSONArray();}}void save(JSONArray a){getSharedPreferences(PREF,0).edit().putString("levels",a.toString()).apply();CloudSync.markDirty(this);}
 String selected(){return marketSpinner==null||marketSpinner.getSelectedItem()==null?"":marketSpinner.getSelectedItem().toString();}
 void filterMarkets(){String q=searchBox.getText().toString().trim().toLowerCase(Locale.ROOT),old=selected();shownNames.clear();for(String n:allNames)if((q.isEmpty()||n.toLowerCase(Locale.ROOT).contains(q))&&(!favoritesOnly||isFavorite(n)))shownNames.add(n);marketSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,shownNames));int p=shownNames.indexOf(old);if(p>=0)marketSpinner.setSelection(p);updatePrice();}
 JSONObject find(JSONObject d,String symbol){if(symbol==null||symbol.isEmpty())return null;Iterator<String> it=d.keys();while(it.hasNext()){String key=it.next();JSONObject o=d.optJSONObject(key);if(o!=null&&(symbol.equalsIgnoreCase(key)||symbol.equalsIgnoreCase(o.optString("marketDisplayName"))||symbol.equalsIgnoreCase(o.optString("symbol"))||symbol.equalsIgnoreCase(o.optString("marketId"))))return o;}return null;}
