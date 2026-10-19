@@ -38,7 +38,7 @@ Intent stopIntent=new Intent(this,PriceMonitorService.class);stopIntent.setActio
 PendingIntent stopPending=PendingIntent.getService(this,notificationId,stopIntent,flags);
 Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,ALERT_CHANNEL):new Notification.Builder(this);
 b.setContentTitle(sym+" "+direction+" "+String.format(Locale.US,"%,.0f",target)).setContentText("Current price "+String.format(Locale.US,"%,.0f",price))
-.setStyle(new Notification.BigTextStyle().bigText("ARCUS ALERT\\n"+body)).setSmallIcon(R.drawable.arcus_logo).setLargeIcon(notificationLogo()).setColor(Color.rgb(0,220,210))
+.setStyle(new Notification.BigTextStyle().bigText("ARCUS ALERT\\n"+body)).setSmallIcon(android.R.drawable.stat_notify_sync_noanim).setLargeIcon(notificationLogo()).setColor(Color.rgb(0,220,210))
 .setContentIntent(contentPending).setAutoCancel(true).setOngoing(true).setPriority(Notification.PRIORITY_MAX)
 .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC).setDefaults(Notification.DEFAULT_VIBRATE)
 .addAction(android.R.drawable.ic_media_pause,"Stop sound",stopPending);
