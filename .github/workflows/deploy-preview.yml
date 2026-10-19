@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - preview/build-20
+      - feature/final-polish-web-2026
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-preview.yml'
@@ -31,7 +31,7 @@ jobs:
       - name: Checkout preview branch
         uses: actions/checkout@v4
         with:
-          ref: preview/build-20
+          ref: feature/final-polish-web-2026
           path: preview-src
 
       - name: Set up Node.js
