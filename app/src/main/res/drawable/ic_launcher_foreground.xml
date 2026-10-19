@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Bell body -->
+    <path
+        android:fillColor="#49BEA6"
+        android:pathData="M54,30c-9,0 -16,7 -16,16v10l-5,8h42l-5,-8V46c0,-9 -7,-16 -16,-16z" />
+    <!-- Clapper -->
+    <path
+        android:fillColor="#49BEA6"
+        android:pathData="M48,68a6,6 0 0 0 12,0z" />
+    <!-- Top knob -->
+    <path
+        android:fillColor="#49BEA6"
+        android:pathData="M51,27a3,3 0 1 0 6,0a3,3 0 1 0 -6,0z" />
+</vector>
