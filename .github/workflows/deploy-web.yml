@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/web-platform
+      - feature/web-alert-persistence-2000-candles
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
@@ -37,6 +38,7 @@ jobs:
         with:
           path: desktop/renderer
   deploy:
+    if: github.ref == 'refs/heads/feature/web-platform'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
