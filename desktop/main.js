@@ -5,9 +5,11 @@ const { pathToFileURL } = require('url');
 let mainWindow = null;
 let tray = null;
 let quitting = false;
-let pollTimer = null;
-let pollDelay = 15000;
-let pollInFlight = false;
+let socket = null;
+let wsRetryTimer = null;
+let wsRetryDelay = 1000;
+let lastMarketsFetch = 0;
+let latestPrices = {};
 let alarmTimer = null;
 let alarmUntil = 0;
 let notificationRepeatTimer = null;
@@ -15,65 +17,129 @@ let activeNotification = null;
 let activeNotificationSymbol = '';
 let activeNotificationTitle = 'Arcus Alert';
 let activeNotificationBody = 'Price alert triggered';
-async function pollArcusPrices() {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  let failed = false;
-  try {
-    // Use Electron's Chromium-backed network stack instead of Node's global fetch.
-    const response = await net.fetch('https://api.arcus.xyz/v1/prices', {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store'
-    });
-    if (!response.ok) {
-      failed = true;
-      const detail = (await response.text()).slice(0, 240);
-      throw new Error('Arcus HTTP ' + response.status + (detail ? ': ' + detail : ''));
-    }
-    const data = await response.json();
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected Arcus response');
-    const prices = {};
-    for (const [marketId, item] of Object.entries(data)) {
-      if (!item || !item.marketDisplayName) continue;
-      const raw = item.markPrice ?? item.oraclePrice;
-      const price = Number(raw);
-      if (Number.isFinite(price)) {
-        prices[String(item.marketDisplayName).toUpperCase()] = { price, source: item.markPrice != null ? 'mark' : 'oracle', marketId, change24h: null };
-      }
-    }
-    // Arcus exposes 24h market statistics on /v1/markets (not /v1/prices).
-    // priceChange24h is a fraction, so convert it to percentage points for the UI.
-    try {
-      const marketResponse = await net.fetch('https://api.arcus.xyz/v1/markets', {
-        headers: { Accept: 'application/json' },
-        cache: 'no-store'
-      });
-      if (marketResponse.ok) {
-        const marketPayload = await marketResponse.json();
-        const markets = Array.isArray(marketPayload) ? marketPayload : marketPayload.markets;
-        if (Array.isArray(markets)) {
-          for (const market of markets) {
-            const name = String(market?.marketDisplayName || '').toUpperCase();
-            if (!name || !prices[name]) continue;
-            const rawChange = market.priceChange24h;
-            const fraction = rawChange == null ? NaN : Number(rawChange);
-            prices[name].change24h = Number.isFinite(fraction) ? fraction * 100 : null;
-          }
-        }
-      }
-    } catch (marketStatsError) {
-      // Keep live prices available if the separate 24h statistics request fails.
-    }
-    if (!Object.keys(prices).length) throw new Error('No Arcus market prices returned');
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('arcus:prices', { prices, updatedAt: Date.now() });
-  } catch (error) { failed = true; if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) mainWindow.webContents.send('arcus:price-error', error.message); }
-  finally {
-    pollInFlight = false;
-    pollDelay = failed ? Math.min(Math.max(pollDelay * 2, 30000), 120000) : 15000;
-    if (!quitting) { clearTimeout(pollTimer); pollTimer = setTimeout(pollArcusPrices, pollDelay); }
+
+function publishPrices() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('arcus:prices', { prices: latestPrices, updatedAt: Date.now() });
   }
 }
 
+async function refreshArcusMarketStats() {
+  if (Date.now() - lastMarketsFetch < 60000) return;
+  lastMarketsFetch = Date.now();
+  try {
+    const response = await net.fetch('https://api.arcus.xyz/v1/markets', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const markets = Array.isArray(payload) ? payload : payload.markets;
+    if (!Array.isArray(markets)) return;
+    for (const market of markets) {
+      const name = String(market?.marketDisplayName || '').toUpperCase();
+      if (!name || !latestPrices[name]) continue;
+      const rawChange = market.priceChange24h;
+      const fraction = rawChange == null ? NaN : Number(rawChange);
+      latestPrices[name].change24h = Number.isFinite(fraction) ? fraction * 100 : null;
+    }
+    publishPrices();
+  } catch {
+    // Price delivery stays independent from optional 24h market statistics.
+  }
+}
+
+function handleArcusPriceMessage(incoming) {
+  if (!Array.isArray(incoming)) return;
+  for (const item of incoming) {
+    const name = String(item?.marketDisplayName || '').toUpperCase();
+    const marketId = String(item?.marketId ?? '');
+    const price = Number(item?.markPrice ?? item?.price);
+    if (!name || !Number.isFinite(price) || price <= 0) continue;
+    latestPrices[name] = {
+      price,
+      source: item?.markPrice != null ? 'mark' : 'oracle',
+      marketId: marketId || latestPrices[name]?.marketId || '',
+      change24h: latestPrices[name]?.change24h ?? null
+    };
+  }
+  if (Object.keys(latestPrices).length) publishPrices();
+}
+
+function scheduleArcusReconnect() {
+  if (quitting || wsRetryTimer) return;
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send('arcus:price-error', 'Arcus WebSocket disconnected · reconnecting…');
+  }
+  wsRetryTimer = setTimeout(() => {
+    wsRetryTimer = null;
+    connectArcusWebSocket();
+  }, wsRetryDelay);
+  wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
+}
+
+function connectArcusWebSocket() {
+  if (quitting) return;
+  const ArcusWebSocket = globalThis.WebSocket;
+  if (typeof ArcusWebSocket !== 'function') {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.send('arcus:price-error', 'This Electron runtime does not provide native WebSocket support.');
+    }
+    wsRetryDelay = Math.max(wsRetryDelay, 30000);
+    scheduleArcusReconnect();
+    return;
+  }
+
+  try {
+    const currentSocket = new ArcusWebSocket('wss://api.arcus.xyz/v1/ws');
+    socket = currentSocket;
+    currentSocket.addEventListener('open', () => {
+      if (socket !== currentSocket) return;
+      wsRetryDelay = 1000;
+      currentSocket.send(JSON.stringify({ type: 'subscribe', channel: 'oraclePrices' }));
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.send('arcus:prices', { prices: latestPrices, updatedAt: Date.now() });
+      }
+      void refreshArcusMarketStats();
+    });
+    currentSocket.addEventListener('message', event => {
+      if (socket !== currentSocket) return;
+      try {
+        const message = JSON.parse(String(event.data));
+        if (message?.type === 'error' || Number(message?.status) >= 400) {
+          if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+            mainWindow.webContents.send('arcus:price-error', 'Arcus WebSocket error · ' + String(message?.message || message?.error || message?.status));
+          }
+          return;
+        }
+        if (message?.channel === 'oraclePrices') {
+          handleArcusPriceMessage(message.contents?.prices);
+          if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+            mainWindow.webContents.send('arcus:price-status', 'Live · Arcus WebSocket');
+          }
+        } else if (message?.channel === 'markets') {
+          void refreshArcusMarketStats();
+        }
+      } catch {
+        // Ignore malformed frames and keep the live socket connected.
+      }
+    });
+    currentSocket.addEventListener('error', () => {
+      if (socket !== currentSocket) return;
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.send('arcus:price-error', 'Arcus WebSocket connection error · reconnecting…');
+      }
+    });
+    currentSocket.addEventListener('close', () => {
+      if (socket !== currentSocket) return;
+      socket = null;
+      scheduleArcusReconnect();
+    });
+  } catch {
+    socket = null;
+    scheduleArcusReconnect();
+  }
+}
 
 const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#09182a"/><path d="M5 26 15 5h5l7 21h-6l-4-13-6 13z" fill="#00dcd2"/></svg>`;
 
@@ -135,9 +201,8 @@ app.whenReady().then(() => {
   Notification.requestPermission?.();
   createTray();
   createWindow();
-  // Start Arcus market polling immediately and keep the desktop feed fresh.
-  pollArcusPrices();
-  pollTimer = setTimeout(pollArcusPrices, 15000);
+  // Live prices are delivered by Arcus WebSocket; REST is used only for 24h market metadata.
+  connectArcusWebSocket();
 });
 
 app.on('before-quit', () => { quitting = true; if (pollTimer) clearTimeout(pollTimer); });
