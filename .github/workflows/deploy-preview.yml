@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - preview/build-20
       - feature/final-polish-web-2026
     paths:
       - 'desktop/**'
