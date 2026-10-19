@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/web-platform
+      - feature/web-alert-persistence-2000-candles
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
