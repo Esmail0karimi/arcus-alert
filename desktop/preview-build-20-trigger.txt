@@ -1,0 +1,1 @@
+Trigger isolated Build 20 preview deployment. This file does not affect the web application build.
