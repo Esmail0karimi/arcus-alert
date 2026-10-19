@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/web-platform
-      - feature/final-polish-web-2026
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
