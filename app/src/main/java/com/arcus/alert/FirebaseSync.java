@@ -132,8 +132,12 @@ public final class FirebaseSync {
                             String mode = String.valueOf(m.get("mode"));
                             o.put("mode", "NEAR".equals(mode) ? 2 : ("TOUCH".equals(mode) ? 1 : 0));
                             Object id = m.get("id");
-                            long created = parseLong(id, System.currentTimeMillis());
-                            o.put("created", created);
+                            String cloudId = id == null ? "" : String.valueOf(id);
+                            // Keep the cloud id: alerts made on the web have UUID ids, not numbers.
+                            o.put("cid", cloudId);
+                            o.put("created", createdFromId(cloudId));
+                            double nearPct = number(m.get("nearPct"));
+                            o.put("nearPct", nearPct > 0 ? nearPct : 0.1);
                             o.put("enabled", m.get("enabled") == null || Boolean.parseBoolean(String.valueOf(m.get("enabled"))));
                             cloud.put(o);
                         }
@@ -187,11 +191,11 @@ public final class FirebaseSync {
                 JSONObject o=local.optJSONObject(i); if(o==null) continue;
                 int mode=o.optInt("mode",0);
                 Map<String,Object> item=new HashMap<>();
-                item.put("id",String.valueOf(o.optLong("created",System.currentTimeMillis())));
+                item.put("id",levelId(o));
                 item.put("symbol",o.optString("symbol"));
                 item.put("price",o.optDouble("price",0));
                 item.put("mode",mode==2?"NEAR":mode==1?"TOUCH":"CROSS");
-                item.put("nearPct",0.1);
+                item.put("nearPct",o.optDouble("nearPct",0.1));
                 item.put("enabled",o.optBoolean("enabled",true));
                 levels.add(item);
             }
@@ -217,8 +221,24 @@ public final class FirebaseSync {
         } catch (Exception ignored) {}
     }
 
+    /** Id shared with the cloud: the stored cloud id, or the creation time for alerts made on this phone. */
+    private static String levelId(JSONObject o) {
+        String cid = o.optString("cid", "");
+        return cid.isEmpty() ? String.valueOf(o.optLong("created", System.currentTimeMillis())) : cid;
+    }
+    /** Same alert on both sides gets the same key, so merging cloud and local data never duplicates it. */
     private static String levelKey(JSONObject o) {
-        return o.optString("symbol")+"|"+o.optString("price")+"|"+o.optInt("mode")+"|"+o.optLong("created");
+        return "id:" + levelId(o);
+    }
+    /**
+     * Numeric ids (made on Android) are the creation time itself. Web ids are UUIDs, so derive a stable number
+     * from them; PriceMonitorService keys its per-alert state on "created", and a value that changed on every
+     * sync would reset crossing detection and could re-fire an alert.
+     */
+    private static long createdFromId(String id) {
+        if (id.isEmpty()) return System.currentTimeMillis();
+        try { return Long.parseLong(id); }
+        catch (NumberFormatException e) { return 1_000_000_000_000L + (id.hashCode() & 0x7fffffffL); }
     }
     private static double number(Object x) { try { return Double.parseDouble(String.valueOf(x)); } catch(Exception e) { return 0; } }
     private static long parseLong(Object x,long fallback) { try { return Long.parseLong(String.valueOf(x)); } catch(Exception e) { return fallback; } }
