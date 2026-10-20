@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/web-platform
+      - feature/firebase-auth-sync-web
+      - feature/firebase-all-clients-sync
     paths:
       - 'desktop/**'
       - '.github/workflows/deploy-web.yml'
@@ -29,6 +31,8 @@ jobs:
         run: npm install
       - name: Build web app
         working-directory: desktop
+        env:
+          VITE_FIREBASE_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5

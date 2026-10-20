@@ -1,23 +1,2359 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';import jsQR from 'jsqr';import QRCode from 'qrcode';import{createRoot}from'react-dom/client';import{createChart,CandlestickSeries,CrosshairMode}from'lightweight-charts';import './style.css';
-type Price={price:number;source:string;marketId:string;change24h?:number|null};type Level={id:string;symbol:string;price:number;mode:string;nearPct:number};type AlertEvent={id:string;symbol:string;price:number;actual:number;time:number};type DrawingPoint={time:any;price:number;color?:string;width?:number};type ChartDrawing={id:string;tool:string;symbol?:string;points:DrawingPoint[];color?:string;width?:number};const DRAWINGS='arcus-alert-chart-drawings-v1',DRAWING_STYLE='arcus-alert-drawing-style-v1';declare global{interface Window{arcusDesktop:any}}
-const TABS=['Market','Watchlist','Chart','Alerts','Create'];
-const CANDLE_CACHE=new Map<string,{at:number;candles:any[]}>();let candle429Until=0,candle429Delay=15000;const KEY='arcus-alert-levels-v1',FAV='arcus-alert-favorites-v1',HISTORY='arcus-alert-history-v1',SOUND='arcus-alert-sound-v1';
-function App(){const[history,setHistory]=useState<AlertEvent[]>(()=>{try{return JSON.parse(localStorage.getItem(HISTORY)||'[]')}catch{return[]}}),[showHistory,setShowHistory]=useState(false),[sound,setSound]=useState(()=>localStorage.getItem(SOUND)||'double'),[customSound,setCustomSound]=useState(''),[soundStorageReady,setSoundStorageReady]=useState(false),[alarmActive,setAlarmActive]=useState(false);const[hoverLevel,setHoverLevel]=useState<{y:number;price:number}|null>(null),[chartSearchOpen,setChartSearchOpen]=useState(false),[activeTool,setActiveTool]=useState('cursor'),[lineColor,setLineColor]=useState(()=>{try{return JSON.parse(localStorage.getItem(DRAWING_STYLE)||'{}').color||'#39c9c2'}catch{return'#39c9c2'}}),[lineWidth,setLineWidth]=useState(()=>{try{return Number(JSON.parse(localStorage.getItem(DRAWING_STYLE)||'{}').width)||2}catch{return 2}}),[drawings,setDrawings]=useState<ChartDrawing[]>(()=>{try{return JSON.parse(localStorage.getItem(DRAWINGS)||'[]')}catch{return[]}}),[editingDrawing,setEditingDrawing]=useState<string|null>(null),[editLinePrice,setEditLinePrice]=useState(''),[editLineColor,setEditLineColor]=useState('#39c9c2'),[editLineWidth,setEditLineWidth]=useState(2),[watchGroup,setWatchGroup]=useState('Favorites');const[tab,setTab]=useState('Market'),[prices,setPrices]=useState<Record<string,Price>>({}),[status,setStatus]=useState('Connecting to Arcus…'),[symbol,setSymbol]=useState(''),[query,setQuery]=useState(''),[tf,setTf]=useState('15m'),[levels,setLevels]=useState<Level[]>(()=>{try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch{return[]}}),[favorites,setFavorites]=useState<string[]>(()=>{try{return JSON.parse(localStorage.getItem(FAV)||'[]')}catch{return[]}}),[target,setTarget]=useState(''),[mode,setMode]=useState('CROSS'),[chartStatus,setChartStatus]=useState('Chart is waiting for market data…'),[qrOpen,setQrOpen]=useState(false),[textOnly,setTextOnly]=useState(false),[qrTitle,setQrTitle]=useState('All alerts'),[selectedAlert,setSelectedAlert]=useState<string|null>(null),[qrImage,setQrImage]=useState(''),[qrImages,setQrImages]=useState<string[]>([]),[qrIndex,setQrIndex]=useState(0),[qrText,setQrText]=useState(''),[qrError,setQrError]=useState(''),[scannerOpen,setScannerOpen]=useState(false),[scanStatus,setScanStatus]=useState('Point your camera at the QR code');const qrVideo=useRef<HTMLVideoElement|null>(null),cameraStream=useRef<MediaStream|null>(null),qrParts=useRef<Record<string,{total:number;parts:Record<number,string>}>>({}),lastScannedQr=useRef('');const previousPrices=useRef<Record<string,number>>({}),alarmAudio=useRef<HTMLAudioElement|null>(null),marketChanges=useRef<Record<string,number>>({}),marketMetaAt=useRef(0);const chartHost=useRef<HTMLDivElement>(null),chartApi=useRef<any>(null),series=useRef<any>(null);const chartSymbolRef=useRef(symbol),chartTfRef=useRef(tf),liveBarRef=useRef<{key:string;bar:any}|null>(null),latestWsPriceRef=useRef<Record<string,{price:number;time:number}>>({});
-const importQrPayload=async(raw:string)=>{try{if(raw.startsWith('ARCUS2PART|')){const fields=raw.split('|');if(fields.length!==5)throw new Error('Invalid QR part');const [,id,indexText,totalText,part]=fields;const index=Number(indexText),total=Number(totalText);if(!id||!Number.isInteger(index)||!Number.isInteger(total)||total<2||index<0||index>=total||!part)throw new Error('Invalid QR part');const entry=qrParts.current[id]||(qrParts.current[id]={total,parts:{}});if(entry.total!==total)throw new Error('QR parts do not match');entry.parts[index]=part;const received=Object.keys(entry.parts).length;setScanStatus('Received QR part '+received+' of '+total+' · '+Math.round(received/total*100)+'%');if(received<total)return false;const joined=Array.from({length:total},(_,i)=>entry.parts[i]).join('');delete qrParts.current[id];return await importQrPayload('ARCUS2:'+joined);}let parsed:any;if(raw.startsWith('ARCUS2:')){if(!('DecompressionStream'in window))throw new Error('Compressed QR import needs a recent Chrome or Edge browser');const binary=atob(raw.slice(7));const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));parsed=JSON.parse(await new Response(stream).text());}else{parsed=JSON.parse(raw);}if(parsed?.app!=='arcus-alert'||![1,2].includes(parsed?.version)||!Array.isArray(parsed?.alerts))throw new Error('This QR code is not a valid Arcus Alert backup');const incoming=parsed.alerts.filter((l:any)=>l&&typeof l.symbol==='string'&&Number.isFinite(Number(l.price))&&Number(l.price)>0).map((l:any)=>({id:String(l.id||crypto.randomUUID()),symbol:l.symbol,price:Number(l.price),mode:typeof l.mode==='string'?l.mode:(typeof l.modeName==='string'?l.modeName:'CROSS'),nearPct:Number(l.nearPct)||0.1}));if(!incoming.length)throw new Error('No valid alerts were found in this QR code');setLevels(current=>{const merged=[...current];for(const item of incoming){if(!merged.some(existing=>existing.id===item.id||(existing.symbol===item.symbol&&existing.price===item.price&&existing.mode===item.mode)))merged.push(item);}return merged;});setScanStatus('Imported '+incoming.length+' alert(s)');setStatus('QR import complete · '+incoming.length+' alert(s) scanned');setScannerOpen(false);return true;}catch(e:any){setScanStatus(e?.message||'Could not read alerts from QR');return false;}};const openQrSync=async(alertSet:Level[]=levels,title='All alerts')=>{setTextOnly(false);if(!alertSet.length){setStatus('No alerts in this group');return;}const payload=JSON.stringify({app:'arcus-alert',version:1,alerts:alertSet.map(({symbol,price})=>({symbol,price,mode:1,enabled:true}))});setQrText(payload);setQrError('');setQrImage('');setQrImages([]);setQrIndex(0);setQrOpen(true);setQrTitle(title);try{const image=await QRCode.toDataURL(payload,{errorCorrectionLevel:'M',margin:8,width:1400,scale:16});setQrImages([image]);setQrIndex(0);setQrImage(image);}catch(e:any){setQrError('Could not prepare the QR code. '+(e?.message||''));}};const openTextExport=()=>{if(!levels.length){setStatus('No alerts to export');return;}const payload=JSON.stringify({app:'arcus-alert',version:1,alerts:levels.map(({symbol,price,mode})=>({symbol,price,mode:mode==='NEAR'?2:mode==='CROSS'?0:1,enabled:true}))});setTextOnly(true);setQrText(payload);setQrError('');setQrImage('');setQrImages([]);setQrIndex(0);setQrOpen(true);setQrTitle('All alerts · Text export');};const symbols=useMemo(()=>Object.keys(prices).sort(),[prices]);useEffect(()=>{if(!scannerOpen)return;let cancelled=false;let frame=0;let busy=false;let lastRaw='';let lastReadAt=0;const canvas=document.createElement('canvas');const context=canvas.getContext('2d',{willReadFrequently:true});const Detector=(window as any).BarcodeDetector;const detector=Detector?new Detector({formats:['qr_code']}):null;const start=async()=>{try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access requires HTTPS or localhost.');const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}cameraStream.current=stream;const video=qrVideo.current;if(!video)return;video.srcObject=stream;await video.play();const scan=async()=>{if(cancelled)return;const current=qrVideo.current;if(current&&current.readyState>=2&&!busy){busy=true;try{let raw='';if(detector){const codes=await detector.detect(current);raw=String(codes.find((code:any)=>code.rawValue)?.rawValue||'');}if(!raw&&context&&current.videoWidth>0&&current.videoHeight>0){const maxWidth=1280,scale=Math.min(1,maxWidth/current.videoWidth);canvas.width=Math.max(1,Math.round(current.videoWidth*scale));canvas.height=Math.max(1,Math.round(current.videoHeight*scale));context.drawImage(current,0,0,canvas.width,canvas.height);const frameData=context.getImageData(0,0,canvas.width,canvas.height);const decoded=jsQR(frameData.data,frameData.width,frameData.height,{inversionAttempts:'attemptBoth'});raw=decoded?.data||'';}if(raw&&(raw!==lastRaw||Date.now()-lastReadAt>1500)){lastRaw=raw;lastReadAt=Date.now();await importQrPayload(raw);}}catch(e:any){setScanStatus(e?.message||'Could not decode this QR code. Adjust distance or lighting and try again.');}finally{busy=false;}}if(!cancelled)frame=requestAnimationFrame(scan);};frame=requestAnimationFrame(scan);}catch(e:any){setScanStatus('Camera unavailable. Allow camera access and try again. '+(e?.message||''));}};void start();return()=>{cancelled=true;cancelAnimationFrame(frame);cameraStream.current?.getTracks().forEach(t=>t.stop());cameraStream.current=null;}},[scannerOpen]);useEffect(()=>{if(!window.arcusDesktop?.isDesktop&&'serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}},[]);useEffect(()=>{localStorage.setItem(KEY,JSON.stringify(levels))},[levels]);useEffect(()=>{localStorage.setItem(DRAWINGS,JSON.stringify(drawings))},[drawings]);useEffect(()=>{localStorage.setItem(DRAWING_STYLE,JSON.stringify({color:lineColor,width:lineWidth}))},[lineColor,lineWidth]);useEffect(()=>{localStorage.setItem(FAV,JSON.stringify(favorites))},[favorites]);useEffect(()=>{localStorage.setItem(HISTORY,JSON.stringify(history.slice(0,200)))},[history]);useEffect(()=>{localStorage.setItem(SOUND,sound)},[sound]);useEffect(()=>{let active=true;const request=indexedDB.open('arcus-alert-settings',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('settings'))request.result.createObjectStore('settings')};request.onsuccess=()=>{const db=request.result;const tx=db.transaction('settings','readonly');const get=tx.objectStore('settings').get('customSound');get.onsuccess=()=>{const saved=typeof get.result==='string'?get.result:(localStorage.getItem('arcus-alert-custom-sound')||'');if(active&&saved)setCustomSound(saved)};tx.oncomplete=()=>{db.close();if(active)setSoundStorageReady(true)};tx.onerror=()=>{db.close();if(active)setSoundStorageReady(true)}};request.onerror=()=>{if(active)setSoundStorageReady(true)};return()=>{active=false}},[]);useEffect(()=>{if(!soundStorageReady)return;const request=indexedDB.open('arcus-alert-settings',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('settings'))request.result.createObjectStore('settings')};request.onsuccess=()=>{const db=request.result;const tx=db.transaction('settings','readwrite');if(customSound)tx.objectStore('settings').put(customSound,'customSound');else tx.objectStore('settings').delete('customSound');tx.oncomplete=()=>db.close();tx.onerror=()=>db.close()};},[customSound,soundStorageReady]);
-useEffect(()=>{if(window.arcusDesktop?.isDesktop){window.arcusDesktop.onPrices((d:any)=>{setPrices(d.prices||{});setStatus('Connected · '+Object.keys(d.prices||{}).length+' markets · '+new Date(d.updatedAt).toLocaleTimeString())});window.arcusDesktop.onPriceError((e:string)=>setStatus('Arcus connection error: '+e));return;}let stopped=false;let socket:WebSocket|null=null;let retryTimer:number|undefined;let retryDelay=1000;let lastMarketsFetch=0;const updateLiveChartCandle=(marketName:string,price:number,time:number)=>{if(marketName!==chartSymbolRef.current||!series.current)return;const secondsByTf:Record<string,number>={'1m':60,'3m':180,'5m':300,'15m':900,'30m':1800,'1h':3600,'2h':7200,'4h':14400,'1d':86400,'1w':604800};const span=secondsByTf[chartTfRef.current]||900;const bucket=Math.floor(time/span)*span;const key=marketName+'|'+chartTfRef.current+'|'+bucket;let bar:any;if(liveBarRef.current?.key===key){const previous=liveBarRef.current.bar;bar={...previous,high:Math.max(previous.high,price),low:Math.min(previous.low,price),close:price};}else{const previous=liveBarRef.current?.bar;if(previous&&bucket<previous.time)return;bar={time:bucket,open:price,high:price,low:price,close:price,volume:0};}liveBarRef.current={key,bar};try{series.current.update(bar)}catch{}};const applyPrices=(incoming:any[])=>{if(!Array.isArray(incoming)||!incoming.length)return;setPrices(current=>{const next={...current};for(const item of incoming){const name=String(item?.marketDisplayName||'').toUpperCase();const marketId=String(item?.marketId??'');const price=Number(item?.markPrice??item?.price);if(!name||!Number.isFinite(price)||price<=0)continue;next[name]={price,source:item?.markPrice!=null?'mark':'oracle',marketId:marketId||next[name]?.marketId||'',change24h:marketChanges.current[name]??next[name]?.change24h??null};let rawTime=Number(item?.markEpochNanos??item?.timestamp??item?.time);const tickTime=Number.isFinite(rawTime)&&rawTime>0?(rawTime>1e14?rawTime/1e9:rawTime>1e11?rawTime/1000:rawTime):Date.now()/1000;latestWsPriceRef.current[name]={price,time:tickTime};updateLiveChartCandle(name,price,tickTime);}return next;});};const refreshMarketMeta=async()=>{if(Date.now()-lastMarketsFetch<60000)return;lastMarketsFetch=Date.now();try{const response=await fetch('https://api.arcus.xyz/v1/markets',{headers:{Accept:'application/json'},cache:'no-store'});if(!response.ok)return;const body=await response.json();const markets=Array.isArray(body)?body:body.markets;if(!Array.isArray(markets))return;const changes:Record<string,number>={};for(const market of markets){const name=String(market?.marketDisplayName||'').toUpperCase();const value=Number(market?.priceChange24h);if(name&&Number.isFinite(value))changes[name]=value*100;}marketChanges.current=changes;setPrices(current=>{const next={...current};for(const name of Object.keys(next))if(Number.isFinite(changes[name]))next[name]={...next[name],change24h:changes[name]};return next;});}catch{}};const connect=()=>{if(stopped)return;try{socket=new WebSocket('wss://api.arcus.xyz/v1/ws');socket.onopen=()=>{retryDelay=1000;socket?.send(JSON.stringify({type:'subscribe',channel:'oraclePrices'}));void refreshMarketMeta();setStatus('Arcus live feed connected · subscribing…');};socket.onmessage=(event)=>{try{const message=JSON.parse(String(event.data));if(message?.type==='error'||Number(message?.status)>=400){setStatus('Arcus WebSocket error · '+String(message?.message||message?.error||message?.status));return;}if(message?.channel==='oraclePrices'){const contents=message.contents;if(contents&&Array.isArray(contents.prices)){applyPrices(contents.prices);setStatus('Live · '+contents.prices.length+' Arcus prices · '+new Date().toLocaleTimeString());}}else if(message?.channel==='markets'){void refreshMarketMeta();}}catch{}};socket.onerror=()=>{if(!stopped)setStatus('Arcus live feed interrupted · reconnecting…');};socket.onclose=()=>{if(stopped)return;setStatus('Arcus WebSocket disconnected · reconnecting…');if(retryTimer!==undefined)window.clearTimeout(retryTimer);retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};}catch{if(!stopped){setStatus('Arcus WebSocket disconnected · reconnecting…');retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);}}};connect();return()=>{stopped=true;if(retryTimer!==undefined)window.clearTimeout(retryTimer);if(socket){socket.onclose=null;socket.onerror=null;socket.onmessage=null;socket.close();}};},[]);useEffect(()=>{if(!window.arcusDesktop?.isDesktop)return;window.arcusDesktop.onNotificationClick((s:string)=>{if(s)setSymbol(s);setChartSearchOpen(false);setQuery('');setTab('Chart');});},[]);
-useEffect(()=>{if(!symbol&&symbols.length)setSymbol(symbols[0])},[symbols,symbol]);useEffect(()=>{chartSymbolRef.current=symbol;chartTfRef.current=tf;liveBarRef.current=null;},[symbol,tf]);useEffect(()=>{const next={...previousPrices.current};const fired:AlertEvent[]=[];for(const [s,data] of Object.entries(prices)){const now=Number(data.price),before=previousPrices.current[s];if(Number.isFinite(now)&&Number.isFinite(before)){for(const l of levels){if(l.symbol!==s)continue;const crossed=(before-l.price)*(now-l.price)<=0&&before!==now;const triggered=(l.mode==='NEAR'&&Math.abs(now-l.price)/l.price<=0.001)||((l.mode==='CROSS'||l.mode==='TOUCH')&&crossed);if(triggered)fired.push({id:l.id,symbol:s,price:l.price,actual:now,time:Date.now()});}}if(Number.isFinite(now))next[s]=now;}previousPrices.current=next;if(fired.length){setHistory(h=>[...fired,...h].slice(0,200));setLevels(v=>v.filter(l=>!fired.some(f=>f.id===l.id)));for(const f of fired){setAlarmActive(true);const title='Arcus Alert · '+f.symbol,body='Target '+f.price.toLocaleString()+' · Current '+f.actual.toLocaleString();if(window.arcusDesktop?.isDesktop){if(sound==='custom'&&customSound){window.arcusDesktop.alert({title,body,sound:'off',symbol:f.symbol});try{if(alarmAudio.current){alarmAudio.current.pause();alarmAudio.current.currentTime=0;}alarmAudio.current=new Audio(customSound);alarmAudio.current.loop=true;void alarmAudio.current.play()}catch{}}else window.arcusDesktop.alert({title,body,sound,symbol:f.symbol});}else{if('Notification'in window&&Notification.permission==='granted'){try{const n=new Notification(title,{body,tag:'arcus-'+f.id,requireInteraction:true,renotify:true});n.onclick=()=>{window.focus();setSymbol(f.symbol);setTab('Chart');n.close()};}catch{}}if(sound==='custom'&&customSound){try{if(alarmAudio.current){alarmAudio.current.pause();alarmAudio.current.currentTime=0;}alarmAudio.current=new Audio(customSound);alarmAudio.current.loop=true;void alarmAudio.current.play()}catch{}}else if(sound!=='off'){try{const Ctx=(window as any).AudioContext||(window as any).webkitAudioContext;const ctx=new Ctx();const count=sound==='triple'?3:sound==='beep'?1:2;for(let i=0;i<count;i++){const osc=ctx.createOscillator(),gain=ctx.createGain();osc.frequency.value=880;gain.gain.value=.08;osc.connect(gain);gain.connect(ctx.destination);osc.start(ctx.currentTime+i*.22);osc.stop(ctx.currentTime+i*.22+.12);}window.setTimeout(()=>void ctx.close(),1200);}catch{}}}}}},[prices,levels,sound]);
-useEffect(()=>{const onChartReset=(event:KeyboardEvent)=>{if(!(event.altKey&&(event.code==='KeyR'||event.key.toLowerCase()==='r')))return;if(tab!=='Chart')return;event.preventDefault();event.stopPropagation();(event as any).stopImmediatePropagation?.();resetChart()};window.addEventListener('keydown',onChartReset,{capture:true});document.addEventListener('keydown',onChartReset,{capture:true});return()=>{window.removeEventListener('keydown',onChartReset,true);document.removeEventListener('keydown',onChartReset,true)}},[tab]);
-useEffect(()=>{if(tab!=='Chart'||!chartHost.current)return;const chart=createChart(chartHost.current,{width:chartHost.current.clientWidth,height:chartHost.current.clientHeight,layout:{background:{color:'#040c19'},textColor:'#91a7c3',attributionLogo:false},grid:{vertLines:{color:'#14243a'},horzLines:{color:'#14243a'}},rightPriceScale:{borderColor:'#24364e'},timeScale:{borderColor:'#24364e',timeVisible:true},crosshair:{mode:CrosshairMode.Normal},handleScroll:{mouseWheel:true,pressedMouseMove:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}});chartApi.current=chart;series.current=chart.addSeries(CandlestickSeries,{upColor:'#00c9a7',downColor:'#f06470',borderUpColor:'#00c9a7',borderDownColor:'#f06470',wickUpColor:'#00c9a7',wickDownColor:'#f06470'});/* Indicators removed by request. */const resize=()=>chart.applyOptions({width:chartHost.current?.clientWidth||800,height:chartHost.current?.clientHeight||480});const observer=new ResizeObserver(resize);if(chartHost.current)observer.observe(chartHost.current);const onCrosshair=(param:any)=>{if(!param.point||!series.current)return;const p=series.current.coordinateToPrice(param.point.y);if(p==null||!Number.isFinite(Number(p)))return;setHoverLevel({y:param.point.y,price:Number(p)})};chart.subscribeCrosshairMove(onCrosshair);window.addEventListener('resize',resize);return()=>{chart.unsubscribeCrosshairMove(onCrosshair);window.removeEventListener('resize',resize);observer.disconnect();setHoverLevel(null);chart.remove();chartApi.current=null;series.current=null}},[tab]);
-useEffect(()=>{if(tab!=='Chart'||!symbol)return;let cancelled=false;const controller=new AbortController();const requestSymbol=symbol,requestTf=tf;setChartStatus('Loading '+requestSymbol+' · '+requestTf+' candles…');if(series.current)series.current.setData([]);const load=async()=>{try{const readyAt=Date.now()+2500;while(!cancelled&&(!series.current||!chartApi.current)&&Date.now()<readyAt)await new Promise(r=>setTimeout(r,40));if(cancelled)return;if(!series.current||!chartApi.current)throw new Error('Chart is not ready');const marketId=prices[requestSymbol]?.marketId;const marketKeys=[...(marketId?[marketId]:[]),...(marketId&&marketId!==requestSymbol?[requestSymbol]:marketId?[]:[requestSymbol])];let candles:any[]=[];let lastError='No candle data returned';const cacheKey=requestSymbol+'|'+requestTf;const cached=CANDLE_CACHE.get(cacheKey);if(cached&&Date.now()-cached.at<30000)candles=cached.candles;for(const marketKey of candles.length?[]:marketKeys){if(cancelled)return;try{const wait=Math.max(0,candle429Until-Date.now());if(wait){setChartStatus('Arcus candle API rate limited · retrying in '+Math.ceil(wait/1000)+'s');await new Promise(resolve=>setTimeout(resolve,wait));if(cancelled)return;}const to=Date.now()*1000;const url='https://api.arcus.xyz/v1/candles?market='+encodeURIComponent(marketKey)+'&timeframe='+encodeURIComponent(requestTf)+'&to='+to+'&countback=1500';const response=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store',signal:controller.signal});if(response.status===429){lastError='Arcus HTTP 429';candle429Until=Date.now()+candle429Delay;candle429Delay=Math.min(candle429Delay*2,180000);break;}if(!response.ok){lastError='Arcus API HTTP '+response.status;continue;}const body=await response.json();if(!Array.isArray(body.candles)||!body.candles.length){lastError='No candles for '+marketKey;continue;}const parsed=body.candles.map((c:any)=>{const rawTime=Number(c.openTime??c.time??c.timestamp);return{time:Math.floor(rawTime>100000000000?rawTime/1000:rawTime),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close),volume:Number(c.volume??c.vol??c.v??0)}}).filter((c:any)=>Number.isFinite(c.time)&&c.time>0&&Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close)).sort((a:any,b:any)=>a.time-b.time).filter((c:any,i:number,a:any[])=>i===0||c.time>a[i-1].time);if(parsed.length){candles=parsed;CANDLE_CACHE.set(cacheKey,{at:Date.now(),candles});candle429Delay=15000;candle429Until=0;break;}lastError='Invalid candle data for '+marketKey;}catch(err:any){if(err?.name==='AbortError'||cancelled)return;lastError=err?.message||'Candle request failed';}}if(!candles.length&&lastError==='Arcus HTTP 429'){const retryIn=Math.max(1000,candle429Until-Date.now());setChartStatus('Arcus candle API rate limited (429) · retry in '+Math.ceil(retryIn/1000)+'s · live prices remain connected');window.setTimeout(()=>{if(!cancelled)void load();},retryIn);return;}if(!candles.length)throw new Error(lastError+' · '+requestSymbol+' '+requestTf);if(cancelled||requestSymbol!==symbol||requestTf!==tf)return;const activeSeries=series.current,activeChart=chartApi.current;if(!activeSeries||!activeChart)return;activeSeries.setData(candles);const secondsByTf:Record<string,number>={'1m':60,'3m':180,'5m':300,'15m':900,'30m':1800,'1h':3600,'2h':7200,'4h':14400,'1d':86400,'1w':604800};const span=secondsByTf[requestTf]||900,last=candles[candles.length-1],lastBucket=Math.floor(last.time/span)*span;liveBarRef.current={key:requestSymbol+'|'+requestTf+'|'+lastBucket,bar:last};const latest=latestWsPriceRef.current[requestSymbol];if(latest){const bucket=Math.floor(latest.time/span)*span;if(bucket>=lastBucket){const key=requestSymbol+'|'+requestTf+'|'+bucket;const bar=bucket===lastBucket?{...last,high:Math.max(last.high,latest.price),low:Math.min(last.low,latest.price),close:latest.price}:{time:bucket,open:latest.price,high:latest.price,low:latest.price,close:latest.price,volume:0};liveBarRef.current={key,bar};activeSeries.update(bar);}}activeChart.timeScale().fitContent();setChartStatus(requestSymbol+' · '+requestTf+' · '+candles.length+' candles · live WebSocket');}catch(e:any){if(!cancelled&&e?.name!=='AbortError'){if(series.current)series.current.setData([]);setChartStatus('Chart error · '+requestSymbol+': '+(e?.message||'Loading failed'));}}};void load();return()=>{cancelled=true;controller.abort()}},[tab,symbol,tf,prices[symbol]?.marketId]);
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import jsQR from "jsqr";
+import QRCode from "qrcode";
+import { createRoot } from "react-dom/client";
+import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
+import "./style.css";
+import { auth, db } from "./firebase";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import type { User } from "firebase/auth";
+import { doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { getMessaging, getToken, isSupported } from "firebase/messaging";
+type Price = { price: number; source: string; marketId: string; change24h?: number | null };
+type Level = { id: string; symbol: string; price: number; mode: string; nearPct: number };
+type AlertEvent = { id: string; symbol: string; price: number; actual: number; time: number };
+type DrawingPoint = { time: any; price: number; color?: string; width?: number };
+type ChartDrawing = {
+  id: string;
+  tool: string;
+  symbol?: string;
+  points: DrawingPoint[];
+  color?: string;
+  width?: number;
+};
+const DRAWINGS = "arcus-alert-chart-drawings-v1",
+  DRAWING_STYLE = "arcus-alert-drawing-style-v1";
+declare global {
+  interface Window {
+    arcusDesktop: any;
+  }
+}
+const TABS = ["Market", "Watchlist", "Chart", "Alerts", "Create"];
+const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
+let candle429Until = 0,
+  candle429Delay = 15000;
+const KEY = "arcus-alert-levels-v1",
+  FAV = "arcus-alert-favorites-v1",
+  HISTORY = "arcus-alert-history-v1",
+  SOUND = "arcus-alert-sound-v1";
+function App() {
+  const [history, setHistory] = useState<AlertEvent[]>(() => {
+      try {
+        return JSON.parse(localStorage.getItem(HISTORY) || "[]");
+      } catch {
+        return [];
+      }
+    }),
+    [showHistory, setShowHistory] = useState(false),
+    [sound, setSound] = useState(() => localStorage.getItem(SOUND) || "double"),
+    [customSound, setCustomSound] = useState(""),
+    [soundStorageReady, setSoundStorageReady] = useState(false),
+    [alarmActive, setAlarmActive] = useState(false);
+  const [hoverLevel, setHoverLevel] = useState<{ y: number; price: number } | null>(null),
+    [chartSearchOpen, setChartSearchOpen] = useState(false),
+    [activeTool, setActiveTool] = useState("cursor"),
+    [lineColor, setLineColor] = useState(() => {
+      try {
+        return JSON.parse(localStorage.getItem(DRAWING_STYLE) || "{}").color || "#39c9c2";
+      } catch {
+        return "#39c9c2";
+      }
+    }),
+    [lineWidth, setLineWidth] = useState(() => {
+      try {
+        return Number(JSON.parse(localStorage.getItem(DRAWING_STYLE) || "{}").width) || 2;
+      } catch {
+        return 2;
+      }
+    }),
+    [drawings, setDrawings] = useState<ChartDrawing[]>(() => {
+      try {
+        return JSON.parse(localStorage.getItem(DRAWINGS) || "[]");
+      } catch {
+        return [];
+      }
+    }),
+    [editingDrawing, setEditingDrawing] = useState<string | null>(null),
+    [editLinePrice, setEditLinePrice] = useState(""),
+    [editLineColor, setEditLineColor] = useState("#39c9c2"),
+    [editLineWidth, setEditLineWidth] = useState(2),
+    [watchGroup, setWatchGroup] = useState("Favorites");
+  const [tab, setTab] = useState("Market"),
+    [prices, setPrices] = useState<Record<string, Price>>({}),
+    [status, setStatus] = useState("Connecting to Arcus…"),
+    [symbol, setSymbol] = useState(""),
+    [query, setQuery] = useState(""),
+    [tf, setTf] = useState("15m"),
+    [levels, setLevels] = useState<Level[]>(() => {
+      try {
+        return JSON.parse(localStorage.getItem(KEY) || "[]");
+      } catch {
+        return [];
+      }
+    }),
+    [favorites, setFavorites] = useState<string[]>(() => {
+      try {
+        return JSON.parse(localStorage.getItem(FAV) || "[]");
+      } catch {
+        return [];
+      }
+    }),
+    [target, setTarget] = useState(""),
+    [mode, setMode] = useState("CROSS"),
+    [chartStatus, setChartStatus] = useState("Chart is waiting for market data…"),
+    [qrOpen, setQrOpen] = useState(false),
+    [textOnly, setTextOnly] = useState(false),
+    [qrTitle, setQrTitle] = useState("All alerts"),
+    [selectedAlert, setSelectedAlert] = useState<string | null>(null),
+    [qrImage, setQrImage] = useState(""),
+    [qrImages, setQrImages] = useState<string[]>([]),
+    [qrIndex, setQrIndex] = useState(0),
+    [qrText, setQrText] = useState(""),
+    [qrError, setQrError] = useState(""),
+    [scannerOpen, setScannerOpen] = useState(false),
+    [scanStatus, setScanStatus] = useState("Point your camera at the QR code");
+  const qrVideo = useRef<HTMLVideoElement | null>(null),
+    cameraStream = useRef<MediaStream | null>(null),
+    qrParts = useRef<Record<string, { total: number; parts: Record<number, string> }>>({}),
+    lastScannedQr = useRef("");
+  const previousPrices = useRef<Record<string, number>>({}),
+    alarmAudio = useRef<HTMLAudioElement | null>(null),
+    marketChanges = useRef<Record<string, number>>({}),
+    marketMetaAt = useRef(0);
+  const [user, setUser] = useState<User | null>(null),
+    [showAuth, setShowAuth] = useState(false),
+    [authMode, setAuthMode] = useState<"login" | "signup">("login"),
+    [authEmail, setAuthEmail] = useState(""),
+    [authPassword, setAuthPassword] = useState(""),
+    [authBusy, setAuthBusy] = useState(false),
+    [authError, setAuthError] = useState("");
+  const cloudSyncReady = useRef(false),
+    latestCloudState = useRef({ levels, favorites, history, drawings });
+  latestCloudState.current = { levels, favorites, history, drawings };
+  const chartHost = useRef<HTMLDivElement>(null),
+    chartApi = useRef<any>(null),
+    series = useRef<any>(null);
+  const chartSymbolRef = useRef(symbol),
+    chartTfRef = useRef(tf),
+    liveBarRef = useRef<{ key: string; bar: any } | null>(null),
+    latestWsPriceRef = useRef<Record<string, { price: number; time: number }>>({});
+  const importQrPayload = async (raw: string) => {
+    try {
+      if (raw.startsWith("ARCUS2PART|")) {
+        const fields = raw.split("|");
+        if (fields.length !== 5) throw new Error("Invalid QR part");
+        const [, id, indexText, totalText, part] = fields;
+        const index = Number(indexText),
+          total = Number(totalText);
+        if (
+          !id ||
+          !Number.isInteger(index) ||
+          !Number.isInteger(total) ||
+          total < 2 ||
+          index < 0 ||
+          index >= total ||
+          !part
+        )
+          throw new Error("Invalid QR part");
+        const entry = qrParts.current[id] || (qrParts.current[id] = { total, parts: {} });
+        if (entry.total !== total) throw new Error("QR parts do not match");
+        entry.parts[index] = part;
+        const received = Object.keys(entry.parts).length;
+        setScanStatus(
+          "Received QR part " +
+            received +
+            " of " +
+            total +
+            " · " +
+            Math.round((received / total) * 100) +
+            "%",
+        );
+        if (received < total) return false;
+        const joined = Array.from({ length: total }, (_, i) => entry.parts[i]).join("");
+        delete qrParts.current[id];
+        return await importQrPayload("ARCUS2:" + joined);
+      }
+      let parsed: any;
+      if (raw.startsWith("ARCUS2:")) {
+        if (!("DecompressionStream" in window))
+          throw new Error("Compressed QR import needs a recent Chrome or Edge browser");
+        const binary = atob(raw.slice(7));
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+        parsed = JSON.parse(await new Response(stream).text());
+      } else {
+        parsed = JSON.parse(raw);
+      }
+      if (
+        parsed?.app !== "arcus-alert" ||
+        ![1, 2].includes(parsed?.version) ||
+        !Array.isArray(parsed?.alerts)
+      )
+        throw new Error("This QR code is not a valid Arcus Alert backup");
+      const incoming = parsed.alerts
+        .filter(
+          (l: any) =>
+            l &&
+            typeof l.symbol === "string" &&
+            Number.isFinite(Number(l.price)) &&
+            Number(l.price) > 0,
+        )
+        .map((l: any) => ({
+          id: String(l.id || crypto.randomUUID()),
+          symbol: l.symbol,
+          price: Number(l.price),
+          mode:
+            typeof l.mode === "string"
+              ? l.mode
+              : typeof l.modeName === "string"
+                ? l.modeName
+                : "CROSS",
+          nearPct: Number(l.nearPct) || 0.1,
+        }));
+      if (!incoming.length) throw new Error("No valid alerts were found in this QR code");
+      setLevels((current) => {
+        const merged = [...current];
+        for (const item of incoming) {
+          if (
+            !merged.some(
+              (existing) =>
+                existing.id === item.id ||
+                (existing.symbol === item.symbol &&
+                  existing.price === item.price &&
+                  existing.mode === item.mode),
+            )
+          )
+            merged.push(item);
+        }
+        return merged;
+      });
+      setScanStatus("Imported " + incoming.length + " alert(s)");
+      setStatus("QR import complete · " + incoming.length + " alert(s) scanned");
+      setScannerOpen(false);
+      return true;
+    } catch (e: any) {
+      setScanStatus(e?.message || "Could not read alerts from QR");
+      return false;
+    }
+  };
+  const openQrSync = async (alertSet: Level[] = levels, title = "All alerts") => {
+    setTextOnly(false);
+    if (!alertSet.length) {
+      setStatus("No alerts in this group");
+      return;
+    }
+    const payload = JSON.stringify({
+      app: "arcus-alert",
+      version: 1,
+      alerts: alertSet.map(({ symbol, price }) => ({ symbol, price, mode: 1, enabled: true })),
+    });
+    setQrText(payload);
+    setQrError("");
+    setQrImage("");
+    setQrImages([]);
+    setQrIndex(0);
+    setQrOpen(true);
+    setQrTitle(title);
+    try {
+      const image = await QRCode.toDataURL(payload, {
+        errorCorrectionLevel: "M",
+        margin: 8,
+        width: 1400,
+        scale: 16,
+      });
+      setQrImages([image]);
+      setQrIndex(0);
+      setQrImage(image);
+    } catch (e: any) {
+      setQrError("Could not prepare the QR code. " + (e?.message || ""));
+    }
+  };
+  const openTextExport = () => {
+    if (!levels.length) {
+      setStatus("No alerts to export");
+      return;
+    }
+    const payload = JSON.stringify({
+      app: "arcus-alert",
+      version: 1,
+      alerts: levels.map(({ symbol, price, mode }) => ({
+        symbol,
+        price,
+        mode: mode === "NEAR" ? 2 : mode === "CROSS" ? 0 : 1,
+        enabled: true,
+      })),
+    });
+    setTextOnly(true);
+    setQrText(payload);
+    setQrError("");
+    setQrImage("");
+    setQrImages([]);
+    setQrIndex(0);
+    setQrOpen(true);
+    setQrTitle("All alerts · Text export");
+  };
+  const symbols = useMemo(() => Object.keys(prices).sort(), [prices]);
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, (next) => {
+        const previous = localStorage.getItem("arcus-alert-account-uid") || "";
+        if (next && previous && previous !== next.uid) {
+          setLevels([]);
+          setFavorites([]);
+          setHistory([]);
+          setDrawings([]);
+        }
+        if (next) localStorage.setItem("arcus-alert-account-uid", next.uid);
+        setUser(next);
+      }),
+    [],
+  );
+  useEffect(() => {
+    const onPushMessage = (event: MessageEvent) => {
+      const data = event.data || {};
+      if (data.type === "ARCUS_ALERT_OPEN") {
+        if (data.symbol) setSymbol(String(data.symbol));
+        setTab("Chart");
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onPushMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onPushMessage);
+  }, []);
+  useEffect(() => {
+    if (
+      !user ||
+      !("serviceWorker" in navigator) ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted"
+    )
+      return;
+    let cancelled = false;
+    const registerPush = async () => {
+      try {
+        if (!(await isSupported())) return;
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        if (!vapidKey) return;
+        const registration = await navigator.serviceWorker.register("./sw.js");
+        const token = await getToken(getMessaging(auth.app), {
+          vapidKey,
+          serviceWorkerRegistration: registration,
+        });
+        if (!cancelled && token) {
+          localStorage.setItem("arcus-alert-fcm-token", token);
+          await setDoc(
+            doc(db, "users", user.uid, "devices", token),
+            { token, platform: "web", updatedAt: serverTimestamp() },
+            { merge: true },
+          );
+        }
+      } catch (error: any) {
+        setStatus("Push setup error: " + (error?.message || "Unknown error"));
+      }
+    };
+    void registerPush();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+  useEffect(() => {
+    if (!scannerOpen) return;
+    let cancelled = false;
+    let frame = 0;
+    let busy = false;
+    let lastRaw = "";
+    let lastReadAt = 0;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const Detector = (window as any).BarcodeDetector;
+    const detector = Detector ? new Detector({ formats: ["qr_code"] }) : null;
+    const start = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia)
+          throw new Error("Camera access requires HTTPS or localhost.");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        cameraStream.current = stream;
+        const video = qrVideo.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+        const scan = async () => {
+          if (cancelled) return;
+          const current = qrVideo.current;
+          if (current && current.readyState >= 2 && !busy) {
+            busy = true;
+            try {
+              let raw = "";
+              if (detector) {
+                const codes = await detector.detect(current);
+                raw = String(codes.find((code: any) => code.rawValue)?.rawValue || "");
+              }
+              if (!raw && context && current.videoWidth > 0 && current.videoHeight > 0) {
+                const maxWidth = 1280,
+                  scale = Math.min(1, maxWidth / current.videoWidth);
+                canvas.width = Math.max(1, Math.round(current.videoWidth * scale));
+                canvas.height = Math.max(1, Math.round(current.videoHeight * scale));
+                context.drawImage(current, 0, 0, canvas.width, canvas.height);
+                const frameData = context.getImageData(0, 0, canvas.width, canvas.height);
+                const decoded = jsQR(frameData.data, frameData.width, frameData.height, {
+                  inversionAttempts: "attemptBoth",
+                });
+                raw = decoded?.data || "";
+              }
+              if (raw && (raw !== lastRaw || Date.now() - lastReadAt > 1500)) {
+                lastRaw = raw;
+                lastReadAt = Date.now();
+                await importQrPayload(raw);
+              }
+            } catch (e: any) {
+              setScanStatus(
+                e?.message ||
+                  "Could not decode this QR code. Adjust distance or lighting and try again.",
+              );
+            } finally {
+              busy = false;
+            }
+          }
+          if (!cancelled) frame = requestAnimationFrame(scan);
+        };
+        frame = requestAnimationFrame(scan);
+      } catch (e: any) {
+        setScanStatus(
+          "Camera unavailable. Allow camera access and try again. " + (e?.message || ""),
+        );
+      }
+    };
+    void start();
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      cameraStream.current?.getTracks().forEach((t) => t.stop());
+      cameraStream.current = null;
+    };
+  }, [scannerOpen]);
+  useEffect(() => {
+    if (!window.arcusDesktop?.isDesktop && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(KEY, JSON.stringify(levels));
+  }, [levels]);
+  useEffect(() => {
+    localStorage.setItem(DRAWINGS, JSON.stringify(drawings));
+  }, [drawings]);
+  useEffect(() => {
+    localStorage.setItem(DRAWING_STYLE, JSON.stringify({ color: lineColor, width: lineWidth }));
+  }, [lineColor, lineWidth]);
+  useEffect(() => {
+    localStorage.setItem(FAV, JSON.stringify(favorites));
+  }, [favorites]);
+  useEffect(() => {
+    localStorage.setItem(HISTORY, JSON.stringify(history.slice(0, 200)));
+  }, [history]);
+  useEffect(() => {
+    localStorage.setItem(SOUND, sound);
+  }, [sound]);
+  useEffect(() => {
+    let active = true;
+    const request = indexedDB.open("arcus-alert-settings", 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("settings"))
+        request.result.createObjectStore("settings");
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction("settings", "readonly");
+      const get = tx.objectStore("settings").get("customSound");
+      get.onsuccess = () => {
+        const saved =
+          typeof get.result === "string"
+            ? get.result
+            : localStorage.getItem("arcus-alert-custom-sound") || "";
+        if (active && saved) setCustomSound(saved);
+      };
+      tx.oncomplete = () => {
+        db.close();
+        if (active) setSoundStorageReady(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        if (active) setSoundStorageReady(true);
+      };
+    };
+    request.onerror = () => {
+      if (active) setSoundStorageReady(true);
+    };
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!soundStorageReady) return;
+    const request = indexedDB.open("arcus-alert-settings", 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("settings"))
+        request.result.createObjectStore("settings");
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction("settings", "readwrite");
+      if (customSound) tx.objectStore("settings").put(customSound, "customSound");
+      else tx.objectStore("settings").delete("customSound");
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+    };
+  }, [customSound, soundStorageReady]);
+  useEffect(() => {
+    if (!user) {
+      cloudSyncReady.current = false;
+      return;
+    }
+    cloudSyncReady.current = false;
+    const stateRef = doc(db, "users", user.uid, "appData", "state");
+    const unsubscribe = onSnapshot(
+      stateRef,
+      async (snapshot) => {
+        try {
+          const remote = snapshot.exists() ? snapshot.data() : null;
+          if (!remote) {
+            const current = latestCloudState.current;
+            await setDoc(stateRef, {
+              levels: current.levels,
+              favorites: current.favorites,
+              history: current.history.slice(0, 200),
+              drawings: current.drawings,
+              schemaVersion: 1,
+              updatedAt: serverTimestamp(),
+            });
+            cloudSyncReady.current = true;
+            setStatus("Account connected · cloud backup ready");
+            return;
+          }
+          const current = latestCloudState.current;
+          const remoteLevels = Array.isArray(remote.levels) ? remote.levels : [];
+          const remoteFavorites = Array.isArray(remote.favorites) ? remote.favorites : [];
+          const remoteHistory = Array.isArray(remote.history) ? remote.history : [];
+          const remoteDrawings = Array.isArray(remote.drawings) ? remote.drawings : [];
+          if (!cloudSyncReady.current) {
+            const mergeById = (local: any[], cloud: any[]) => {
+              const merged = new Map<string, any>();
+              cloud.forEach((item) => {
+                if (item?.id) merged.set(String(item.id), item);
+              });
+              local.forEach((item) => {
+                if (item?.id && !merged.has(String(item.id))) merged.set(String(item.id), item);
+              });
+              return Array.from(merged.values());
+            };
+            const mergedLevels = mergeById(current.levels, remoteLevels);
+            const mergedHistory = mergeById(current.history, remoteHistory)
+              .sort((a, b) => Number(b.time) - Number(a.time))
+              .slice(0, 200);
+            const mergedDrawings = mergeById(current.drawings, remoteDrawings);
+            const mergedFavorites = Array.from(new Set([...remoteFavorites, ...current.favorites]));
+            setLevels(mergedLevels);
+            setFavorites(mergedFavorites);
+            setHistory(mergedHistory);
+            setDrawings(mergedDrawings);
+            await setDoc(
+              stateRef,
+              {
+                levels: mergedLevels,
+                favorites: mergedFavorites,
+                history: mergedHistory,
+                drawings: mergedDrawings,
+                schemaVersion: 1,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+            cloudSyncReady.current = true;
+            setStatus("Account connected · alerts synced");
+            return;
+          }
+          if (JSON.stringify(remoteLevels) !== JSON.stringify(current.levels))
+            setLevels(remoteLevels);
+          if (JSON.stringify(remoteFavorites) !== JSON.stringify(current.favorites))
+            setFavorites(remoteFavorites);
+          if (JSON.stringify(remoteHistory) !== JSON.stringify(current.history))
+            setHistory(remoteHistory);
+          if (JSON.stringify(remoteDrawings) !== JSON.stringify(current.drawings))
+            setDrawings(remoteDrawings);
+          setStatus("Cloud sync active · " + (user.email || "signed in"));
+        } catch (error: any) {
+          setStatus("Cloud sync error: " + (error?.message || "Unknown error"));
+        }
+      },
+      (error) => setStatus("Cloud sync error: " + error.message),
+    );
+    return () => {
+      cloudSyncReady.current = false;
+      unsubscribe();
+    };
+  }, [user]);
+  useEffect(() => {
+    if (!user || !cloudSyncReady.current) return;
+    const stateRef = doc(db, "users", user.uid, "appData", "state");
+    void setDoc(
+      stateRef,
+      {
+        levels,
+        favorites,
+        history: history.slice(0, 200),
+        drawings,
+        schemaVersion: 1,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    ).catch((error) => setStatus("Cloud save error: " + (error?.message || "Unknown error")));
+  }, [user, levels, favorites, history, drawings]);
+  useEffect(() => {
+    if (window.arcusDesktop?.isDesktop) {
+      window.arcusDesktop.onPrices((d: any) => {
+        setPrices(d.prices || {});
+        setStatus(
+          "Connected · " +
+            Object.keys(d.prices || {}).length +
+            " markets · " +
+            new Date(d.updatedAt).toLocaleTimeString(),
+        );
+      });
+      window.arcusDesktop.onPriceError((e: string) => setStatus("Arcus connection error: " + e));
+      return;
+    }
+    let stopped = false;
+    let socket: WebSocket | null = null;
+    let retryTimer: number | undefined;
+    let retryDelay = 1000;
+    let lastMarketsFetch = 0;
+    const updateLiveChartCandle = (marketName: string, price: number, time: number) => {
+      if (marketName !== chartSymbolRef.current || !series.current) return;
+      const secondsByTf: Record<string, number> = {
+        "1m": 60,
+        "3m": 180,
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "1h": 3600,
+        "2h": 7200,
+        "4h": 14400,
+        "1d": 86400,
+        "1w": 604800,
+      };
+      const span = secondsByTf[chartTfRef.current] || 900;
+      const bucket = Math.floor(time / span) * span;
+      const key = marketName + "|" + chartTfRef.current + "|" + bucket;
+      let bar: any;
+      if (liveBarRef.current?.key === key) {
+        const previous = liveBarRef.current.bar;
+        bar = {
+          ...previous,
+          high: Math.max(previous.high, price),
+          low: Math.min(previous.low, price),
+          close: price,
+        };
+      } else {
+        const previous = liveBarRef.current?.bar;
+        if (previous && bucket < previous.time) return;
+        bar = { time: bucket, open: price, high: price, low: price, close: price, volume: 0 };
+      }
+      liveBarRef.current = { key, bar };
+      try {
+        series.current.update(bar);
+      } catch {}
+    };
+    const applyPrices = (incoming: any[]) => {
+      if (!Array.isArray(incoming) || !incoming.length) return;
+      setPrices((current) => {
+        const next = { ...current };
+        for (const item of incoming) {
+          const name = String(item?.marketDisplayName || "").toUpperCase();
+          const marketId = String(item?.marketId ?? "");
+          const price = Number(item?.markPrice ?? item?.price);
+          if (!name || !Number.isFinite(price) || price <= 0) continue;
+          next[name] = {
+            price,
+            source: item?.markPrice != null ? "mark" : "oracle",
+            marketId: marketId || next[name]?.marketId || "",
+            change24h: marketChanges.current[name] ?? next[name]?.change24h ?? null,
+          };
+          let rawTime = Number(item?.markEpochNanos ?? item?.timestamp ?? item?.time);
+          const tickTime =
+            Number.isFinite(rawTime) && rawTime > 0
+              ? rawTime > 1e14
+                ? rawTime / 1e9
+                : rawTime > 1e11
+                  ? rawTime / 1000
+                  : rawTime
+              : Date.now() / 1000;
+          latestWsPriceRef.current[name] = { price, time: tickTime };
+          updateLiveChartCandle(name, price, tickTime);
+        }
+        return next;
+      });
+    };
+    const refreshMarketMeta = async () => {
+      if (Date.now() - lastMarketsFetch < 60000) return;
+      lastMarketsFetch = Date.now();
+      try {
+        const response = await fetch("https://api.arcus.xyz/v1/markets", {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const body = await response.json();
+        const markets = Array.isArray(body) ? body : body.markets;
+        if (!Array.isArray(markets)) return;
+        const changes: Record<string, number> = {};
+        for (const market of markets) {
+          const name = String(market?.marketDisplayName || "").toUpperCase();
+          const value = Number(market?.priceChange24h);
+          if (name && Number.isFinite(value)) changes[name] = value * 100;
+        }
+        marketChanges.current = changes;
+        setPrices((current) => {
+          const next = { ...current };
+          for (const name of Object.keys(next))
+            if (Number.isFinite(changes[name]))
+              next[name] = { ...next[name], change24h: changes[name] };
+          return next;
+        });
+      } catch {}
+    };
+    const connect = () => {
+      if (stopped) return;
+      try {
+        socket = new WebSocket("wss://api.arcus.xyz/v1/ws");
+        socket.onopen = () => {
+          retryDelay = 1000;
+          socket?.send(JSON.stringify({ type: "subscribe", channel: "oraclePrices" }));
+          void refreshMarketMeta();
+          setStatus("Arcus live feed connected · subscribing…");
+        };
+        socket.onmessage = (event) => {
+          try {
+            const message = JSON.parse(String(event.data));
+            if (message?.type === "error" || Number(message?.status) >= 400) {
+              setStatus(
+                "Arcus WebSocket error · " +
+                  String(message?.message || message?.error || message?.status),
+              );
+              return;
+            }
+            if (message?.channel === "oraclePrices") {
+              const contents = message.contents;
+              if (contents && Array.isArray(contents.prices)) {
+                applyPrices(contents.prices);
+                setStatus(
+                  "Live · " +
+                    contents.prices.length +
+                    " Arcus prices · " +
+                    new Date().toLocaleTimeString(),
+                );
+              }
+            } else if (message?.channel === "markets") {
+              void refreshMarketMeta();
+            }
+          } catch {}
+        };
+        socket.onerror = () => {
+          if (!stopped) setStatus("Arcus live feed interrupted · reconnecting…");
+        };
+        socket.onclose = () => {
+          if (stopped) return;
+          setStatus("Arcus WebSocket disconnected · reconnecting…");
+          if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+          retryTimer = window.setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30000);
+        };
+      } catch {
+        if (!stopped) {
+          setStatus("Arcus WebSocket disconnected · reconnecting…");
+          retryTimer = window.setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30000);
+        }
+      }
+    };
+    connect();
+    return () => {
+      stopped = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (socket) {
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
+        socket.close();
+      }
+    };
+  }, []);
+  useEffect(() => {
+    if (!window.arcusDesktop?.isDesktop) return;
+    window.arcusDesktop.onNotificationClick((s: string) => {
+      if (s) setSymbol(s);
+      setChartSearchOpen(false);
+      setQuery("");
+      setTab("Chart");
+    });
+  }, []);
+  useEffect(() => {
+    if (!symbol && symbols.length) setSymbol(symbols[0]);
+  }, [symbols, symbol]);
+  useEffect(() => {
+    chartSymbolRef.current = symbol;
+    chartTfRef.current = tf;
+    liveBarRef.current = null;
+  }, [symbol, tf]);
+  useEffect(() => {
+    const next = { ...previousPrices.current };
+    const fired: AlertEvent[] = [];
+    for (const [s, data] of Object.entries(prices)) {
+      const now = Number(data.price),
+        before = previousPrices.current[s];
+      if (Number.isFinite(now) && Number.isFinite(before)) {
+        for (const l of levels) {
+          if (l.symbol !== s) continue;
+          const crossed = (before - l.price) * (now - l.price) <= 0 && before !== now;
+          const triggered =
+            (l.mode === "NEAR" && Math.abs(now - l.price) / l.price <= 0.001) ||
+            ((l.mode === "CROSS" || l.mode === "TOUCH") && crossed);
+          if (triggered)
+            fired.push({ id: l.id, symbol: s, price: l.price, actual: now, time: Date.now() });
+        }
+      }
+      if (Number.isFinite(now)) next[s] = now;
+    }
+    previousPrices.current = next;
+    if (fired.length) {
+      setHistory((h) => [...fired, ...h].slice(0, 200));
+      setLevels((v) => v.filter((l) => !fired.some((f) => f.id === l.id)));
+      for (const f of fired) {
+        setAlarmActive(true);
+        const title = "Arcus Alert · " + f.symbol,
+          body = "Target " + f.price.toLocaleString() + " · Current " + f.actual.toLocaleString();
+        if (window.arcusDesktop?.isDesktop) {
+          if (sound === "custom" && customSound) {
+            window.arcusDesktop.alert({ title, body, sound: "off", symbol: f.symbol });
+            try {
+              if (alarmAudio.current) {
+                alarmAudio.current.pause();
+                alarmAudio.current.currentTime = 0;
+              }
+              alarmAudio.current = new Audio(customSound);
+              alarmAudio.current.loop = true;
+              void alarmAudio.current.play();
+            } catch {}
+          } else window.arcusDesktop.alert({ title, body, sound, symbol: f.symbol });
+        } else {
+          if ("Notification" in window && Notification.permission === "granted") {
+            try {
+              const n = new Notification(title, {
+                body,
+                tag: "arcus-" + f.id,
+                requireInteraction: true,
+                renotify: true,
+              });
+              n.onclick = () => {
+                window.focus();
+                setSymbol(f.symbol);
+                setTab("Chart");
+                n.close();
+              };
+            } catch {}
+          }
+          if (sound === "custom" && customSound) {
+            try {
+              if (alarmAudio.current) {
+                alarmAudio.current.pause();
+                alarmAudio.current.currentTime = 0;
+              }
+              alarmAudio.current = new Audio(customSound);
+              alarmAudio.current.loop = true;
+              void alarmAudio.current.play();
+            } catch {}
+          } else if (sound !== "off") {
+            try {
+              const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+              const ctx = new Ctx();
+              const count = sound === "triple" ? 3 : sound === "beep" ? 1 : 2;
+              for (let i = 0; i < count; i++) {
+                const osc = ctx.createOscillator(),
+                  gain = ctx.createGain();
+                osc.frequency.value = 880;
+                gain.gain.value = 0.08;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + i * 0.22);
+                osc.stop(ctx.currentTime + i * 0.22 + 0.12);
+              }
+              window.setTimeout(() => void ctx.close(), 1200);
+            } catch {}
+          }
+        }
+      }
+    }
+  }, [prices, levels, sound]);
+  useEffect(() => {
+    const onChartReset = (event: KeyboardEvent) => {
+      if (!(event.altKey && (event.code === "KeyR" || event.key.toLowerCase() === "r"))) return;
+      if (tab !== "Chart") return;
+      event.preventDefault();
+      event.stopPropagation();
+      (event as any).stopImmediatePropagation?.();
+      resetChart();
+    };
+    window.addEventListener("keydown", onChartReset, { capture: true });
+    document.addEventListener("keydown", onChartReset, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onChartReset, true);
+      document.removeEventListener("keydown", onChartReset, true);
+    };
+  }, [tab]);
+  useEffect(() => {
+    if (tab !== "Chart" || !chartHost.current) return;
+    const chart = createChart(chartHost.current, {
+      width: chartHost.current.clientWidth,
+      height: chartHost.current.clientHeight,
+      layout: { background: { color: "#040c19" }, textColor: "#91a7c3", attributionLogo: false },
+      grid: { vertLines: { color: "#14243a" }, horzLines: { color: "#14243a" } },
+      rightPriceScale: { borderColor: "#24364e" },
+      timeScale: { borderColor: "#24364e", timeVisible: true },
+      crosshair: { mode: CrosshairMode.Normal },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+    });
+    chartApi.current = chart;
+    series.current = chart.addSeries(CandlestickSeries, {
+      upColor: "#00c9a7",
+      downColor: "#f06470",
+      borderUpColor: "#00c9a7",
+      borderDownColor: "#f06470",
+      wickUpColor: "#00c9a7",
+      wickDownColor: "#f06470",
+    });
+    /* Indicators removed by request. */ const resize = () =>
+      chart.applyOptions({
+        width: chartHost.current?.clientWidth || 800,
+        height: chartHost.current?.clientHeight || 480,
+      });
+    const observer = new ResizeObserver(resize);
+    if (chartHost.current) observer.observe(chartHost.current);
+    const onCrosshair = (param: any) => {
+      if (!param.point || !series.current) return;
+      const p = series.current.coordinateToPrice(param.point.y);
+      if (p == null || !Number.isFinite(Number(p))) return;
+      setHoverLevel({ y: param.point.y, price: Number(p) });
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
+    window.addEventListener("resize", resize);
+    return () => {
+      chart.unsubscribeCrosshairMove(onCrosshair);
+      window.removeEventListener("resize", resize);
+      observer.disconnect();
+      setHoverLevel(null);
+      chart.remove();
+      chartApi.current = null;
+      series.current = null;
+    };
+  }, [tab]);
+  useEffect(() => {
+    if (tab !== "Chart" || !symbol) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const requestSymbol = symbol,
+      requestTf = tf;
+    setChartStatus("Loading " + requestSymbol + " · " + requestTf + " candles…");
+    if (series.current) series.current.setData([]);
+    const load = async () => {
+      try {
+        const readyAt = Date.now() + 2500;
+        while (!cancelled && (!series.current || !chartApi.current) && Date.now() < readyAt)
+          await new Promise((r) => setTimeout(r, 40));
+        if (cancelled) return;
+        if (!series.current || !chartApi.current) throw new Error("Chart is not ready");
+        const marketId = prices[requestSymbol]?.marketId;
+        const marketKeys = [
+          ...(marketId ? [marketId] : []),
+          ...(marketId && marketId !== requestSymbol
+            ? [requestSymbol]
+            : marketId
+              ? []
+              : [requestSymbol]),
+        ];
+        let candles: any[] = [];
+        let lastError = "No candle data returned";
+        const cacheKey = requestSymbol + "|" + requestTf;
+        const cached = CANDLE_CACHE.get(cacheKey);
+        if (cached && Date.now() - cached.at < 30000) candles = cached.candles;
+        for (const marketKey of candles.length ? [] : marketKeys) {
+          if (cancelled) return;
+          try {
+            const wait = Math.max(0, candle429Until - Date.now());
+            if (wait) {
+              setChartStatus(
+                "Arcus candle API rate limited · retrying in " + Math.ceil(wait / 1000) + "s",
+              );
+              await new Promise((resolve) => setTimeout(resolve, wait));
+              if (cancelled) return;
+            }
+            const to = Date.now() * 1000;
+            const url =
+              "https://api.arcus.xyz/v1/candles?market=" +
+              encodeURIComponent(marketKey) +
+              "&timeframe=" +
+              encodeURIComponent(requestTf) +
+              "&to=" +
+              to +
+              "&countback=1500";
+            const response = await fetch(url, {
+              headers: { Accept: "application/json" },
+              cache: "no-store",
+              signal: controller.signal,
+            });
+            if (response.status === 429) {
+              lastError = "Arcus HTTP 429";
+              candle429Until = Date.now() + candle429Delay;
+              candle429Delay = Math.min(candle429Delay * 2, 180000);
+              break;
+            }
+            if (!response.ok) {
+              lastError = "Arcus API HTTP " + response.status;
+              continue;
+            }
+            const body = await response.json();
+            if (!Array.isArray(body.candles) || !body.candles.length) {
+              lastError = "No candles for " + marketKey;
+              continue;
+            }
+            const parsed = body.candles
+              .map((c: any) => {
+                const rawTime = Number(c.openTime ?? c.time ?? c.timestamp);
+                return {
+                  time: Math.floor(rawTime > 100000000000 ? rawTime / 1000 : rawTime),
+                  open: Number(c.open),
+                  high: Number(c.high),
+                  low: Number(c.low),
+                  close: Number(c.close),
+                  volume: Number(c.volume ?? c.vol ?? c.v ?? 0),
+                };
+              })
+              .filter(
+                (c: any) =>
+                  Number.isFinite(c.time) &&
+                  c.time > 0 &&
+                  Number.isFinite(c.open) &&
+                  Number.isFinite(c.high) &&
+                  Number.isFinite(c.low) &&
+                  Number.isFinite(c.close),
+              )
+              .sort((a: any, b: any) => a.time - b.time)
+              .filter((c: any, i: number, a: any[]) => i === 0 || c.time > a[i - 1].time);
+            if (parsed.length) {
+              candles = parsed;
+              CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
+              candle429Delay = 15000;
+              candle429Until = 0;
+              break;
+            }
+            lastError = "Invalid candle data for " + marketKey;
+          } catch (err: any) {
+            if (err?.name === "AbortError" || cancelled) return;
+            lastError = err?.message || "Candle request failed";
+          }
+        }
+        if (!candles.length && lastError === "Arcus HTTP 429") {
+          const retryIn = Math.max(1000, candle429Until - Date.now());
+          setChartStatus(
+            "Arcus candle API rate limited (429) · retry in " +
+              Math.ceil(retryIn / 1000) +
+              "s · live prices remain connected",
+          );
+          window.setTimeout(() => {
+            if (!cancelled) void load();
+          }, retryIn);
+          return;
+        }
+        if (!candles.length) throw new Error(lastError + " · " + requestSymbol + " " + requestTf);
+        if (cancelled || requestSymbol !== symbol || requestTf !== tf) return;
+        const activeSeries = series.current,
+          activeChart = chartApi.current;
+        if (!activeSeries || !activeChart) return;
+        activeSeries.setData(candles);
+        const secondsByTf: Record<string, number> = {
+          "1m": 60,
+          "3m": 180,
+          "5m": 300,
+          "15m": 900,
+          "30m": 1800,
+          "1h": 3600,
+          "2h": 7200,
+          "4h": 14400,
+          "1d": 86400,
+          "1w": 604800,
+        };
+        const span = secondsByTf[requestTf] || 900,
+          last = candles[candles.length - 1],
+          lastBucket = Math.floor(last.time / span) * span;
+        liveBarRef.current = { key: requestSymbol + "|" + requestTf + "|" + lastBucket, bar: last };
+        const latest = latestWsPriceRef.current[requestSymbol];
+        if (latest) {
+          const bucket = Math.floor(latest.time / span) * span;
+          if (bucket >= lastBucket) {
+            const key = requestSymbol + "|" + requestTf + "|" + bucket;
+            const bar =
+              bucket === lastBucket
+                ? {
+                    ...last,
+                    high: Math.max(last.high, latest.price),
+                    low: Math.min(last.low, latest.price),
+                    close: latest.price,
+                  }
+                : {
+                    time: bucket,
+                    open: latest.price,
+                    high: latest.price,
+                    low: latest.price,
+                    close: latest.price,
+                    volume: 0,
+                  };
+            liveBarRef.current = { key, bar };
+            activeSeries.update(bar);
+          }
+        }
+        activeChart.timeScale().fitContent();
+        setChartStatus(
+          requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket",
+        );
+      } catch (e: any) {
+        if (!cancelled && e?.name !== "AbortError") {
+          if (series.current) series.current.setData([]);
+          setChartStatus(
+            "Chart error · " + requestSymbol + ": " + (e?.message || "Loading failed"),
+          );
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [tab, symbol, tf, prices[symbol]?.marketId]);
 
-const addAlert=(p?:number)=>{const value=Number(p??target);if(!symbol||!Number.isFinite(value)||value<=0)return;setLevels(v=>[...v,{id:crypto.randomUUID(),symbol,price:value,mode,nearPct:.1}]);setTarget('')};const stopAlarm=()=>{if(alarmAudio.current){alarmAudio.current.pause();alarmAudio.current.currentTime=0;alarmAudio.current=null;}if(window.arcusDesktop?.isDesktop)window.arcusDesktop.stopSound();setAlarmActive(false)};const chooseCustomSound=async()=>{if(window.arcusDesktop?.isDesktop){const path=await window.arcusDesktop.chooseSound?.();if(path){setCustomSound(path);setSound('custom')}return;}document.getElementById('arcus-custom-sound-input')?.click()};const loadCustomSound=(file?:File)=>{if(!file)return;if(!file.type.startsWith('audio/')){setStatus('Please choose an audio file');return;}if(file.size>15*1024*1024){setStatus('Audio file must be 15 MB or smaller');return;}const reader=new FileReader();reader.onload=()=>{if(typeof reader.result==='string'){setCustomSound(reader.result);setSound('custom');setStatus('Custom alert sound added');}};reader.onerror=()=>setStatus('Could not read audio file');reader.readAsDataURL(file)};const resetChart=()=>{const chart=chartApi.current;if(!chart||!series.current)return;try{chart.applyOptions({rightPriceScale:{autoScale:true,scaleMargins:{top:0.08,bottom:0.08}},timeScale:{rightOffset:5}});chart.timeScale().fitContent();chart.priceScale('right').applyOptions({autoScale:true});}catch(e){console.error('Chart reset failed',e)}};const previewCustomSound=()=>{if(!customSound)return;try{if(alarmAudio.current){alarmAudio.current.pause();alarmAudio.current.currentTime=0;}alarmAudio.current=new Audio(customSound);alarmAudio.current.loop=false;void alarmAudio.current.play().catch(()=>setStatus('Click Preview again to allow audio playback'));}catch{setStatus('Could not play this audio file')}};const enableBrowserNotifications=async()=>{if(!('Notification'in window)){setStatus('This browser does not support notifications');return;}const permission=await Notification.requestPermission();setStatus(permission==='granted'?'Browser notifications enabled':'Notification permission: '+permission)};
-const toggleFav=(s:string)=>setFavorites(v=>v.includes(s)?v.filter(x=>x!==s):[...v,s]);
-const drawingDrag=useRef<string|null>(null),drawingMoved=useRef(false);const openDrawingEditor=(d:ChartDrawing)=>{setEditingDrawing(d.id);setEditLinePrice(String(d.points[0]?.price??''));setEditLineColor(d.color||d.points[0]?.color||'#39c9c2');setEditLineWidth(d.width||d.points[0]?.width||2)};
-const saveDrawingEdit=()=>{const price=Number(editLinePrice);if(!Number.isFinite(price)||price<=0)return;setDrawings(v=>v.map(d=>d.id===editingDrawing?{...d,color:editLineColor,width:editLineWidth,points:d.points.map((p,i)=>i===0?{...p,price,color:editLineColor,width:editLineWidth}:p)}:d));setLineColor(editLineColor);setLineWidth(editLineWidth);setEditingDrawing(null)};
-const filtered=symbols.filter(s=>s.toLowerCase().includes(query.toLowerCase()));
-return <div className="app"><header><div className="brand"><div className="mark">A</div><div><b>ARCUS</b><small>ALERT</small></div></div><div className="connection"><i/> {status}</div><div className="header-actions">{!window.arcusDesktop?.isDesktop&&<button className="history-button" onClick={enableBrowserNotifications}>Enable notifications</button>}<label className="sound-control" title="Notification sound">🔊<select aria-label="Notification sound" value={sound} onChange={e=>setSound(e.target.value)}><option value="beep">Beep</option><option value="double">Double beep</option><option value="triple">Triple beep</option><option value="off">Silent</option>{customSound&&<option value="custom">My sound</option>}</select><button type="button" title="Choose audio file" onClick={chooseCustomSound}>Add ♪</button>{!window.arcusDesktop?.isDesktop&&<input id="arcus-custom-sound-input" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" style={{display:'none'}} onChange={e=>{loadCustomSound(e.target.files?.[0]);e.currentTarget.value=''}}/>}</label><button className="history-button" title="Alert history" onClick={()=>setShowHistory(v=>!v)}>◷ History{history.length>0&&<b>{history.length}</b>}</button></div></header><main>
-{tab==='Market'&&<><div className="heading"><div><small>MARKETS</small><h1>Market overview</h1><p>Live prices from Arcus</p></div><span className="count">{symbols.length} markets</span></div><input placeholder="Search markets…" value={query} onChange={e=>setQuery(e.target.value)}/><div className="marketlist">{filtered.map(s=><div className="marketrow" key={s} onClick={()=>{setSymbol(s);setTab('Chart')}}><b>{s}</b><button className="market-favorite" aria-label={favorites.includes(s)?'Remove favorite':'Add favorite'} onClick={e=>{e.stopPropagation();toggleFav(s)}}>{favorites.includes(s)?'★':'☆'}</button><small className={prices[s]?.change24h==null?'muted':prices[s].change24h>=0?'positive':'negative'}>{prices[s]?.change24h==null?'—':(prices[s].change24h>=0?'+':'')+prices[s].change24h.toFixed(2)+'%'}</small><strong>{prices[s]?.price?.toLocaleString(undefined,{maximumFractionDigits:6})??'—'}</strong></div>)}</div></>}
-{tab==='Watchlist'&&<><div className="heading"><div><small>YOUR MARKETS</small><h1>Watchlist</h1><p>Favorite Arcus markets</p></div></div>{favorites.length?favorites.map(s=><div className="marketrow" key={s} onClick={()=>{setSymbol(s);setTab('Chart')}}><b>{s}</b><strong>{prices[s]?.price?.toLocaleString()??'—'}</strong>{prices[s]?.change24h!=null&&<small className={prices[s].change24h>=0?'positive':'negative'}>{prices[s].change24h>=0?'+':''}{prices[s].change24h.toFixed(2)}%</small>}<button onClick={e=>{e.stopPropagation();toggleFav(s)}}>★</button></div>):<div className="empty">No favorites yet. Add markets from Market.</div>}</>}
-{tab==='Chart'&&<><div className="chartbar"><div className="chart-symbol-area"><small>CHART</small><div className="chart-symbol-picker"><button className="chart-symbol-trigger" onClick={()=>{setChartSearchOpen(v=>!v);setQuery('')}}><span>{symbol||'Select market'}</span><b>⌕</b></button>{chartSearchOpen&&<div className="chart-symbol-menu"><input autoFocus placeholder="Search markets…" value={query} onChange={e=>setQuery(e.target.value)}/><div className="chart-symbol-results">{filtered.map(s=><button key={s} onClick={()=>{setSymbol(s);setChartSearchOpen(false);setQuery('')}}>{s}<span>{prices[s]?.price?.toLocaleString()??'—'}</span></button>)}</div></div>}</div></div><div className="price">{prices[symbol]?.price?.toLocaleString(undefined,{maximumFractionDigits:6})??'—'}</div><select value={tf} onChange={e=>setTf(e.target.value)}>{['1m','3m','5m','15m','30m','1h','2h','4h','1d','1w'].map(x=><option key={x}>{x}</option>)}</select><button className="secondary" onClick={resetChart} title="Reset chart view (Alt+R)">Reset</button><button className="secondary" onClick={()=>addAlert(prices[symbol]?.price)}>＋ Alert</button></div><div className="chart-workspace"><aside className="drawing-rail"><button className={activeTool==='hline'?'selected':''} title="Horizontal line" onClick={()=>setActiveTool(activeTool==='hline'?'cursor':'hline')}>↔</button><label className="drawing-style" title="Line color"><input type="color" value={lineColor} onChange={e=>setLineColor(e.target.value)}/></label><select className="drawing-width" aria-label="Line thickness" value={lineWidth} onChange={e=>setLineWidth(Number(e.target.value))}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}px</option>)}</select></aside><section className="chart-center"><div className="chartnote">{chartStatus} · {activeTool==='hline'?'Click chart to place a horizontal line':'Select the horizontal-line tool to draw'}</div><div className={'chartbox '+(activeTool!=='cursor'?'drawing-active':'')} ref={chartHost} onPointerDown={e=>{if(activeTool!=='hline'||!chartApi.current||!series.current)return;const r=e.currentTarget.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top,t=chartApi.current.timeScale().coordinateToTime(x),p=series.current.coordinateToPrice(y);if(t==null||p==null)return;const point={time:t,price:Number(p),color:lineColor,width:lineWidth};setDrawings(v=>[...v,{id:crypto.randomUUID(),tool:'hline',symbol,points:[point],color:lineColor,width:lineWidth}]);setActiveTool('cursor')}} onPointerMove={e=>{const el=e.currentTarget;if((el as any)._dragAlert&&series.current){const r=el.getBoundingClientRect(),p=series.current.coordinateToPrice(e.clientY-r.top);if(p!=null)setLevels(v=>v.map(l=>l.id===(el as any)._dragAlert?{...l,price:Number(p)}:l));}}} onPointerUp={e=>{(e.currentTarget as any)._dragAlert=null;}}><svg className="drawing-overlay" viewBox={`0 0 ${chartHost.current?.clientWidth||800} ${chartHost.current?.clientHeight||400}`} preserveAspectRatio="none" style={{pointerEvents:'none'}}>{drawings.filter(d=>!d.symbol||d.symbol===symbol).map(d=>{const p=d.points.map(q=>({x:chartApi.current?.timeScale().timeToCoordinate(q.time),y:series.current?.priceToCoordinate(q.price)}));const a=p[0];if(d.tool==='hline'){if(a?.y==null)return null;return <line key={d.id} x1="0" x2={chartHost.current?.clientWidth||800} y1={a.y} y2={a.y} stroke={d.color||d.points[0]?.color||'#39c9c2'} strokeWidth={d.width||d.points[0]?.width||2} style={{pointerEvents:'stroke',cursor:'ns-resize'}} onPointerDown={e=>{e.stopPropagation();drawingDrag.current=d.id;drawingMoved.current=false;e.currentTarget.setPointerCapture(e.pointerId)}} onPointerMove={e=>{if(drawingDrag.current!==d.id||!series.current||!chartHost.current)return;const r=chartHost.current.getBoundingClientRect(),p=series.current.coordinateToPrice(e.clientY-r.top);if(p!=null){drawingMoved.current=true;setDrawings(v=>v.map(x=>x.id===d.id?{...x,points:x.points.map((q,i)=>i===0?{...q,price:Number(p)}:q)}:x))}}} onPointerUp={e=>{e.stopPropagation();drawingDrag.current=null}} onPointerCancel={()=>{drawingDrag.current=null}} onClick={e=>{e.stopPropagation();if(!drawingMoved.current)openDrawingEditor(d);drawingMoved.current=false}}/>;}if(p.some(q=>q.x==null||q.y==null))return null;return null})}</svg>{levels.filter(l=>l.symbol===symbol).map(l=>{const y=series.current?.priceToCoordinate(l.price);if(y==null)return null;return <div className="alert-price-overlay" key={l.id} style={{top:y}} onPointerDown={e=>{e.preventDefault();(e.currentTarget.parentElement as any)._dragAlert=l.id;(e.currentTarget.parentElement as any).setPointerCapture(e.pointerId)}}><span>ALERT {l.price.toLocaleString()}</span><button title="Delete alert" onPointerDown={e=>e.stopPropagation()} onClick={()=>setLevels(v=>v.filter(x=>x.id!==l.id))}>×</button></div>})}{hoverLevel&&<button className="chart-crosshair-add" style={{top:Math.max(4,Math.min(hoverLevel.y-16,(chartHost.current?.clientHeight||480)-36))}} onClick={()=>addAlert(hoverLevel.price)}>＋</button>}</div>{editingDrawing&&<div className="line-editor-backdrop" onClick={()=>setEditingDrawing(null)}><div className="line-editor" onClick={e=>e.stopPropagation()}><div className="line-editor-head"><b>Edit horizontal line</b><button onClick={()=>setEditingDrawing(null)}>×</button></div><label>Price<input type="number" value={editLinePrice} onChange={e=>setEditLinePrice(e.target.value)}/></label><label>Color<input type="color" value={editLineColor} onChange={e=>setEditLineColor(e.target.value)}/></label><label>Thickness<select value={editLineWidth} onChange={e=>setEditLineWidth(Number(e.target.value))}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}px</option>)}</select></label><div className="line-editor-actions"><button className="danger" onClick={()=>{setDrawings(v=>v.filter(d=>d.id!==editingDrawing));setEditingDrawing(null)}}>Delete line</button><button className="secondary" onClick={()=>setEditingDrawing(null)}>Cancel</button><button onClick={saveDrawingEdit}>Save</button></div></div></div>}<div className="chartfoot">Wheel: zoom · Drag: pan · Drawings save automatically</div></section><aside className="watchlist-panel"><div className="watch-head"><b>Watchlist</b><span>{symbols.length} markets</span></div><input placeholder="Search symbol…" value={query} onChange={e=>setQuery(e.target.value)}/><div className="watch-tabs">{['Favorites','Market'].map(g=><button key={g} className={watchGroup===g?'active':''} onClick={()=>setWatchGroup(g)}>{g}</button>)}</div><div className="watch-items">{(watchGroup==='Favorites'?filtered.filter(s=>favorites.includes(s)):filtered).map(s=><button className={s===symbol?'current':''} key={s} onClick={()=>setSymbol(s)}><b>{s}</b><i className={prices[s]?.change24h==null?'muted':prices[s].change24h>=0?'positive':'negative'}>{prices[s]?.change24h==null?'—':(prices[s].change24h>=0?'+':'')+prices[s].change24h.toFixed(2)+'%'}</i><span>{prices[s]?.price?.toLocaleString(undefined,{maximumFractionDigits:5})??'—'}</span></button>)}</div><div className="watch-detail"><b>{symbol||'Select market'}</b><strong>{prices[symbol]?.price?.toLocaleString(undefined,{maximumFractionDigits:6})??'—'}</strong><small>Arcus live market</small></div></aside></div>{alarmActive&&<button className="stop-alarm" onClick={stopAlarm}>■ Stop alarm sound</button>}</>}{tab==='Alerts'&&<><div className="heading"><div><small>PRICE MONITOR</small><h1>My Alerts</h1><p>Grouped by market type · maximum 9 alerts per column</p></div><div className="alert-heading-actions"><button className="secondary" onClick={()=>openQrSync(levels,'All alerts')}>▦ Export all QR</button><button className="secondary" onClick={openTextExport}>▤ Export all as text</button><button className="secondary" onClick={()=>{if(window.confirm('Delete every alert? This cannot be undone.'))setLevels([])}}>Delete All</button><button className="secondary" onClick={()=>{setScanStatus('Point your camera at the QR code');setScannerOpen(true)}}>⌗ Scan QR</button><button onClick={()=>setTab('Create')}>＋ New alert</button></div></div>{levels.length?(()=>{const classify=(sym:string)=>{const x=sym.toUpperCase().replace(/[^A-Z0-9]/g,'');const commodities=['XAU','XAG','GOLD','SILVER','WTI','BRENT','OIL','NGAS','NATGAS','COPPER','WHEAT','CORN','SOY'];const stocks=['AAPL','MSFT','NVDA','AMZN','GOOGL','GOOG','META','TSLA','NFLX','AMD','INTC','COIN','MSTR','SPY','QQQ','DIA','IWM','BA','JPM','GS','V','MA','WMT','COST','ORCL','CRM'];if(commodities.some(k=>x===k||x.startsWith(k)))return 'Commodities';if(stocks.some(k=>x===k||x.startsWith(k)))return 'Stocks';return 'Crypto';};const groups:Record<string,Level[]>={Crypto:[],Stocks:[],Commodities:[],Other:[]};levels.forEach(l=>groups[classify(l.symbol)].push(l));return <div className="alert-groups">{Object.entries(groups).filter(([,items])=>items.length).map(([category,items])=>{const chunks=Array.from({length:Math.ceil(items.length/9)},(_,i)=>items.slice(i*9,(i+1)*9));return <section className="alert-category" key={category}><div className="alert-category-head"><div><h2>{category==='Crypto'?'₿':category==='Stocks'?'📈':'🛢️'} {category}</h2><small>{items.length} alerts</small></div></div><div className="alert-columns">{chunks.map((chunk,index)=><div className="alert-column" key={category+'-'+index}><div className="alert-column-head"><b>{category} · {index+1}</b><span>{chunk.length}/9</span></div>{chunk.map(l=><div className={'alert-card '+(selectedAlert===l.id?'selected':'')} key={l.id} onClick={()=>setSelectedAlert(selectedAlert===l.id?null:l.id)}><div><b>{l.symbol}</b><strong>{l.price.toLocaleString()}</strong><small>{l.mode==='NEAR'?'Near · 0.1%':'Touch / cross'} · Live {prices[l.symbol]?.price?.toLocaleString()??'—'}</small></div>{selectedAlert===l.id&&<div className="alert-card-actions"><button className="secondary" onClick={e=>{e.stopPropagation();setSymbol(l.symbol);setTarget(String(l.price));setMode(l.mode);setTab('Create')}}>Edit</button><button className="danger" onClick={e=>{e.stopPropagation();setLevels(v=>v.filter(x=>x.id!==l.id));setSelectedAlert(null)}}>Remove</button></div>}</div>)}<button className="secondary alert-column-qr" onClick={()=>openQrSync(chunk,category+' · Column '+(index+1))}>▦ QR for this column</button><button className="danger alert-column-delete" onClick={()=>{if(window.confirm('Delete all '+chunk.length+' alerts in this column?'))setLevels(v=>v.filter(l=>!chunk.some(x=>x.id===l.id)))}}>Delete column</button></div>)}</div></section>;})}</div>})():<div className="empty">No active alerts. Create your first price alert.</div>}</>}{tab==='Create'&&<><div className="heading"><div><small>NEW PRICE LEVEL</small><h1>Create alert</h1><p>Choose a market and target price</p></div></div><section className="formcard"><label>Market</label><select value={symbol} onChange={e=>setSymbol(e.target.value)}>{symbols.map(s=><option>{s}</option>)}</select><label>Target price</label><input type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="Enter target price"/><label>Condition</label><select value={mode} onChange={e=>setMode(e.target.value)}><option value="CROSS">At price</option><option value="TOUCH">Touch / cross</option><option value="NEAR">Near · 0.1%</option></select><button className="primary" onClick={()=>addAlert()}>Create alert</button></section></>}
-</main>{qrOpen&&<div className="qr-modal-backdrop" onClick={()=>setQrOpen(false)}><section className="qr-modal" onClick={e=>e.stopPropagation()}><div className="qr-modal-head"><div><small>ARCUS ALERT</small><h2>{qrTitle}</h2></div><button onClick={()=>setQrOpen(false)}>✕</button></div><p>{textOnly?'Copy this single text backup and paste it into Import from Text in the Android app. It includes every alert across all columns.':'Scan this standard JSON QR code with the Android app. Each column contains up to 9 alerts.'}</p>{!textOnly&&qrImage&&<img className="qr-image" src={qrImage} alt="Arcus Alert transfer QR code"/>}{qrImages.length>1&&<div className="qr-parts"><button className="secondary" disabled={qrIndex===0} onClick={()=>{const next=qrIndex-1;setQrIndex(next);setQrImage(qrImages[next])}}>Previous</button><b>QR part {qrIndex+1} of {qrImages.length}</b><button className="secondary" disabled={qrIndex===qrImages.length-1} onClick={()=>{const next=qrIndex+1;setQrIndex(next);setQrImage(qrImages[next])}}>Next</button></div>}{qrError&&<div className="qr-scan-status">{qrError}</div>}{!textOnly&&<small className="qr-note">{qrTitle} · Standard JSON · High-resolution QR</small>}<label className="qr-text-label">Text backup</label><textarea className="qr-text-export" readOnly value={qrText}/><button className="secondary" onClick={async()=>{try{await navigator.clipboard.writeText(qrText);setStatus('Alert backup copied to clipboard');}catch{const el=document.querySelector('.qr-text-export') as HTMLTextAreaElement|null;if(el){el.focus();el.select();document.execCommand('copy');setStatus('Alert backup copied');}}}}>Copy text backup</button><button className="primary" onClick={()=>setQrOpen(false)}>Done</button></section></div>}{scannerOpen&&<div className="qr-modal-backdrop" onClick={()=>setScannerOpen(false)}><section className="qr-modal scanner-modal" onClick={e=>e.stopPropagation()}><div className="qr-modal-head"><div><small>ARCUS ALERT</small><h2>Scan alert QR</h2></div><button onClick={()=>setScannerOpen(false)}>✕</button></div><p>Allow camera access and point it at the QR code shown on your other device.</p><video ref={qrVideo} className="qr-camera" muted playsInline/><div className="qr-scan-status">{scanStatus}</div><button className="secondary" onClick={()=>setScannerOpen(false)}>Cancel</button></section></div>}{showHistory&&<div className="history-overlay" onClick={()=>setShowHistory(false)}><section className="history-panel" onClick={e=>e.stopPropagation()}><div className="history-heading"><div><small>TRIGGER LOG</small><h2>Alert History</h2></div><button onClick={()=>setShowHistory(false)}>✕</button></div>{history.length>0?<><div className="history-list">{history.map(h=><div className="history-item" key={h.id+"-"+h.time}><div><b>{h.symbol} · {h.price.toLocaleString()}</b><small>Triggered at {h.actual.toLocaleString()}</small></div><time>{new Date(h.time).toLocaleString()}</time></div>)}</div><button className="danger" onClick={()=>setHistory([])}>Clear history</button></>:<div className="empty">No triggered alerts yet.</div>}</section></div>}<nav>{TABS.map((t,i)=><button className={tab===t?'active':''} onClick={()=>setTab(t)} key={t}><span>{['▦','☆','⌁','♧','＋'][i]}</span>{t}</button>)}</nav></div>}
-createRoot(document.getElementById('root')!).render(<App/>);
+  const addAlert = (p?: number) => {
+    const value = Number(p ?? target);
+    if (!symbol || !Number.isFinite(value) || value <= 0) return;
+    setLevels((v) => [...v, { id: crypto.randomUUID(), symbol, price: value, mode, nearPct: 0.1 }]);
+    setTarget("");
+  };
+  const stopAlarm = () => {
+    if (alarmAudio.current) {
+      alarmAudio.current.pause();
+      alarmAudio.current.currentTime = 0;
+      alarmAudio.current = null;
+    }
+    if (window.arcusDesktop?.isDesktop) window.arcusDesktop.stopSound();
+    setAlarmActive(false);
+  };
+  const chooseCustomSound = async () => {
+    if (window.arcusDesktop?.isDesktop) {
+      const path = await window.arcusDesktop.chooseSound?.();
+      if (path) {
+        setCustomSound(path);
+        setSound("custom");
+      }
+      return;
+    }
+    document.getElementById("arcus-custom-sound-input")?.click();
+  };
+  const loadCustomSound = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("audio/")) {
+      setStatus("Please choose an audio file");
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setStatus("Audio file must be 15 MB or smaller");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCustomSound(reader.result);
+        setSound("custom");
+        setStatus("Custom alert sound added");
+      }
+    };
+    reader.onerror = () => setStatus("Could not read audio file");
+    reader.readAsDataURL(file);
+  };
+  const resetChart = () => {
+    const chart = chartApi.current;
+    if (!chart || !series.current) return;
+    try {
+      chart.applyOptions({
+        rightPriceScale: { autoScale: true, scaleMargins: { top: 0.08, bottom: 0.08 } },
+        timeScale: { rightOffset: 5 },
+      });
+      chart.timeScale().fitContent();
+      chart.priceScale("right").applyOptions({ autoScale: true });
+    } catch (e) {
+      console.error("Chart reset failed", e);
+    }
+  };
+  const previewCustomSound = () => {
+    if (!customSound) return;
+    try {
+      if (alarmAudio.current) {
+        alarmAudio.current.pause();
+        alarmAudio.current.currentTime = 0;
+      }
+      alarmAudio.current = new Audio(customSound);
+      alarmAudio.current.loop = false;
+      void alarmAudio.current
+        .play()
+        .catch(() => setStatus("Click Preview again to allow audio playback"));
+    } catch {
+      setStatus("Could not play this audio file");
+    }
+  };
+  const enableBrowserNotifications = async () => {
+    if (!("Notification" in window)) {
+      setStatus("This browser does not support notifications");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setStatus(
+      permission === "granted"
+        ? "Browser notifications enabled"
+        : "Notification permission: " + permission,
+    );
+    if (permission === "granted" && user) {
+      try {
+        if (await isSupported()) {
+          const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+          if (vapidKey) {
+            const registration = await navigator.serviceWorker.register(
+              "./firebase-messaging-sw.js",
+            );
+            const token = await getToken(getMessaging(auth.app), {
+              vapidKey,
+              serviceWorkerRegistration: registration,
+            });
+            if (token) {
+              localStorage.setItem("arcus-alert-fcm-token", token);
+              await setDoc(
+                doc(db, "users", user.uid, "devices", token),
+                { token, platform: "web", updatedAt: serverTimestamp() },
+                { merge: true },
+              );
+            }
+          } else
+            setStatus(
+              "Add the Firebase Web Push VAPID key to VITE_FIREBASE_VAPID_KEY to enable background push.",
+            );
+        }
+      } catch (error: any) {
+        setStatus("Push setup error: " + (error?.message || "Unknown error"));
+      }
+    }
+  };
+  const toggleFav = (s: string) =>
+    setFavorites((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
+  const drawingDrag = useRef<string | null>(null),
+    drawingMoved = useRef(false);
+  const openDrawingEditor = (d: ChartDrawing) => {
+    setEditingDrawing(d.id);
+    setEditLinePrice(String(d.points[0]?.price ?? ""));
+    setEditLineColor(d.color || d.points[0]?.color || "#39c9c2");
+    setEditLineWidth(d.width || d.points[0]?.width || 2);
+  };
+  const saveDrawingEdit = () => {
+    const price = Number(editLinePrice);
+    if (!Number.isFinite(price) || price <= 0) return;
+    setDrawings((v) =>
+      v.map((d) =>
+        d.id === editingDrawing
+          ? {
+              ...d,
+              color: editLineColor,
+              width: editLineWidth,
+              points: d.points.map((p, i) =>
+                i === 0 ? { ...p, price, color: editLineColor, width: editLineWidth } : p,
+              ),
+            }
+          : d,
+      ),
+    );
+    setLineColor(editLineColor);
+    setLineWidth(editLineWidth);
+    setEditingDrawing(null);
+  };
+  const submitAuth = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const email = authEmail.trim();
+      if (authMode === "signup") await createUserWithEmailAndPassword(auth, email, authPassword);
+      else await signInWithEmailAndPassword(auth, email, authPassword);
+      setShowAuth(false);
+      setAuthPassword("");
+    } catch (error: any) {
+      const code = error?.code || "";
+      const messages: any = {
+        "auth/email-already-in-use": "This email already has an account. Sign in instead.",
+        "auth/invalid-credential": "Email or password is incorrect.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/invalid-email": "Enter a valid email address.",
+        "auth/too-many-requests": "Too many attempts. Try again later.",
+        "auth/network-request-failed": "Network error. Check your connection.",
+        "auth/unauthorized-domain":
+          "This website domain is not authorized in Firebase Authentication.",
+      };
+      setAuthError(messages[code] || error?.message || "Could not authenticate. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+  const accountAction = () => {
+    if (user) {
+      void (async () => {
+        const token = localStorage.getItem("arcus-alert-fcm-token");
+        if (token) {
+          try {
+            await deleteDoc(doc(db, "users", user.uid, "devices", token));
+          } catch {}
+          localStorage.removeItem("arcus-alert-fcm-token");
+        }
+        await signOut(auth);
+      })();
+      return;
+    }
+    setAuthMode("login");
+    setAuthError("");
+    setShowAuth(true);
+  };
+  const filtered = symbols.filter((s) => s.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div className="app">
+      <header>
+        <div className="brand">
+          <div className="mark">A</div>
+          <div>
+            <b>ARCUS</b>
+            <small>ALERT</small>
+          </div>
+        </div>
+        <div className="connection">
+          <i /> {status}
+        </div>
+        <div className="header-actions">
+          {!window.arcusDesktop?.isDesktop && (
+            <button className="history-button" onClick={enableBrowserNotifications}>
+              Enable notifications
+            </button>
+          )}
+          <label className="sound-control" title="Notification sound">
+            🔊
+            <select
+              aria-label="Notification sound"
+              value={sound}
+              onChange={(e) => setSound(e.target.value)}
+            >
+              <option value="beep">Beep</option>
+              <option value="double">Double beep</option>
+              <option value="triple">Triple beep</option>
+              <option value="off">Silent</option>
+              {customSound && <option value="custom">My sound</option>}
+            </select>
+            <button type="button" title="Choose audio file" onClick={chooseCustomSound}>
+              Add ♪
+            </button>
+            {!window.arcusDesktop?.isDesktop && (
+              <input
+                id="arcus-custom-sound-input"
+                type="file"
+                accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  loadCustomSound(e.target.files?.[0]);
+                  e.currentTarget.value = "";
+                }}
+              />
+            )}
+          </label>
+          <button
+            className="history-button account-button"
+            title={user?.email || "Sign in to sync alerts across devices"}
+            onClick={accountAction}
+          >
+            {user ? "Sign out" : "Sign in"}
+          </button>
+          <button
+            className="history-button"
+            title="Alert history"
+            onClick={() => setShowHistory((v) => !v)}
+          >
+            ◷ History{history.length > 0 && <b>{history.length}</b>}
+          </button>
+        </div>
+      </header>
+      <main>
+        {tab === "Market" && (
+          <>
+            <div className="heading">
+              <div>
+                <small>MARKETS</small>
+                <h1>Market overview</h1>
+                <p>Live prices from Arcus</p>
+              </div>
+              <span className="count">{symbols.length} markets</span>
+            </div>
+            <input
+              placeholder="Search markets…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <div className="marketlist">
+              {filtered.map((s) => (
+                <div
+                  className="marketrow"
+                  key={s}
+                  onClick={() => {
+                    setSymbol(s);
+                    setTab("Chart");
+                  }}
+                >
+                  <b>{s}</b>
+                  <button
+                    className="market-favorite"
+                    aria-label={favorites.includes(s) ? "Remove favorite" : "Add favorite"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFav(s);
+                    }}
+                  >
+                    {favorites.includes(s) ? "★" : "☆"}
+                  </button>
+                  <small
+                    className={
+                      prices[s]?.change24h == null
+                        ? "muted"
+                        : prices[s].change24h >= 0
+                          ? "positive"
+                          : "negative"
+                    }
+                  >
+                    {prices[s]?.change24h == null
+                      ? "—"
+                      : (prices[s].change24h >= 0 ? "+" : "") +
+                        prices[s].change24h.toFixed(2) +
+                        "%"}
+                  </small>
+                  <strong>
+                    {prices[s]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
+                      "—"}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {tab === "Watchlist" && (
+          <>
+            <div className="heading">
+              <div>
+                <small>YOUR MARKETS</small>
+                <h1>Watchlist</h1>
+                <p>Favorite Arcus markets</p>
+              </div>
+            </div>
+            {favorites.length ? (
+              favorites.map((s) => (
+                <div
+                  className="marketrow"
+                  key={s}
+                  onClick={() => {
+                    setSymbol(s);
+                    setTab("Chart");
+                  }}
+                >
+                  <b>{s}</b>
+                  <strong>{prices[s]?.price?.toLocaleString() ?? "—"}</strong>
+                  {prices[s]?.change24h != null && (
+                    <small className={prices[s].change24h >= 0 ? "positive" : "negative"}>
+                      {prices[s].change24h >= 0 ? "+" : ""}
+                      {prices[s].change24h.toFixed(2)}%
+                    </small>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFav(s);
+                    }}
+                  >
+                    ★
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="empty">No favorites yet. Add markets from Market.</div>
+            )}
+          </>
+        )}
+        {tab === "Chart" && (
+          <>
+            <div className="chartbar">
+              <div className="chart-symbol-area">
+                <small>CHART</small>
+                <div className="chart-symbol-picker">
+                  <button
+                    className="chart-symbol-trigger"
+                    onClick={() => {
+                      setChartSearchOpen((v) => !v);
+                      setQuery("");
+                    }}
+                  >
+                    <span>{symbol || "Select market"}</span>
+                    <b>⌕</b>
+                  </button>
+                  {chartSearchOpen && (
+                    <div className="chart-symbol-menu">
+                      <input
+                        autoFocus
+                        placeholder="Search markets…"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                      <div className="chart-symbol-results">
+                        {filtered.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              setSymbol(s);
+                              setChartSearchOpen(false);
+                              setQuery("");
+                            }}
+                          >
+                            {s}
+                            <span>{prices[s]?.price?.toLocaleString() ?? "—"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="price">
+                {prices[symbol]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
+                  "—"}
+              </div>
+              <select value={tf} onChange={(e) => setTf(e.target.value)}>
+                {["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+              <button className="secondary" onClick={resetChart} title="Reset chart view (Alt+R)">
+                Reset
+              </button>
+              <button className="secondary" onClick={() => addAlert(prices[symbol]?.price)}>
+                ＋ Alert
+              </button>
+            </div>
+            <div className="chart-workspace">
+              <aside className="drawing-rail">
+                <button
+                  className={activeTool === "hline" ? "selected" : ""}
+                  title="Horizontal line"
+                  onClick={() => setActiveTool(activeTool === "hline" ? "cursor" : "hline")}
+                >
+                  ↔
+                </button>
+                <label className="drawing-style" title="Line color">
+                  <input
+                    type="color"
+                    value={lineColor}
+                    onChange={(e) => setLineColor(e.target.value)}
+                  />
+                </label>
+                <select
+                  className="drawing-width"
+                  aria-label="Line thickness"
+                  value={lineWidth}
+                  onChange={(e) => setLineWidth(Number(e.target.value))}
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n}px
+                    </option>
+                  ))}
+                </select>
+              </aside>
+              <section className="chart-center">
+                <div className="chartnote">
+                  {chartStatus} ·{" "}
+                  {activeTool === "hline"
+                    ? "Click chart to place a horizontal line"
+                    : "Select the horizontal-line tool to draw"}
+                </div>
+                <div
+                  className={"chartbox " + (activeTool !== "cursor" ? "drawing-active" : "")}
+                  ref={chartHost}
+                  onPointerDown={(e) => {
+                    if (activeTool !== "hline" || !chartApi.current || !series.current) return;
+                    const r = e.currentTarget.getBoundingClientRect(),
+                      x = e.clientX - r.left,
+                      y = e.clientY - r.top,
+                      t = chartApi.current.timeScale().coordinateToTime(x),
+                      p = series.current.coordinateToPrice(y);
+                    if (t == null || p == null) return;
+                    const point = { time: t, price: Number(p), color: lineColor, width: lineWidth };
+                    setDrawings((v) => [
+                      ...v,
+                      {
+                        id: crypto.randomUUID(),
+                        tool: "hline",
+                        symbol,
+                        points: [point],
+                        color: lineColor,
+                        width: lineWidth,
+                      },
+                    ]);
+                    setActiveTool("cursor");
+                  }}
+                  onPointerMove={(e) => {
+                    const el = e.currentTarget;
+                    if ((el as any)._dragAlert && series.current) {
+                      const r = el.getBoundingClientRect(),
+                        p = series.current.coordinateToPrice(e.clientY - r.top);
+                      if (p != null)
+                        setLevels((v) =>
+                          v.map((l) =>
+                            l.id === (el as any)._dragAlert ? { ...l, price: Number(p) } : l,
+                          ),
+                        );
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    (e.currentTarget as any)._dragAlert = null;
+                  }}
+                >
+                  <svg
+                    className="drawing-overlay"
+                    viewBox={`0 0 ${chartHost.current?.clientWidth || 800} ${chartHost.current?.clientHeight || 400}`}
+                    preserveAspectRatio="none"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {drawings
+                      .filter((d) => !d.symbol || d.symbol === symbol)
+                      .map((d) => {
+                        const p = d.points.map((q) => ({
+                          x: chartApi.current?.timeScale().timeToCoordinate(q.time),
+                          y: series.current?.priceToCoordinate(q.price),
+                        }));
+                        const a = p[0];
+                        if (d.tool === "hline") {
+                          if (a?.y == null) return null;
+                          return (
+                            <line
+                              key={d.id}
+                              x1="0"
+                              x2={chartHost.current?.clientWidth || 800}
+                              y1={a.y}
+                              y2={a.y}
+                              stroke={d.color || d.points[0]?.color || "#39c9c2"}
+                              strokeWidth={d.width || d.points[0]?.width || 2}
+                              style={{ pointerEvents: "stroke", cursor: "ns-resize" }}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                drawingDrag.current = d.id;
+                                drawingMoved.current = false;
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                              }}
+                              onPointerMove={(e) => {
+                                if (
+                                  drawingDrag.current !== d.id ||
+                                  !series.current ||
+                                  !chartHost.current
+                                )
+                                  return;
+                                const r = chartHost.current.getBoundingClientRect(),
+                                  p = series.current.coordinateToPrice(e.clientY - r.top);
+                                if (p != null) {
+                                  drawingMoved.current = true;
+                                  setDrawings((v) =>
+                                    v.map((x) =>
+                                      x.id === d.id
+                                        ? {
+                                            ...x,
+                                            points: x.points.map((q, i) =>
+                                              i === 0 ? { ...q, price: Number(p) } : q,
+                                            ),
+                                          }
+                                        : x,
+                                    ),
+                                  );
+                                }
+                              }}
+                              onPointerUp={(e) => {
+                                e.stopPropagation();
+                                drawingDrag.current = null;
+                              }}
+                              onPointerCancel={() => {
+                                drawingDrag.current = null;
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!drawingMoved.current) openDrawingEditor(d);
+                                drawingMoved.current = false;
+                              }}
+                            />
+                          );
+                        }
+                        if (p.some((q) => q.x == null || q.y == null)) return null;
+                        return null;
+                      })}
+                  </svg>
+                  {levels
+                    .filter((l) => l.symbol === symbol)
+                    .map((l) => {
+                      const y = series.current?.priceToCoordinate(l.price);
+                      if (y == null) return null;
+                      return (
+                        <div
+                          className="alert-price-overlay"
+                          key={l.id}
+                          style={{ top: y }}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            (e.currentTarget.parentElement as any)._dragAlert = l.id;
+                            (e.currentTarget.parentElement as any).setPointerCapture(e.pointerId);
+                          }}
+                        >
+                          <span>ALERT {l.price.toLocaleString()}</span>
+                          <button
+                            title="Delete alert"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={() => setLevels((v) => v.filter((x) => x.id !== l.id))}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  {hoverLevel && (
+                    <button
+                      className="chart-crosshair-add"
+                      style={{
+                        top: Math.max(
+                          4,
+                          Math.min(
+                            hoverLevel.y - 16,
+                            (chartHost.current?.clientHeight || 480) - 36,
+                          ),
+                        ),
+                      }}
+                      onClick={() => addAlert(hoverLevel.price)}
+                    >
+                      ＋
+                    </button>
+                  )}
+                </div>
+                {editingDrawing && (
+                  <div className="line-editor-backdrop" onClick={() => setEditingDrawing(null)}>
+                    <div className="line-editor" onClick={(e) => e.stopPropagation()}>
+                      <div className="line-editor-head">
+                        <b>Edit horizontal line</b>
+                        <button onClick={() => setEditingDrawing(null)}>×</button>
+                      </div>
+                      <label>
+                        Price
+                        <input
+                          type="number"
+                          value={editLinePrice}
+                          onChange={(e) => setEditLinePrice(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Color
+                        <input
+                          type="color"
+                          value={editLineColor}
+                          onChange={(e) => setEditLineColor(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Thickness
+                        <select
+                          value={editLineWidth}
+                          onChange={(e) => setEditLineWidth(Number(e.target.value))}
+                        >
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <option key={n} value={n}>
+                              {n}px
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="line-editor-actions">
+                        <button
+                          className="danger"
+                          onClick={() => {
+                            setDrawings((v) => v.filter((d) => d.id !== editingDrawing));
+                            setEditingDrawing(null);
+                          }}
+                        >
+                          Delete line
+                        </button>
+                        <button className="secondary" onClick={() => setEditingDrawing(null)}>
+                          Cancel
+                        </button>
+                        <button onClick={saveDrawingEdit}>Save</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="chartfoot">
+                  Wheel: zoom · Drag: pan · Drawings save automatically
+                </div>
+              </section>
+              <aside className="watchlist-panel">
+                <div className="watch-head">
+                  <b>Watchlist</b>
+                  <span>{symbols.length} markets</span>
+                </div>
+                <input
+                  placeholder="Search symbol…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <div className="watch-tabs">
+                  {["Favorites", "Market"].map((g) => (
+                    <button
+                      key={g}
+                      className={watchGroup === g ? "active" : ""}
+                      onClick={() => setWatchGroup(g)}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+                <div className="watch-items">
+                  {(watchGroup === "Favorites"
+                    ? filtered.filter((s) => favorites.includes(s))
+                    : filtered
+                  ).map((s) => (
+                    <button
+                      className={s === symbol ? "current" : ""}
+                      key={s}
+                      onClick={() => setSymbol(s)}
+                    >
+                      <b>{s}</b>
+                      <i
+                        className={
+                          prices[s]?.change24h == null
+                            ? "muted"
+                            : prices[s].change24h >= 0
+                              ? "positive"
+                              : "negative"
+                        }
+                      >
+                        {prices[s]?.change24h == null
+                          ? "—"
+                          : (prices[s].change24h >= 0 ? "+" : "") +
+                            prices[s].change24h.toFixed(2) +
+                            "%"}
+                      </i>
+                      <span>
+                        {prices[s]?.price?.toLocaleString(undefined, {
+                          maximumFractionDigits: 5,
+                        }) ?? "—"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="watch-detail">
+                  <b>{symbol || "Select market"}</b>
+                  <strong>
+                    {prices[symbol]?.price?.toLocaleString(undefined, {
+                      maximumFractionDigits: 6,
+                    }) ?? "—"}
+                  </strong>
+                  <small>Arcus live market</small>
+                </div>
+              </aside>
+            </div>
+            {alarmActive && (
+              <button className="stop-alarm" onClick={stopAlarm}>
+                ■ Stop alarm sound
+              </button>
+            )}
+          </>
+        )}
+        {tab === "Alerts" && (
+          <>
+            <div className="heading">
+              <div>
+                <small>PRICE MONITOR</small>
+                <h1>My Alerts</h1>
+                <p>Grouped by market type · maximum 9 alerts per column</p>
+              </div>
+              <div className="alert-heading-actions">
+                <button className="secondary" onClick={() => openQrSync(levels, "All alerts")}>
+                  ▦ Export all QR
+                </button>
+                <button className="secondary" onClick={openTextExport}>
+                  ▤ Export all as text
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    if (window.confirm("Delete every alert? This cannot be undone.")) setLevels([]);
+                  }}
+                >
+                  Delete All
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setScanStatus("Point your camera at the QR code");
+                    setScannerOpen(true);
+                  }}
+                >
+                  ⌗ Scan QR
+                </button>
+                <button onClick={() => setTab("Create")}>＋ New alert</button>
+              </div>
+            </div>
+            {levels.length ? (
+              (() => {
+                const classify = (sym: string) => {
+                  const x = sym.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                  const commodities = [
+                    "XAU",
+                    "XAG",
+                    "GOLD",
+                    "SILVER",
+                    "WTI",
+                    "BRENT",
+                    "OIL",
+                    "NGAS",
+                    "NATGAS",
+                    "COPPER",
+                    "WHEAT",
+                    "CORN",
+                    "SOY",
+                  ];
+                  const stocks = [
+                    "AAPL",
+                    "MSFT",
+                    "NVDA",
+                    "AMZN",
+                    "GOOGL",
+                    "GOOG",
+                    "META",
+                    "TSLA",
+                    "NFLX",
+                    "AMD",
+                    "INTC",
+                    "COIN",
+                    "MSTR",
+                    "SPY",
+                    "QQQ",
+                    "DIA",
+                    "IWM",
+                    "BA",
+                    "JPM",
+                    "GS",
+                    "V",
+                    "MA",
+                    "WMT",
+                    "COST",
+                    "ORCL",
+                    "CRM",
+                  ];
+                  if (commodities.some((k) => x === k || x.startsWith(k))) return "Commodities";
+                  if (stocks.some((k) => x === k || x.startsWith(k))) return "Stocks";
+                  return "Crypto";
+                };
+                const groups: Record<string, Level[]> = {
+                  Crypto: [],
+                  Stocks: [],
+                  Commodities: [],
+                  Other: [],
+                };
+                levels.forEach((l) => groups[classify(l.symbol)].push(l));
+                return (
+                  <div className="alert-groups">
+                    {Object.entries(groups)
+                      .filter(([, items]) => items.length)
+                      .map(([category, items]) => {
+                        const chunks = Array.from({ length: Math.ceil(items.length / 9) }, (_, i) =>
+                          items.slice(i * 9, (i + 1) * 9),
+                        );
+                        return (
+                          <section className="alert-category" key={category}>
+                            <div className="alert-category-head">
+                              <div>
+                                <h2>
+                                  {category === "Crypto"
+                                    ? "₿"
+                                    : category === "Stocks"
+                                      ? "📈"
+                                      : "🛢️"}{" "}
+                                  {category}
+                                </h2>
+                                <small>{items.length} alerts</small>
+                              </div>
+                            </div>
+                            <div className="alert-columns">
+                              {chunks.map((chunk, index) => (
+                                <div className="alert-column" key={category + "-" + index}>
+                                  <div className="alert-column-head">
+                                    <b>
+                                      {category} · {index + 1}
+                                    </b>
+                                    <span>{chunk.length}/9</span>
+                                  </div>
+                                  {chunk.map((l) => (
+                                    <div
+                                      className={
+                                        "alert-card " + (selectedAlert === l.id ? "selected" : "")
+                                      }
+                                      key={l.id}
+                                      onClick={() =>
+                                        setSelectedAlert(selectedAlert === l.id ? null : l.id)
+                                      }
+                                    >
+                                      <div>
+                                        <b>{l.symbol}</b>
+                                        <strong>{l.price.toLocaleString()}</strong>
+                                        <small>
+                                          {l.mode === "NEAR" ? "Near · 0.1%" : "Touch / cross"} ·
+                                          Live {prices[l.symbol]?.price?.toLocaleString() ?? "—"}
+                                        </small>
+                                      </div>
+                                      {selectedAlert === l.id && (
+                                        <div className="alert-card-actions">
+                                          <button
+                                            className="secondary"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSymbol(l.symbol);
+                                              setTarget(String(l.price));
+                                              setMode(l.mode);
+                                              setTab("Create");
+                                            }}
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            className="danger"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setLevels((v) => v.filter((x) => x.id !== l.id));
+                                              setSelectedAlert(null);
+                                            }}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <button
+                                    className="secondary alert-column-qr"
+                                    onClick={() =>
+                                      openQrSync(chunk, category + " · Column " + (index + 1))
+                                    }
+                                  >
+                                    ▦ QR for this column
+                                  </button>
+                                  <button
+                                    className="danger alert-column-delete"
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          "Delete all " + chunk.length + " alerts in this column?",
+                                        )
+                                      )
+                                        setLevels((v) =>
+                                          v.filter((l) => !chunk.some((x) => x.id === l.id)),
+                                        );
+                                    }}
+                                  >
+                                    Delete column
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        );
+                      })}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="empty">No active alerts. Create your first price alert.</div>
+            )}
+          </>
+        )}
+        {tab === "Create" && (
+          <>
+            <div className="heading">
+              <div>
+                <small>NEW PRICE LEVEL</small>
+                <h1>Create alert</h1>
+                <p>Choose a market and target price</p>
+              </div>
+            </div>
+            <section className="formcard">
+              <label>Market</label>
+              <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+                {symbols.map((s) => (
+                  <option>{s}</option>
+                ))}
+              </select>
+              <label>Target price</label>
+              <input
+                type="number"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="Enter target price"
+              />
+              <label>Condition</label>
+              <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                <option value="CROSS">At price</option>
+                <option value="TOUCH">Touch / cross</option>
+                <option value="NEAR">Near · 0.1%</option>
+              </select>
+              <button className="primary" onClick={() => addAlert()}>
+                Create alert
+              </button>
+            </section>
+          </>
+        )}
+      </main>
+      {qrOpen && (
+        <div className="qr-modal-backdrop" onClick={() => setQrOpen(false)}>
+          <section className="qr-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="qr-modal-head">
+              <div>
+                <small>ARCUS ALERT</small>
+                <h2>{qrTitle}</h2>
+              </div>
+              <button onClick={() => setQrOpen(false)}>✕</button>
+            </div>
+            <p>
+              {textOnly
+                ? "Copy this single text backup and paste it into Import from Text in the Android app. It includes every alert across all columns."
+                : "Scan this standard JSON QR code with the Android app. Each column contains up to 9 alerts."}
+            </p>
+            {!textOnly && qrImage && (
+              <img className="qr-image" src={qrImage} alt="Arcus Alert transfer QR code" />
+            )}
+            {qrImages.length > 1 && (
+              <div className="qr-parts">
+                <button
+                  className="secondary"
+                  disabled={qrIndex === 0}
+                  onClick={() => {
+                    const next = qrIndex - 1;
+                    setQrIndex(next);
+                    setQrImage(qrImages[next]);
+                  }}
+                >
+                  Previous
+                </button>
+                <b>
+                  QR part {qrIndex + 1} of {qrImages.length}
+                </b>
+                <button
+                  className="secondary"
+                  disabled={qrIndex === qrImages.length - 1}
+                  onClick={() => {
+                    const next = qrIndex + 1;
+                    setQrIndex(next);
+                    setQrImage(qrImages[next]);
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+            {qrError && <div className="qr-scan-status">{qrError}</div>}
+            {!textOnly && (
+              <small className="qr-note">{qrTitle} · Standard JSON · High-resolution QR</small>
+            )}
+            <label className="qr-text-label">Text backup</label>
+            <textarea className="qr-text-export" readOnly value={qrText} />
+            <button
+              className="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(qrText);
+                  setStatus("Alert backup copied to clipboard");
+                } catch {
+                  const el = document.querySelector(
+                    ".qr-text-export",
+                  ) as HTMLTextAreaElement | null;
+                  if (el) {
+                    el.focus();
+                    el.select();
+                    document.execCommand("copy");
+                    setStatus("Alert backup copied");
+                  }
+                }
+              }}
+            >
+              Copy text backup
+            </button>
+            <button className="primary" onClick={() => setQrOpen(false)}>
+              Done
+            </button>
+          </section>
+        </div>
+      )}
+      {scannerOpen && (
+        <div className="qr-modal-backdrop" onClick={() => setScannerOpen(false)}>
+          <section className="qr-modal scanner-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="qr-modal-head">
+              <div>
+                <small>ARCUS ALERT</small>
+                <h2>Scan alert QR</h2>
+              </div>
+              <button onClick={() => setScannerOpen(false)}>✕</button>
+            </div>
+            <p>Allow camera access and point it at the QR code shown on your other device.</p>
+            <video ref={qrVideo} className="qr-camera" muted playsInline />
+            <div className="qr-scan-status">{scanStatus}</div>
+            <button className="secondary" onClick={() => setScannerOpen(false)}>
+              Cancel
+            </button>
+          </section>
+        </div>
+      )}
+      {showAuth && (
+        <div className="auth-overlay" onClick={() => setShowAuth(false)}>
+          <form
+            className="auth-panel"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitAuth();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="auth-heading">
+              <div>
+                <small>ARCUS ALERT ACCOUNT</small>
+                <h2>{authMode === "signup" ? "Create your account" : "Welcome back"}</h2>
+                <p>Sync alerts between your laptop and phone.</p>
+              </div>
+              <button type="button" onClick={() => setShowAuth(false)}>
+                ×
+              </button>
+            </div>
+            <label>
+              Email
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                minLength={6}
+                required
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="At least 6 characters"
+              />
+            </label>
+            {authError && <div className="auth-error">{authError}</div>}
+            <button className="primary" type="submit" disabled={authBusy}>
+              {authBusy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}
+            </button>
+            <button
+              className="auth-switch"
+              type="button"
+              onClick={() => {
+                setAuthMode((v) => (v === "login" ? "signup" : "login"));
+                setAuthError("");
+              }}
+            >
+              {authMode === "signup"
+                ? "Already have an account? Sign in"
+                : "New to Arcus Alert? Create an account"}
+            </button>
+          </form>
+        </div>
+      )}
+      {showHistory && (
+        <div className="history-overlay" onClick={() => setShowHistory(false)}>
+          <section className="history-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="history-heading">
+              <div>
+                <small>TRIGGER LOG</small>
+                <h2>Alert History</h2>
+              </div>
+              <button onClick={() => setShowHistory(false)}>✕</button>
+            </div>
+            {history.length > 0 ? (
+              <>
+                <div className="history-list">
+                  {history.map((h) => (
+                    <div className="history-item" key={h.id + "-" + h.time}>
+                      <div>
+                        <b>
+                          {h.symbol} · {h.price.toLocaleString()}
+                        </b>
+                        <small>Triggered at {h.actual.toLocaleString()}</small>
+                      </div>
+                      <time>{new Date(h.time).toLocaleString()}</time>
+                    </div>
+                  ))}
+                </div>
+                <button className="danger" onClick={() => setHistory([])}>
+                  Clear history
+                </button>
+              </>
+            ) : (
+              <div className="empty">No triggered alerts yet.</div>
+            )}
+          </section>
+        </div>
+      )}
+      <nav>
+        {TABS.map((t, i) => (
+          <button className={tab === t ? "active" : ""} onClick={() => setTab(t)} key={t}>
+            <span>{["▦", "☆", "⌁", "♧", "＋"][i]}</span>
+            {t}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+createRoot(document.getElementById("root")!).render(<App />);

@@ -15,11 +15,14 @@ android {
     }
     defaultConfig {
         applicationId 'com.arcus.alert'
+        def firebaseAndroidAppId = System.getenv('FIREBASE_ANDROID_APP_ID') ?: ''
+        buildConfigField 'String', 'FIREBASE_ANDROID_APP_ID', '"' + firebaseAndroidAppId + '"'
         minSdk 26
         targetSdk 35
         versionCode 1
         versionName '1.0'
     }
+    buildFeatures { buildConfig true }
     signingConfigs {
         release {
             def keystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
@@ -36,5 +39,11 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled false
         }
+    }
+    dependencies {
+        implementation platform('com.google.firebase:firebase-bom:34.0.0')
+        implementation 'com.google.firebase:firebase-auth'
+        implementation 'com.google.firebase:firebase-firestore'
+        implementation 'com.google.firebase:firebase-messaging'
     }
 }
