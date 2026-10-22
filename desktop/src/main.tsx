@@ -148,7 +148,7 @@ function App() {
   const [watchOpen, setWatchOpen] = useState(() => {
     try {
       const v = localStorage.getItem("arcus.watchOpen");
-      return v == null ? window.innerWidth >= 1100 : v === "1";
+      return v === "1";
     } catch {
       return true;
     }
@@ -1462,6 +1462,18 @@ function App() {
     setFavorites((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
   const drawingDrag = useRef<string | null>(null),
     drawingMoved = useRef(false);
+  const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  const copyLine = (id: string) => {
+    const src = drawings.find((d) => d.id === id);
+    if (!src) return;
+    const nid = crypto.randomUUID();
+    const price = (src.points[0]?.price ?? 0) * 1.003; // slightly above, so the copy is visible; drag it where needed
+    setDrawings((v) => [
+      ...v,
+      { ...src, id: nid, points: src.points.map((q, i) => (i === 0 ? { ...q, price } : q)) },
+    ]);
+    setSelectedLine(nid);
+  };
   const openDrawingEditor = (d: ChartDrawing) => {
     setEditingDrawing(d.id);
     setEditLinePrice(String(d.points[0]?.price ?? ""));
@@ -1669,7 +1681,8 @@ function App() {
               </div>
             </div>
             {favorites.length ? (
-              favorites.map((s) => (
+              <div className="marketlist">
+              {favorites.map((s) => (
                 <div
                   className="marketrow"
                   key={s}
@@ -1679,6 +1692,16 @@ function App() {
                   }}
                 >
                   <b>{s}</b>
+                  <button
+                    className="market-favorite"
+                    aria-label="Remove favorite"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFav(s);
+                    }}
+                  >
+                    ★
+                  </button>
                   <small
                     className={
                       prices[s]?.change24h == null
@@ -1698,16 +1721,9 @@ function App() {
                     {prices[s]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
                       "—"}
                   </strong>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFav(s);
-                    }}
-                  >
-                    ★
-                  </button>
                 </div>
-              ))
+              ))}
+              </div>
             ) : (
               <div className="empty">No favorites yet. Add markets from Market.</div>
             )}
@@ -1830,6 +1846,7 @@ function App() {
                   className={"chartbox " + (activeTool !== "cursor" ? "drawing-active" : "")}
                   ref={chartHost}
                   onPointerDown={(e) => {
+                    if (selectedLine) setSelectedLine(null);
                     if (activeTool !== "hline" || !chartApi.current || !series.current) return;
                     const r = e.currentTarget.getBoundingClientRect(),
                       x = e.clientX - r.left,
@@ -1934,7 +1951,7 @@ function App() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!drawingMoved.current) openDrawingEditor(d);
+                                if (!drawingMoved.current) setSelectedLine(d.id);
                                 drawingMoved.current = false;
                               }}
                             />
@@ -1971,6 +1988,42 @@ function App() {
                         </div>
                       );
                     })}
+                  {selectedLine &&
+                    (() => {
+                      const d = drawings.find((x) => x.id === selectedLine);
+                      const y = d ? series.current?.priceToCoordinate(d.points[0]?.price) : null;
+                      if (!d || y == null) return null;
+                      return (
+                        <div
+                          className="line-actions"
+                          style={{ top: Math.max(4, Number(y) - 15) }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        >
+                          <button title="Copy this line" onClick={() => copyLine(d.id)}>
+                            ⧉ Copy
+                          </button>
+                          <button
+                            title="Edit price / colour"
+                            onClick={() => {
+                              openDrawingEditor(d);
+                              setSelectedLine(null);
+                            }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            className="danger"
+                            title="Delete this line"
+                            onClick={() => {
+                              setDrawings((v) => v.filter((x) => x.id !== d.id));
+                              setSelectedLine(null);
+                            }}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      );
+                    })()}
                   {hoverLevel && (
                     <button
                       className="chart-crosshair-add"

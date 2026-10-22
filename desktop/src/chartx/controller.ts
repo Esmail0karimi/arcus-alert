@@ -66,6 +66,8 @@ export class ChartX {
   private rsiBtn = h("button", "cx-btn", "RSI");
   private lineBtn = h("button", "cx-btn", "Line");
   private clearBtn = h("button", "cx-btn", "Clear lines");
+  private moreBtn = h("button", "cx-btn cx-more", "ƒx");
+  private tools = h("div", "cx-tools");
 
   constructor(
     private chart: any,
@@ -155,7 +157,22 @@ export class ChartX {
       this.persistShapes();
       this.lastSig = "";
     };
-    this.bar.append(this.smaBtn, this.rsiBtn, this.lineBtn, this.clearBtn);
+    this.tools.append(this.smaBtn, this.rsiBtn, this.lineBtn, this.clearBtn);
+    this.moreBtn.title = "Indicators and trend lines";
+    const open = load<{ open: boolean }>("arcus.chartx.bar.v1", {
+      open: false,
+    }).open;
+    const sync = (o: boolean) => {
+      this.tools.style.display = o ? "flex" : "none";
+      this.moreBtn.classList.toggle("on", o);
+    };
+    sync(open);
+    this.moreBtn.onclick = () => {
+      const o = this.tools.style.display === "none";
+      sync(o);
+      save("arcus.chartx.bar.v1", { open: o });
+    };
+    this.bar.append(this.moreBtn, this.tools);
     ["pointerdown", "wheel", "dblclick"].forEach((ev) =>
       this.bar.addEventListener(ev, (e) => e.stopPropagation()),
     );

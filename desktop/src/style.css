@@ -175,3 +175,15 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .marketrow small{min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
 .marketrow strong{min-width:104px;text-align:right;font-variant-numeric:tabular-nums}
 .marketrow small.muted{color:#6b7f99;font-weight:400}
+
+/* ---- taller chart, line actions, compact indicator bar ---- */
+main:has(.chart-workspace){width:100%!important;max-width:none!important;padding:6px 10px!important}
+@media(min-width:681px){
+  main:has(.chart-workspace){display:flex;flex-direction:column;overflow:hidden}
+  main:has(.chart-workspace) .chart-workspace{flex:1 1 auto;min-height:0;height:auto}
+  main:has(.chart-workspace) .chart-center .chartbox{height:auto!important;min-height:0!important;flex:1 1 auto}
+  main:has(.chart-workspace) .drawing-rail,main:has(.chart-workspace) .watchlist-panel{max-height:none}
+}
+@media(max-width:680px){.chart-center .chartbox{height:62vh!important;min-height:300px!important}}
+.line-actions{position:absolute;right:76px;z-index:22;display:flex;gap:4px;padding:3px;background:#0b1a2e;border:1px solid #2a5a78;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6)}
+.line-actions button{padding:4px 9px;font-size:12px;border-radius:6px}
