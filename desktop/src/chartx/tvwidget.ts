@@ -41,4 +41,14 @@ export const mountTradingView = (box: HTMLElement, symbol: string, interval: str
   });
   wrap.append(inner, script);
   box.append(wrap);
+  // If TradingView is unreachable (blocked network, VPN needed, ad blocker) say so instead of showing a blank box.
+  window.setTimeout(() => {
+    if (!box.isConnected || box.querySelector("iframe")) return;
+    const note = document.createElement("div");
+    note.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#91a7c3;font-size:13px;line-height:1.8";
+    note.textContent =
+      "TradingView did not load. Its servers are probably unreachable from this network (VPN needed?) or blocked by an ad blocker. Switch back to the built-in chart with the TradingView button.";
+    box.append(note);
+  }, 8000);
 };
