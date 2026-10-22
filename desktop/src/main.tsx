@@ -136,6 +136,38 @@ function App() {
   const cloudSyncReady = useRef(false),
     latestCloudState = useRef({ levels, favorites, history, drawings });
   latestCloudState.current = { levels, favorites, history, drawings };
+  // Ids of alerts the user (or another device) deleted. Kept locally so a stale cloud copy can never bring them back.
+  const [deletedSet] = useState(() => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem("arcus.deletedLevels") || "[]"));
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const deletedLevelIds = useRef(deletedSet),
+    prevLevelIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const now = new Set(levels.map((l: any) => String(l.id))),
+      tomb = deletedLevelIds.current;
+    let changed = false;
+    now.forEach((id) => {
+      if (tomb.delete(id)) changed = true;
+    });
+    prevLevelIds.current?.forEach((id) => {
+      if (!now.has(id) && !tomb.has(id)) {
+        tomb.add(id);
+        changed = true;
+      }
+    });
+    prevLevelIds.current = now;
+    if (changed) {
+      const list = Array.from(tomb).slice(-300);
+      deletedLevelIds.current = new Set(list);
+      try {
+        localStorage.setItem("arcus.deletedLevels", JSON.stringify(list));
+      } catch {}
+    }
+  }, [levels]);
   const chartHost = useRef<HTMLDivElement>(null),
     chartApi = useRef<any>(null),
     series = useRef<any>(null);
@@ -532,6 +564,8 @@ function App() {
       stateRef,
       async (snapshot) => {
         try {
+          // Our own not-yet-confirmed write echoing back must not overwrite what the user is doing (e.g. dragging an alert).
+          if (cloudSyncReady.current && snapshot.metadata.hasPendingWrites) return;
           const remote = snapshot.exists() ? snapshot.data() : null;
           if (!remote) {
             const current = latestCloudState.current;
@@ -548,7 +582,10 @@ function App() {
             return;
           }
           const current = latestCloudState.current;
-          const remoteLevels = Array.isArray(remote.levels) ? remote.levels : [];
+          const tomb = deletedLevelIds.current;
+          const remoteLevels = (Array.isArray(remote.levels) ? remote.levels : []).filter(
+            (l: any) => !tomb.has(String(l?.id)),
+          );
           const remoteFavorites = Array.isArray(remote.favorites) ? remote.favorites : [];
           const remoteHistory = Array.isArray(remote.history) ? remote.history : [];
           const remoteDrawings = Array.isArray(remote.drawings) ? remote.drawings : [];
@@ -563,7 +600,9 @@ function App() {
               });
               return Array.from(merged.values());
             };
-            const mergedLevels = mergeById(current.levels, remoteLevels);
+            const mergedLevels = mergeById(current.levels, remoteLevels).filter(
+              (l: any) => !tomb.has(String(l?.id)),
+            );
             const mergedHistory = mergeById(current.history, remoteHistory)
               .sort((a, b) => Number(b.time) - Number(a.time))
               .slice(0, 200);
@@ -612,18 +651,22 @@ function App() {
   useEffect(() => {
     if (!user || !cloudSyncReady.current) return;
     const stateRef = doc(db, "users", user.uid, "appData", "state");
-    void setDoc(
-      stateRef,
-      {
-        levels,
-        favorites,
-        history: history.slice(0, 200),
-        drawings,
-        schemaVersion: 1,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    ).catch((error) => setStatus("Cloud save error: " + (error?.message || "Unknown error")));
+    // Debounced: dragging an alert changes it on every pointer move; only the final position is written.
+    const timer = window.setTimeout(() => {
+      void setDoc(
+        stateRef,
+        {
+          levels,
+          favorites,
+          history: history.slice(0, 200),
+          drawings,
+          schemaVersion: 1,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch((error) => setStatus("Cloud save error: " + (error?.message || "Unknown error")));
+    }, 600);
+    return () => window.clearTimeout(timer);
   }, [user, levels, favorites, history, drawings]);
   useEffect(() => {
     if (window.arcusDesktop?.isDesktop) {
@@ -644,6 +687,8 @@ function App() {
     let retryTimer: number | undefined;
     let retryDelay = 1000;
     let lastMarketsFetch = 0;
+    let pendingPrices: Record<string, { price: number; source: string; marketId: string }> = {};
+    let flushTimer: number | undefined;
     const updateLiveChartCandle = (marketName: string, price: number, time: number) => {
       if (marketName !== chartSymbolRef.current || !series.current) return;
       const secondsByTf: Record<string, number> = {
@@ -683,33 +728,49 @@ function App() {
     };
     const applyPrices = (incoming: any[]) => {
       if (!Array.isArray(incoming) || !incoming.length) return;
-      setPrices((current) => {
-        const next = { ...current };
-        for (const item of incoming) {
-          const name = String(item?.marketDisplayName || "").toUpperCase();
-          const marketId = String(item?.marketId ?? "");
-          const price = Number(item?.markPrice ?? item?.price);
-          if (!name || !Number.isFinite(price) || price <= 0) continue;
-          next[name] = {
-            price,
-            source: item?.markPrice != null ? "mark" : "oracle",
-            marketId: marketId || next[name]?.marketId || "",
-            change24h: marketChanges.current[name] ?? next[name]?.change24h ?? null,
-          };
-          let rawTime = Number(item?.markEpochNanos ?? item?.timestamp ?? item?.time);
-          const tickTime =
-            Number.isFinite(rawTime) && rawTime > 0
-              ? rawTime > 1e14
-                ? rawTime / 1e9
-                : rawTime > 1e11
-                  ? rawTime / 1000
-                  : rawTime
-              : Date.now() / 1000;
-          latestWsPriceRef.current[name] = { price, time: tickTime };
-          updateLiveChartCandle(name, price, tickTime);
-        }
-        return next;
-      });
+      // Chart candle updates happen immediately; the React price state is flushed in batches
+      // (max ~3 times/second) so a busy feed does not re-render the whole app on every tick.
+      for (const item of incoming) {
+        const name = String(item?.marketDisplayName || "").toUpperCase();
+        const marketId = String(item?.marketId ?? "");
+        const price = Number(item?.markPrice ?? item?.price);
+        if (!name || !Number.isFinite(price) || price <= 0) continue;
+        pendingPrices[name] = {
+          price,
+          source: item?.markPrice != null ? "mark" : "oracle",
+          marketId,
+        };
+        let rawTime = Number(item?.markEpochNanos ?? item?.timestamp ?? item?.time);
+        const tickTime =
+          Number.isFinite(rawTime) && rawTime > 0
+            ? rawTime > 1e14
+              ? rawTime / 1e9
+              : rawTime > 1e11
+                ? rawTime / 1000
+                : rawTime
+            : Date.now() / 1000;
+        latestWsPriceRef.current[name] = { price, time: tickTime };
+        updateLiveChartCandle(name, price, tickTime);
+      }
+      if (flushTimer === undefined)
+        flushTimer = window.setTimeout(() => {
+          flushTimer = undefined;
+          const batch = pendingPrices;
+          pendingPrices = {};
+          setPrices((current) => {
+            const next = { ...current };
+            for (const name of Object.keys(batch)) {
+              const item = batch[name];
+              next[name] = {
+                price: item.price,
+                source: item.source,
+                marketId: item.marketId || next[name]?.marketId || "",
+                change24h: marketChanges.current[name] ?? next[name]?.change24h ?? null,
+              };
+            }
+            return next;
+          });
+        }, 350);
     };
     const refreshMarketMeta = async () => {
       if (Date.now() - lastMarketsFetch < 60000) return;
@@ -796,6 +857,7 @@ function App() {
     connect();
     return () => {
       stopped = true;
+      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       if (socket) {
         socket.onclose = null;
