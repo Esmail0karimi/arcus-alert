@@ -431,6 +431,7 @@ export class ChartX {
     this.raf = requestAnimationFrame(this.loop);
     if (!this.shapes.length && !this.draft) {
       if (this.svg.firstChild) this.svg.replaceChildren();
+      this.pop.style.display = "none";
       return;
     }
     const ts = this.chart.timeScale();
