@@ -1,0 +1,152 @@
+.cx-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.cx-svg-text {
+  paint-order: stroke;
+  stroke: #040c19;
+  stroke-width: 3px;
+  font-family: inherit;
+}
+.cx-catcher {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: none;
+  cursor: crosshair;
+}
+.cx-catcher.on {
+  display: block;
+}
+.cx-legend {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  z-index: 4;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #91a7c3;
+  font-variant-numeric: tabular-nums;
+  max-width: calc(100% - 80px);
+}
+.cx-legend b {
+  color: #6b7f99;
+  font-weight: 600;
+}
+.cx-legend i {
+  font-style: normal;
+  color: #d5e2f3;
+}
+.cx-legend i.cx-up {
+  color: #00c9a7;
+}
+.cx-legend i.cx-dn {
+  color: #f06470;
+}
+.cx-legend-ind {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cx-countdown {
+  margin-left: 10px;
+  color: #f2b84b;
+}
+.cx-bar {
+  position: absolute;
+  right: 70px;
+  top: 6px;
+  z-index: 7;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cx-bar select,
+.cx-btn {
+  background: #0b1a2e;
+  color: #d5e2f3;
+  border: 1px solid #24364e;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  height: 24px;
+}
+.cx-menu-wrap {
+  position: relative;
+}
+.cx-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 28px;
+  background: #0b1a2e;
+  border: 1px solid #24364e;
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 170px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.cx-menu.open {
+  display: block;
+}
+.cx-menu-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: #d5e2f3;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.cx-menu-row:hover {
+  background: #12263f;
+}
+.cx-rail-sep {
+  height: 1px;
+  background: #24364e;
+  margin: 6px 4px;
+  width: calc(100% - 8px);
+}
+.cx-tool {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #91a7c3;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.cx-tool:hover {
+  background: #12263f;
+  color: #fff;
+}
+.cx-tool.selected {
+  background: #12263f;
+  border-color: #4aa3ff;
+  color: #fff;
+}
+.cx-color {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  margin: 2px auto;
+  display: block;
+}
+@media (max-width: 700px) {
+  .cx-legend {
+    font-size: 10px;
+  }
+  .cx-bar {
+    right: 60px;
+  }
+}

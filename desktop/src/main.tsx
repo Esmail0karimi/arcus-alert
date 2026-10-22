@@ -3,6 +3,7 @@ import jsQR from "jsqr";
 import QRCode from "qrcode";
 import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
+import { attachChartX, type ChartX } from "./chartx/controller";
 import "./style.css";
 import { auth, db } from "./firebase";
 import {
@@ -141,6 +142,7 @@ function App() {
   const chartSymbolRef = useRef(symbol),
     chartTfRef = useRef(tf),
     liveBarRef = useRef<{ key: string; bar: any } | null>(null),
+    chartX = useRef<ChartX | null>(null),
     latestWsPriceRef = useRef<Record<string, { price: number; time: number }>>({});
   const importQrPayload = async (raw: string) => {
     try {
@@ -676,6 +678,7 @@ function App() {
       liveBarRef.current = { key, bar };
       try {
         series.current.update(bar);
+        chartX.current?.updateBar(bar);
       } catch {}
     };
     const applyPrices = (incoming: any[]) => {
@@ -946,7 +949,13 @@ function App() {
       wickUpColor: "#00c9a7",
       wickDownColor: "#f06470",
     });
-    /* Indicators removed by request. */ const resize = () =>
+    /* Analysis tools (chart types, indicators, drawings, OHLC legend) attach without touching the series. */
+    try {
+      if (chartHost.current) chartX.current = attachChartX(chart, series.current, chartHost.current);
+    } catch (e) {
+      console.warn("ChartX unavailable", e);
+    }
+    const resize = () =>
       chart.applyOptions({
         width: chartHost.current?.clientWidth || 800,
         height: chartHost.current?.clientHeight || 480,
@@ -966,6 +975,8 @@ function App() {
       window.removeEventListener("resize", resize);
       observer.disconnect();
       setHoverLevel(null);
+      chartX.current?.destroy();
+      chartX.current = null;
       chart.remove();
       chartApi.current = null;
       series.current = null;
@@ -1094,6 +1105,7 @@ function App() {
           activeChart = chartApi.current;
         if (!activeSeries || !activeChart) return;
         activeSeries.setData(candles);
+        chartX.current?.setCandles(candles, requestSymbol);
         const secondsByTf: Record<string, number> = {
           "1m": 60,
           "3m": 180,
@@ -1133,6 +1145,7 @@ function App() {
                   };
             liveBarRef.current = { key, bar };
             activeSeries.update(bar);
+            chartX.current?.updateBar(bar);
           }
         }
         activeChart.timeScale().fitContent();
