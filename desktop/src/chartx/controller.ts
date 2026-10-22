@@ -65,7 +65,9 @@ export class ChartX {
   private smaBtn = h("button", "cx-btn", "SMA 7");
   private rsiBtn = h("button", "cx-btn", "RSI");
   private lineBtn = h("button", "cx-btn", "Line");
-  private clearBtn = h("button", "cx-btn", "Clear lines");
+  private selected: string | null = null;
+  private pop = h("div", "line-actions cx-pop");
+  private popColor = h("input");
   private moreBtn = h("button", "cx-btn cx-more", "ƒx");
   private tools = h("div", "cx-tools");
 
@@ -82,8 +84,48 @@ export class ChartX {
     const onMove = (p: any) => this.updateLegend(p);
     this.chart.subscribeCrosshairMove(onMove);
     this.cleanups.push(() => this.chart.unsubscribeCrosshairMove(onMove));
-    const onKey = (e: KeyboardEvent) =>
-      e.key === "Escape" && this.setDrawing(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        this.setDrawing(false);
+        this.select(null);
+      } else if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        this.selected
+      ) {
+        const t = e.target as HTMLElement | null;
+        if (
+          t &&
+          /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) &&
+          (t as HTMLInputElement).type !== "color"
+        )
+          return;
+        e.preventDefault();
+        this.deleteSelected();
+      }
+    };
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+    const onUp = (e: PointerEvent) => {
+      const d = down;
+      down = null;
+      if (
+        !d ||
+        this.drawing ||
+        Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5
+      )
+        return;
+      if ((e.target as HTMLElement)?.closest?.(".cx-bar,.cx-pop,.line-actions"))
+        return;
+      const r = this.host.getBoundingClientRect();
+      const hit = this.hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (hit || this.selected) this.select(hit);
+    };
+    this.host.addEventListener("pointerdown", onDown, true);
+    this.host.addEventListener("pointerup", onUp, true);
+    this.cleanups.push(() => {
+      this.host.removeEventListener("pointerdown", onDown, true);
+      this.host.removeEventListener("pointerup", onUp, true);
+    });
     window.addEventListener("keydown", onKey);
     this.cleanups.push(() => window.removeEventListener("keydown", onKey));
     this.hookDrawing();
@@ -129,7 +171,7 @@ export class ChartX {
         fn();
       } catch {}
     });
-    [this.legend, this.bar, this.svg, this.catcher].forEach((el) =>
+    [this.legend, this.bar, this.svg, this.catcher, this.pop].forEach((el) =>
       el.remove(),
     );
   }
@@ -150,14 +192,7 @@ export class ChartX {
     toggle(this.rsiBtn, "rsi");
     this.lineBtn.title = "Draw a trend line: click two points (Esc cancels)";
     this.lineBtn.onclick = () => this.setDrawing(!this.drawing);
-    this.clearBtn.title =
-      "Remove all trend lines (alerts and horizontal lines are not affected)";
-    this.clearBtn.onclick = () => {
-      this.shapes = [];
-      this.persistShapes();
-      this.lastSig = "";
-    };
-    this.tools.append(this.smaBtn, this.rsiBtn, this.lineBtn, this.clearBtn);
+    this.tools.append(this.smaBtn, this.rsiBtn, this.lineBtn);
     this.moreBtn.title = "Indicators and trend lines";
     const open = load<{ open: boolean }>("arcus.chartx.bar.v1", {
       open: false,
@@ -176,7 +211,24 @@ export class ChartX {
     ["pointerdown", "wheel", "dblclick"].forEach((ev) =>
       this.bar.addEventListener(ev, (e) => e.stopPropagation()),
     );
-    this.host.append(this.svg, this.legend, this.bar, this.catcher);
+    this.popColor.type = "color";
+    this.popColor.title = "Line colour";
+    this.popColor.oninput = () => {
+      const sh = this.shapes.find((x) => x.id === this.selected);
+      if (!sh) return;
+      sh.color = this.popColor.value;
+      this.persistShapes();
+      this.lastSig = "";
+    };
+    const del = h("button", "danger", "🗑");
+    del.title = "Delete line (Del)";
+    del.onclick = () => this.deleteSelected();
+    this.pop.append(this.popColor, del);
+    this.pop.style.display = "none";
+    ["pointerdown", "pointerup", "click"].forEach((ev) =>
+      this.pop.addEventListener(ev, (e) => e.stopPropagation()),
+    );
+    this.host.append(this.svg, this.legend, this.bar, this.catcher, this.pop);
   }
 
   private persistShapes() {
@@ -327,6 +379,42 @@ export class ChartX {
     });
   }
 
+  private select(id: string | null) {
+    this.selected = id;
+    const sh = this.shapes.find((x) => x.id === id);
+    if (sh) this.popColor.value = sh.color;
+    this.lastSig = "";
+  }
+  private deleteSelected() {
+    if (!this.selected) return;
+    this.shapes = this.shapes.filter((x) => x.id !== this.selected);
+    this.selected = null;
+    this.persistShapes();
+    this.lastSig = "";
+  }
+  /** Nearest trend line within 9px of the point (generous so lines are easy to pick). */
+  private hitTest(px: number, py: number): string | null {
+    let best: string | null = null,
+      bestD = 9;
+    for (const s of this.shapes) {
+      const A = this.xy(s.a),
+        B = this.xy(s.b);
+      if (!A || !B) continue;
+      const dx = B.x - A.x,
+        dy = B.y - A.y,
+        len2 = dx * dx + dy * dy;
+      const t = len2
+        ? Math.max(0, Math.min(1, ((px - A.x) * dx + (py - A.y) * dy) / len2))
+        : 0;
+      const d = Math.hypot(px - (A.x + t * dx), py - (A.y + t * dy));
+      if (d < bestD) {
+        bestD = d;
+        best = s.id;
+      }
+    }
+    return best;
+  }
+
   private xy(p: P) {
     const x = this.chart
       .timeScale()
@@ -365,6 +453,7 @@ export class ChartX {
     const list = this.draft
       ? [...this.shapes, { id: "d", color: "#4aa3ff", ...this.draft }]
       : this.shapes;
+    this.pop.style.display = "none";
     for (const s of list) {
       const A = this.xy(s.a),
         B = this.xy(s.b);
@@ -376,12 +465,26 @@ export class ChartX {
           x2: B.x,
           y2: B.y,
           stroke: s.color,
-          "stroke-width": 1.5,
+          "stroke-width": s.id === this.selected ? 3 : 1.5,
           "stroke-dasharray": s.id === "d" ? "5 4" : "",
         }),
-        svgEl("circle", { cx: A.x, cy: A.y, r: 3, fill: s.color }),
-        svgEl("circle", { cx: B.x, cy: B.y, r: 3, fill: s.color }),
+        svgEl("circle", {
+          cx: A.x,
+          cy: A.y,
+          r: s.id === this.selected ? 5 : 3,
+          fill: s.color,
+        }),
+        svgEl("circle", {
+          cx: B.x,
+          cy: B.y,
+          r: s.id === this.selected ? 5 : 3,
+          fill: s.color,
+        }),
       );
+      if (s.id === this.selected) {
+        this.pop.style.display = "flex";
+        this.pop.style.top = Math.max(4, (A.y + B.y) / 2 - 36) + "px";
+      }
     }
   };
 }

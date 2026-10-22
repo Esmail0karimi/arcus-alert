@@ -187,3 +187,22 @@ main:has(.chart-workspace){width:100%!important;max-width:none!important;padding
 @media(max-width:680px){.chart-center .chartbox{height:62vh!important;min-height:300px!important}}
 .line-actions{position:absolute;right:76px;z-index:22;display:flex;gap:4px;padding:3px;background:#0b1a2e;border:1px solid #2a5a78;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6)}
 .line-actions button{padding:4px 9px;font-size:12px;border-radius:6px}
+
+/* ---- compact chart header, full screen, timeframe typing ---- */
+.chartbar{align-items:center!important;gap:6px!important}
+.chart-symbol-area{min-width:0!important;flex:0 0 auto!important}
+.chart-symbol-area>small{display:none}
+.chart-symbol-trigger{min-width:120px!important;padding:6px 10px!important}
+.chartbar .price{font-size:15px!important;padding:2px 6px!important}
+.chartbar select{min-height:30px!important;padding:4px 8px!important}
+.chartbar button.secondary{padding:5px 9px!important;font-size:12px!important}
+.chartnote{display:none}
+.chartnote.show{display:block}
+.fs-only{display:none}
+main.chart-full{position:fixed!important;inset:0;z-index:60;width:100%!important;max-width:none!important;padding:4px 6px!important;background:#000;display:flex!important;flex-direction:column}
+main.chart-full .chartbar>*:not(.fs-keep){display:none!important}
+main.chart-full .fs-only{display:inline-block!important}
+.tf-input{position:absolute;left:50%;top:34%;transform:translateX(-50%);z-index:70;background:#0b1a2e;border:1px solid #4aa3ff;border-radius:10px;padding:10px 22px;font-size:26px;font-weight:700;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.7)}
+.tf-input small{font-size:11px;color:#8aa0b8;font-weight:400;margin-left:6px}
+.chart-center{position:relative}
+.line-actions input[type=color]{width:26px;height:24px;padding:0;border:0;background:none;cursor:pointer}

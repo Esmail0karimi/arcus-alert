@@ -1463,6 +1463,79 @@ function App() {
   const drawingDrag = useRef<string | null>(null),
     drawingMoved = useRef(false);
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  const [chartFull, setChartFull] = useState(false);
+  const [tfBuffer, setTfBuffer] = useState("");
+  const tfBufRef = useRef("");
+  const toggleFull = () => {
+    const next = !chartFull;
+    setChartFull(next);
+    try {
+      if (next) void document.documentElement.requestFullscreen?.();
+      else if (document.fullscreenElement) void document.exitFullscreen();
+    } catch {}
+  };
+  useEffect(() => {
+    const onFs = () => {
+      if (!document.fullscreenElement) setChartFull(false);
+    };
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  // Type a timeframe (15, 60, 4h, D ...) and press Enter, like TradingView. Delete removes the selected line.
+  useEffect(() => {
+    if (tab !== "Chart") return;
+    const TFS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
+    const parse = (raw: string): string | null => {
+      const m = /^(\d*)([a-z]?)$/i.exec(raw.trim());
+      if (!m) return null;
+      const n = m[1] ? Number(m[1]) : 1,
+        u = m[2].toLowerCase();
+      let out = "";
+      if (!u) out = n >= 1440 ? n / 1440 + "d" : n >= 60 && n % 60 === 0 ? n / 60 + "h" : n + "m";
+      else out = n + u;
+      return TFS.includes(out) ? out : null;
+    };
+    const setBuf = (v: string) => {
+      tfBufRef.current = v;
+      setTfBuffer(v);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const buf = tfBufRef.current;
+      if (e.key === "Escape") {
+        if (buf) setBuf("");
+        else if (selectedLine) setSelectedLine(null);
+        else if (chartFull) toggleFull();
+        return;
+      }
+      if (e.key === "Enter" && buf) {
+        const next = parse(buf);
+        setBuf("");
+        if (next) setTf(next);
+        else setStatus("Unknown timeframe: " + buf);
+        e.preventDefault();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !buf && selectedLine) {
+        e.preventDefault();
+        setDrawings((v) => v.filter((d) => d.id !== selectedLine));
+        setSelectedLine(null);
+        return;
+      }
+      if (e.key === "Backspace" && buf) {
+        setBuf(buf.slice(0, -1));
+        return;
+      }
+      if (e.key.length === 1 && /[0-9a-z]/i.test(e.key)) {
+        if (!buf && !/[0-9dwDW]/.test(e.key)) return;
+        if (buf.length < 5) setBuf(buf + e.key);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, selectedLine, chartFull]);
   const copyLine = (id: string) => {
     const src = drawings.find((d) => d.id === id);
     if (!src) return;
@@ -1610,7 +1683,7 @@ function App() {
           </button>
         </div>
       </header>
-      <main>
+      <main className={chartFull && tab === "Chart" ? "chart-full" : ""}>
         {tab === "Market" && (
           <>
             <div className="heading">
@@ -1772,11 +1845,12 @@ function App() {
                   )}
                 </div>
               </div>
-              <div className="price">
+              <b className="fs-only fs-keep">{symbol}</b>
+              <div className="price fs-keep">
                 {prices[symbol]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
                   "—"}
               </div>
-              <select value={tf} onChange={(e) => setTf(e.target.value)}>
+              <select className="fs-keep" value={tf} onChange={(e) => setTf(e.target.value)}>
                 {["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"].map((x) => (
                   <option key={x}>{x}</option>
                 ))}
@@ -1788,7 +1862,14 @@ function App() {
                 ＋ Alert
               </button>
               <button
-                className={"secondary drawer-toggle" + (railOpen ? " on" : "")}
+                className="secondary drawer-toggle fs-keep"
+                title="Full screen chart (Esc to exit). Type a timeframe like 15 and press Enter."
+                onClick={toggleFull}
+              >
+                {chartFull ? "✕ Exit" : "⛶ Full"}
+              </button>
+              <button
+                className={"secondary drawer-toggle fs-keep" + (railOpen ? " on" : "")}
                 title="Show / hide drawing tools"
                 onClick={() => setRailOpen((v) => !v)}
               >
@@ -1836,7 +1917,19 @@ function App() {
                 </select>
               </aside>
               <section className="chart-center">
-                <div className="chartnote">
+                {tfBuffer && (
+                  <div className="tf-input">
+                    {tfBuffer} <small>↵ Enter</small>
+                  </div>
+                )}
+                <div
+                  className={
+                    "chartnote" +
+                    (activeTool === "hline" || /error|limit|only|fail/i.test(chartStatus)
+                      ? " show"
+                      : "")
+                  }
+                >
                   {chartStatus} ·{" "}
                   {activeTool === "hline"
                     ? "Click chart to place a horizontal line"
@@ -1902,14 +1995,24 @@ function App() {
                         if (d.tool === "hline") {
                           if (a?.y == null) return null;
                           return (
+                            <g key={d.id}>
                             <line
-                              key={d.id}
                               x1="0"
                               x2={chartHost.current?.clientWidth || 800}
                               y1={a.y}
                               y2={a.y}
                               stroke={d.color || d.points[0]?.color || "#39c9c2"}
-                              strokeWidth={d.width || d.points[0]?.width || 2}
+                              strokeWidth={(d.width || d.points[0]?.width || 2) + (selectedLine === d.id ? 1.5 : 0)}
+                              strokeDasharray={selectedLine === d.id ? "8 4" : undefined}
+                              style={{ pointerEvents: "none" }}
+                            />
+                            <line
+                              x1="0"
+                              x2={chartHost.current?.clientWidth || 800}
+                              y1={a.y}
+                              y2={a.y}
+                              stroke="transparent"
+                              strokeWidth={16}
                               style={{ pointerEvents: "stroke", cursor: "ns-resize" }}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
@@ -1955,6 +2058,7 @@ function App() {
                                 drawingMoved.current = false;
                               }}
                             />
+                            </g>
                           );
                         }
                         if (p.some((q) => q.x == null || q.y == null)) return null;
@@ -1999,6 +2103,21 @@ function App() {
                           style={{ top: Math.max(4, Number(y) - 15) }}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
+                          <input
+                            type="color"
+                            title="Line colour"
+                            value={d.color || d.points[0]?.color || "#39c9c2"}
+                            onChange={(e) => {
+                              const c = e.target.value;
+                              setDrawings((v) =>
+                                v.map((x) =>
+                                  x.id === d.id
+                                    ? { ...x, color: c, points: x.points.map((q, i) => (i === 0 ? { ...q, color: c } : q)) }
+                                    : x,
+                                ),
+                              );
+                            }}
+                          />
                           <button title="Copy this line" onClick={() => copyLine(d.id)}>
                             ⧉ Copy
                           </button>
