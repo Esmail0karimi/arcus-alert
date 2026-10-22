@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
+import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import "./style.css";
 import { auth, db } from "./firebase";
 import {
@@ -125,6 +126,7 @@ function App() {
   const previousPrices = useRef<Record<string, number>>({}),
     alarmAudio = useRef<HTMLAudioElement | null>(null),
     marketChanges = useRef<Record<string, number>>({}),
+    marketCategories = useRef<Record<string, Category>>({}),
     marketMetaAt = useRef(0);
   const [user, setUser] = useState<User | null>(null),
     [showAuth, setShowAuth] = useState(false),
@@ -136,6 +138,8 @@ function App() {
   const cloudSyncReady = useRef(false),
     latestCloudState = useRef({ levels, favorites, history, drawings });
   latestCloudState.current = { levels, favorites, history, drawings };
+  const pricesRef = useRef(prices);
+  pricesRef.current = prices;
   // Ids of alerts the user (or another device) deleted. Kept locally so a stale cloud copy can never bring them back.
   const [deletedSet] = useState(() => {
     try {
@@ -787,6 +791,8 @@ function App() {
         const changes: Record<string, number> = {};
         for (const market of markets) {
           const name = String(market?.marketDisplayName || "").toUpperCase();
+          const cat = categoryFromMarket(market);
+          if (name && cat) marketCategories.current[name] = cat;
           const value = Number(market?.priceChange24h);
           if (name && Number.isFinite(value)) changes[name] = value * 100;
         }
@@ -1059,7 +1065,17 @@ function App() {
           await new Promise((r) => setTimeout(r, 40));
         if (cancelled) return;
         if (!series.current || !chartApi.current) throw new Error("Chart is not ready");
-        const marketId = prices[requestSymbol]?.marketId;
+        // The live feed provides the numeric market id; wait briefly for it instead of trying the name first
+        // (the name is rejected with HTTP 400) and then restarting the whole load when the id arrives.
+        const idWaitUntil = Date.now() + 3000;
+        while (
+          !cancelled &&
+          !pricesRef.current[requestSymbol]?.marketId &&
+          Date.now() < idWaitUntil
+        )
+          await new Promise((r) => setTimeout(r, 60));
+        if (cancelled) return;
+        const marketId = pricesRef.current[requestSymbol]?.marketId;
         const marketKeys = [
           ...(marketId ? [marketId] : []),
           ...(marketId && marketId !== requestSymbol
@@ -1073,6 +1089,67 @@ function App() {
         const cacheKey = requestSymbol + "|" + requestTf;
         const cached = CANDLE_CACHE.get(cacheKey);
         if (cached && Date.now() - cached.at < 30000) candles = cached.candles;
+        // Phase 1: a small request (250 candles) so the chart appears quickly; the full history follows.
+        let fastShown = false;
+        const spanByTf: Record<string, number> = {
+          "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+          "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800,
+        };
+        if (!candles.length && marketKeys.length) {
+          try {
+            const quick = await fetch(
+              "https://api.arcus.xyz/v1/candles?market=" +
+                encodeURIComponent(marketKeys[0]) +
+                "&timeframe=" +
+                encodeURIComponent(requestTf) +
+                "&to=" +
+                Date.now() * 1000 +
+                "&countback=250",
+              { headers: { Accept: "application/json" }, signal: controller.signal },
+            );
+            if (quick.ok) {
+              const qb = await quick.json();
+              const fast = (Array.isArray(qb.candles) ? qb.candles : [])
+                .map((c: any) => {
+                  const rawTime = Number(c.openTime ?? c.time ?? c.timestamp);
+                  return {
+                    time: Math.floor(rawTime > 100000000000 ? rawTime / 1000 : rawTime),
+                    open: Number(c.open),
+                    high: Number(c.high),
+                    low: Number(c.low),
+                    close: Number(c.close),
+                    volume: Number(c.volume ?? c.vol ?? c.v ?? 0),
+                  };
+                })
+                .filter(
+                  (c: any) =>
+                    Number.isFinite(c.time) &&
+                    c.time > 0 &&
+                    Number.isFinite(c.open) &&
+                    Number.isFinite(c.high) &&
+                    Number.isFinite(c.low) &&
+                    Number.isFinite(c.close),
+                )
+                .sort((a: any, b: any) => a.time - b.time)
+                .filter((c: any, i: number, a: any[]) => i === 0 || c.time > a[i - 1].time);
+              if (fast.length && !cancelled && series.current && chartApi.current) {
+                series.current.setData(fast);
+                chartX.current?.setCandles(fast, requestSymbol);
+                const sp = spanByTf[requestTf] || 900,
+                  lastFast = fast[fast.length - 1];
+                liveBarRef.current = {
+                  key: requestSymbol + "|" + requestTf + "|" + Math.floor(lastFast.time / sp) * sp,
+                  bar: lastFast,
+                };
+                chartApi.current.timeScale().fitContent();
+                fastShown = true;
+                setChartStatus(requestSymbol + " · " + requestTf + " · loading full history…");
+              }
+            }
+          } catch (err: any) {
+            if (err?.name === "AbortError" || cancelled) return;
+          }
+        }
         for (const marketKey of candles.length ? [] : marketKeys) {
           if (cancelled) return;
           try {
@@ -1161,6 +1238,10 @@ function App() {
           }, retryIn);
           return;
         }
+        if (!candles.length && fastShown) {
+          setChartStatus(requestSymbol + " · " + requestTf + " · recent candles only (" + lastError + ")");
+          return;
+        }
         if (!candles.length) throw new Error(lastError + " · " + requestSymbol + " " + requestTf);
         if (cancelled || requestSymbol !== symbol || requestTf !== tf) return;
         const activeSeries = series.current,
@@ -1210,7 +1291,11 @@ function App() {
             chartX.current?.updateBar(bar);
           }
         }
-        activeChart.timeScale().fitContent();
+        if (fastShown && candles.length > 250)
+          activeChart
+            .timeScale()
+            .setVisibleLogicalRange({ from: candles.length - 250, to: candles.length + 3 });
+        else activeChart.timeScale().fitContent();
         setChartStatus(
           requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket",
         );
@@ -1228,7 +1313,7 @@ function App() {
       cancelled = true;
       controller.abort();
     };
-  }, [tab, symbol, tf, prices[symbol]?.marketId]);
+  }, [tab, symbol, tf]);
 
   const addAlert = (p?: number) => {
     const value = Number(p ?? target);
@@ -2017,55 +2102,7 @@ function App() {
             </div>
             {levels.length ? (
               (() => {
-                const classify = (sym: string) => {
-                  const x = sym.toUpperCase().replace(/[^A-Z0-9]/g, "");
-                  const commodities = [
-                    "XAU",
-                    "XAG",
-                    "GOLD",
-                    "SILVER",
-                    "WTI",
-                    "BRENT",
-                    "OIL",
-                    "NGAS",
-                    "NATGAS",
-                    "COPPER",
-                    "WHEAT",
-                    "CORN",
-                    "SOY",
-                  ];
-                  const stocks = [
-                    "AAPL",
-                    "MSFT",
-                    "NVDA",
-                    "AMZN",
-                    "GOOGL",
-                    "GOOG",
-                    "META",
-                    "TSLA",
-                    "NFLX",
-                    "AMD",
-                    "INTC",
-                    "COIN",
-                    "MSTR",
-                    "SPY",
-                    "QQQ",
-                    "DIA",
-                    "IWM",
-                    "BA",
-                    "JPM",
-                    "GS",
-                    "V",
-                    "MA",
-                    "WMT",
-                    "COST",
-                    "ORCL",
-                    "CRM",
-                  ];
-                  if (commodities.some((k) => x === k || x.startsWith(k))) return "Commodities";
-                  if (stocks.some((k) => x === k || x.startsWith(k))) return "Stocks";
-                  return "Crypto";
-                };
+                const classify = (sym: string) => classifySymbol(sym, marketCategories.current);
                 const groups: Record<string, Level[]> = {
                   Crypto: [],
                   Stocks: [],
@@ -2078,8 +2115,8 @@ function App() {
                     {Object.entries(groups)
                       .filter(([, items]) => items.length)
                       .map(([category, items]) => {
-                        const chunks = Array.from({ length: Math.ceil(items.length / 9) }, (_, i) =>
-                          items.slice(i * 9, (i + 1) * 9),
+                        const chunks = Array.from({ length: Math.ceil(items.length / 10) }, (_, i) =>
+                          items.slice(i * 10, (i + 1) * 10),
                         );
                         return (
                           <section className="alert-category" key={category}>
@@ -2103,7 +2140,7 @@ function App() {
                                     <b>
                                       {category} · {index + 1}
                                     </b>
-                                    <span>{chunk.length}/9</span>
+                                    <span>{chunk.length}/10</span>
                                   </div>
                                   {chunk.map((l) => (
                                     <div
