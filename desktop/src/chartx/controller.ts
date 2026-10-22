@@ -29,6 +29,7 @@ import {
   sma,
 } from "./math";
 import { extendRay, indexToTime, measure, timeToIndex } from "./geometry";
+import { mountTradingView, tvInterval, tvSymbol } from "./tvwidget";
 
 const UP = "#00c9a7",
   DN = "#f06470",
@@ -142,6 +143,9 @@ export class ChartX {
   private typeSel = h("select");
   private scaleSel = h("select");
   private indMenu = h("div", "cx-menu");
+  private tvBox = h("div", "cx-tv");
+  private tvOn = false;
+  private tvBtn = h("button", "cx-btn", "TradingView");
 
   constructor(
     private chart: any,
@@ -171,6 +175,7 @@ export class ChartX {
       this.shapes = Array.isArray(all[symbol]) ? all[symbol] : [];
       this.measureShape = null;
       this.draft = null;
+      if (this.tvOn) this.mountTv();
     }
     this.refreshNow();
   }
@@ -192,7 +197,7 @@ export class ChartX {
         fn();
       } catch {}
     });
-    [this.legend, this.bar, this.svg, this.catcher].forEach((el) =>
+    [this.legend, this.bar, this.svg, this.catcher, this.tvBox].forEach((el) =>
       el.remove(),
     );
     document.querySelectorAll(".cx-rail-part").forEach((el) => el.remove());
@@ -262,7 +267,10 @@ export class ChartX {
     this.indMenu.onclick = (e) => e.stopPropagation();
     const wrap = h("div", "cx-menu-wrap");
     wrap.append(indBtn, this.indMenu);
-    this.bar.append(this.typeSel, this.scaleSel, wrap);
+    this.tvBtn.title = "Switch between the built-in chart and the full TradingView chart";
+    this.tvBtn.onclick = () => this.toggleTv();
+    this.bar.append(this.tvBtn, this.typeSel, this.scaleSel, wrap);
+    host.append(this.tvBox);
     ["pointerdown", "wheel", "dblclick"].forEach((ev) =>
       this.bar.addEventListener(ev, (e) => e.stopPropagation()),
     );
@@ -304,6 +312,17 @@ export class ChartX {
       this.render(true);
     };
     rail.append(col, undo, clear);
+  }
+
+  private toggleTv() {
+    this.tvOn = !this.tvOn;
+    this.tvBtn.classList.toggle("on", this.tvOn);
+    this.tvBox.classList.toggle("on", this.tvOn);
+    if (this.tvOn) this.mountTv();
+    else this.tvBox.replaceChildren();
+  }
+  private mountTv() {
+    mountTradingView(this.tvBox, tvSymbol(this.symbol), tvInterval(barSpan(this.candles)));
   }
 
   private persist() {
