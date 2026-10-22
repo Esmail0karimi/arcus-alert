@@ -138,6 +138,27 @@ function App() {
   const cloudSyncReady = useRef(false),
     latestCloudState = useRef({ levels, favorites, history, drawings });
   latestCloudState.current = { levels, favorites, history, drawings };
+  const [railOpen, setRailOpen] = useState(() => {
+    try {
+      return localStorage.getItem("arcus.railOpen") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [watchOpen, setWatchOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem("arcus.watchOpen");
+      return v == null ? window.innerWidth >= 1100 : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.railOpen", railOpen ? "1" : "0");
+      localStorage.setItem("arcus.watchOpen", watchOpen ? "1" : "0");
+    } catch {}
+  }, [railOpen, watchOpen]);
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
   // Ids of alerts the user (or another device) deleted. Kept locally so a stale cloud copy can never bring them back.
@@ -1000,8 +1021,8 @@ function App() {
     const chart = createChart(chartHost.current, {
       width: chartHost.current.clientWidth,
       height: chartHost.current.clientHeight,
-      layout: { background: { color: "#040c19" }, textColor: "#91a7c3", attributionLogo: false },
-      grid: { vertLines: { color: "#14243a" }, horzLines: { color: "#14243a" } },
+      layout: { background: { color: "#000000" }, textColor: "#91a7c3", attributionLogo: false },
+      grid: { vertLines: { color: "#101820" }, horzLines: { color: "#101820" } },
       rightPriceScale: { borderColor: "#24364e" },
       timeScale: { borderColor: "#24364e", timeVisible: true },
       crosshair: { mode: CrosshairMode.Normal },
@@ -1095,7 +1116,9 @@ function App() {
           "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
           "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800,
         };
-        if (!candles.length && marketKeys.length) {
+        let fullDone = false;
+        const quickPhase = async () => {
+          if (candles.length || !marketKeys.length) return;
           try {
             const quick = await fetch(
               "https://api.arcus.xyz/v1/candles?market=" +
@@ -1132,7 +1155,7 @@ function App() {
                 )
                 .sort((a: any, b: any) => a.time - b.time)
                 .filter((c: any, i: number, a: any[]) => i === 0 || c.time > a[i - 1].time);
-              if (fast.length && !cancelled && series.current && chartApi.current) {
+              if (fast.length && !cancelled && !fullDone && series.current && chartApi.current) {
                 series.current.setData(fast);
                 chartX.current?.setCandles(fast, requestSymbol);
                 const sp = spanByTf[requestTf] || 900,
@@ -1149,7 +1172,8 @@ function App() {
           } catch (err: any) {
             if (err?.name === "AbortError" || cancelled) return;
           }
-        }
+        };
+        void quickPhase(); // runs in parallel with the full request below
         for (const marketKey of candles.length ? [] : marketKeys) {
           if (cancelled) return;
           try {
@@ -1247,6 +1271,7 @@ function App() {
         const activeSeries = series.current,
           activeChart = chartApi.current;
         if (!activeSeries || !activeChart) return;
+        fullDone = true;
         activeSeries.setData(candles);
         chartX.current?.setCandles(candles, requestSymbol);
         const secondsByTf: Record<string, number> = {
@@ -1654,13 +1679,25 @@ function App() {
                   }}
                 >
                   <b>{s}</b>
-                  <strong>{prices[s]?.price?.toLocaleString() ?? "—"}</strong>
-                  {prices[s]?.change24h != null && (
-                    <small className={prices[s].change24h >= 0 ? "positive" : "negative"}>
-                      {prices[s].change24h >= 0 ? "+" : ""}
-                      {prices[s].change24h.toFixed(2)}%
-                    </small>
-                  )}
+                  <small
+                    className={
+                      prices[s]?.change24h == null
+                        ? "muted"
+                        : prices[s].change24h >= 0
+                          ? "positive"
+                          : "negative"
+                    }
+                  >
+                    {prices[s]?.change24h == null
+                      ? "—"
+                      : (prices[s].change24h >= 0 ? "+" : "") +
+                        prices[s].change24h.toFixed(2) +
+                        "%"}
+                  </small>
+                  <strong>
+                    {prices[s]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
+                      "—"}
+                  </strong>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1734,8 +1771,26 @@ function App() {
               <button className="secondary" onClick={() => addAlert(prices[symbol]?.price)}>
                 ＋ Alert
               </button>
+              <button
+                className={"secondary drawer-toggle" + (railOpen ? " on" : "")}
+                title="Show / hide drawing tools"
+                onClick={() => setRailOpen((v) => !v)}
+              >
+                ✎ Tools
+              </button>
+              <button
+                className={"secondary drawer-toggle" + (watchOpen ? " on" : "")}
+                title="Show / hide the watchlist"
+                onClick={() => setWatchOpen((v) => !v)}
+              >
+                ☰ Watchlist
+              </button>
             </div>
-            <div className="chart-workspace">
+            <div
+              className={
+                "chart-workspace" + (railOpen ? "" : " rail-closed") + (watchOpen ? "" : " watch-closed")
+              }
+            >
               <aside className="drawing-rail">
                 <button
                   className={activeTool === "hline" ? "selected" : ""}
@@ -2071,7 +2126,7 @@ function App() {
               <div>
                 <small>PRICE MONITOR</small>
                 <h1>My Alerts</h1>
-                <p>Grouped by market type · maximum 9 alerts per column</p>
+                <p>Grouped by market type · maximum 10 alerts per column</p>
               </div>
               <div className="alert-heading-actions">
                 <button className="secondary" onClick={() => openQrSync(levels, "All alerts")}>

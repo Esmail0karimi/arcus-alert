@@ -149,3 +149,29 @@ main:has(.chart-workspace){padding:6px 8px 5px;gap:3px;overflow:hidden}
 .auth-error{padding:10px;border:1px solid #743342;border-radius:8px;background:#321b25;color:#ffb4bd;font-size:12px;line-height:1.5}
 .account-button{border:1px solid #24536a;color:#9ceee5}
 @media(max-width:700px){.auth-panel{padding:18px}.account-button{font-size:11px;padding:8px}}
+
+/* ---- chart: pure black, more room, collapsible drawers, clearer change colours ---- */
+.chartbox,.chart-center .chartbox{background:#000!important;border-color:#141c26}
+.chartfoot{display:none}
+.chartnote{padding:2px 2px;font-size:10px;opacity:.7}
+.drawer-toggle{padding:7px 10px;font-size:12px;opacity:.7}
+.drawer-toggle.on{opacity:1;border-color:#2a5a78}
+.chart-workspace.rail-closed .drawing-rail,.chart-workspace.watch-closed .watchlist-panel{display:none}
+.chart-workspace.rail-closed{grid-template-columns:minmax(0,1fr) 255px!important}
+.chart-workspace.watch-closed{grid-template-columns:40px minmax(0,1fr)!important}
+.chart-workspace.rail-closed.watch-closed{grid-template-columns:minmax(0,1fr)!important}
+@media(max-width:1050px){
+  .chart-workspace.rail-closed{grid-template-columns:minmax(0,1fr)!important}
+  .chart-workspace.rail-closed .watchlist-panel{grid-column:1!important}
+  .chart-workspace.watch-closed{grid-template-columns:38px minmax(0,1fr)!important}
+}
+.watch-items i.negative{color:#f06470}
+.watch-items i.positive{color:#00d7ae}
+.watch-items i.muted{color:#6b7f99}
+.watch-items button{grid-template-columns:minmax(0,1fr) 54px 84px}
+.watch-items i{text-align:right;font-variant-numeric:tabular-nums}
+.watch-items span{font-variant-numeric:tabular-nums}
+/* market + watchlist rows: fixed columns so % change never runs into the price */
+.marketrow small{min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.marketrow strong{min-width:104px;text-align:right;font-variant-numeric:tabular-nums}
+.marketrow small.muted{color:#6b7f99;font-weight:400}
