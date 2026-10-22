@@ -7,6 +7,7 @@ import { LineSeries } from "lightweight-charts";
 import "./chartx.css";
 import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
+import { NotesLayer } from "./notes";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
   DRAW_KEY = "arcus.chartx.drawings.v1";
@@ -50,6 +51,10 @@ export class ChartX {
   private shapes: Shape[] = [];
   private draft: { a: P; b: P } | null = null;
   private drawing = false;
+  private notes!: NotesLayer;
+  private railBtns: HTMLElement[] = [];
+  private railLine = h("button", "cx-rail-part", "╱");
+  private railText = h("button", "cx-rail-part", "T");
   private smaS: any = null;
   private rsiS: any = null;
   private destroyed = false;
@@ -64,7 +69,6 @@ export class ChartX {
   private catcher = h("div", "cx-catcher");
   private smaBtn = h("button", "cx-btn", "SMA 7");
   private rsiBtn = h("button", "cx-btn", "RSI");
-  private lineBtn = h("button", "cx-btn", "Line");
   private selected: string | null = null;
   private pop = h("div", "line-actions cx-pop");
   private popColor = h("input");
@@ -80,6 +84,15 @@ export class ChartX {
     if (getComputedStyle(host).position === "static")
       host.style.position = "relative";
     this.buildUi();
+    this.notes = new NotesLayer(
+      chart,
+      candle,
+      host,
+      () => this.candles,
+      () => this.select(null),
+    );
+    this.notes.onPlacing = (on) =>
+      this.railText.classList.toggle("selected", on);
     this.syncIndicators();
     const onMove = (p: any) => this.updateLegend(p);
     this.chart.subscribeCrosshairMove(onMove);
@@ -87,6 +100,7 @@ export class ChartX {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         this.setDrawing(false);
+        this.notes.setPlacing(false);
         this.select(null);
       } else if (
         (e.key === "Delete" || e.key === "Backspace") &&
@@ -139,6 +153,7 @@ export class ChartX {
       this.symbol = symbol;
       const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
       this.shapes = Array.isArray(all[symbol]) ? all[symbol] : [];
+      this.notes.setSymbol(symbol);
       this.draft = null;
     }
     this.fill(true);
@@ -171,9 +186,16 @@ export class ChartX {
         fn();
       } catch {}
     });
-    [this.legend, this.bar, this.svg, this.catcher, this.pop].forEach((el) =>
-      el.remove(),
-    );
+    this.notes.destroy();
+    [
+      this.legend,
+      this.bar,
+      this.svg,
+      this.catcher,
+      this.pop,
+      this.railLine,
+      this.railText,
+    ].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -190,9 +212,21 @@ export class ChartX {
     };
     toggle(this.smaBtn, "sma7");
     toggle(this.rsiBtn, "rsi");
-    this.lineBtn.title = "Draw a trend line: click two points (Esc cancels)";
-    this.lineBtn.onclick = () => this.setDrawing(!this.drawing);
-    this.tools.append(this.smaBtn, this.rsiBtn, this.lineBtn);
+    this.tools.append(this.smaBtn, this.rsiBtn);
+    const rail = this.host
+      .closest(".chart-workspace")
+      ?.querySelector(".drawing-rail") as HTMLElement | null;
+    this.railLine.title = "Trend line: click two points (Esc cancels)";
+    this.railLine.onclick = () => {
+      this.notes?.setPlacing(false);
+      this.setDrawing(!this.drawing);
+    };
+    this.railText.title = "Text: click a spot on the chart and type";
+    this.railText.onclick = () => {
+      this.setDrawing(false);
+      this.notes.setPlacing(!this.notes.isBusy());
+    };
+    if (rail) rail.append(this.railLine, this.railText);
     this.moreBtn.title = "Indicators and trend lines";
     const open = load<{ open: boolean }>("arcus.chartx.bar.v1", {
       open: false,
@@ -334,7 +368,7 @@ export class ChartX {
     this.drawing = on;
     this.draft = null;
     this.catcher.classList.toggle("on", on);
-    this.lineBtn.classList.toggle("on", on);
+    this.railLine.classList.toggle("selected", on);
     this.lastSig = "";
   }
 
@@ -380,6 +414,7 @@ export class ChartX {
   }
 
   private select(id: string | null) {
+    if (id) this.notes?.deselect();
     this.selected = id;
     const sh = this.shapes.find((x) => x.id === id);
     if (sh) this.popColor.value = sh.color;
@@ -429,6 +464,7 @@ export class ChartX {
   private loop = () => {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(this.loop);
+    this.notes.tick();
     if (!this.shapes.length && !this.draft) {
       if (this.svg.firstChild) this.svg.replaceChildren();
       this.pop.style.display = "none";

@@ -1463,6 +1463,22 @@ function App() {
   const drawingDrag = useRef<string | null>(null),
     drawingMoved = useRef(false);
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  const watchNavRef = useRef<string[]>([]),
+    symbolRef = useRef(symbol);
+  symbolRef.current = symbol;
+  const [watchW, setWatchW] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("arcus.watchW"));
+      return v >= 170 && v <= 560 ? v : 255;
+    } catch {
+      return 255;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.watchW", String(watchW));
+    } catch {}
+  }, [watchW]);
   const [chartFull, setChartFull] = useState(false);
   const [tfBuffer, setTfBuffer] = useState("");
   const tfBufRef = useRef("");
@@ -1504,6 +1520,25 @@ function App() {
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const buf = tfBufRef.current;
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !buf) {
+        const list = watchNavRef.current;
+        if (!list.length) return;
+        const i = list.indexOf(symbolRef.current);
+        const next =
+          i < 0
+            ? 0
+            : e.key === "ArrowDown"
+              ? Math.min(list.length - 1, i + 1)
+              : Math.max(0, i - 1);
+        e.preventDefault();
+        if (list[next] !== symbolRef.current) setSymbol(list[next]);
+        requestAnimationFrame(() =>
+          document
+            .querySelector(".watch-items button.current")
+            ?.scrollIntoView({ block: "nearest" }),
+        );
+        return;
+      }
       if (e.key === "Escape") {
         if (buf) setBuf("");
         else if (selectedLine) setSelectedLine(null);
@@ -1619,6 +1654,8 @@ function App() {
     setShowAuth(true);
   };
   const filtered = symbols.filter((s) => s.toLowerCase().includes(query.toLowerCase()));
+  watchNavRef.current =
+    watchGroup === "Favorites" ? filtered.filter((s) => favorites.includes(s)) : filtered;
   return (
     <div className="app">
       <header>
@@ -1884,6 +1921,7 @@ function App() {
               </button>
             </div>
             <div
+              style={{ ["--watch-w" as any]: watchW + "px" }}
               className={
                 "chart-workspace" + (railOpen ? "" : " rail-closed") + (watchOpen ? "" : " watch-closed")
               }
@@ -2220,6 +2258,25 @@ function App() {
                 </div>
               </section>
               <aside className="watchlist-panel">
+                <div
+                  className="watch-resizer"
+                  title="Drag to resize"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    const startX = e.clientX,
+                      startW = watchW,
+                      el = e.currentTarget;
+                    el.setPointerCapture(e.pointerId);
+                    const move = (ev: PointerEvent) =>
+                      setWatchW(Math.max(170, Math.min(560, startW + (startX - ev.clientX))));
+                    const up = () => {
+                      el.removeEventListener("pointermove", move);
+                      el.removeEventListener("pointerup", up);
+                    };
+                    el.addEventListener("pointermove", move);
+                    el.addEventListener("pointerup", up);
+                  }}
+                />
                 <div className="watch-head">
                   <b>Watchlist</b>
                   <span>{symbols.length} markets</span>
