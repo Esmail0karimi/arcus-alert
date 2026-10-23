@@ -64,3 +64,12 @@ jobs:
           gh release delete android-latest --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
           gh release create android-latest "$RUNNER_TEMP/arcus-alert.apk" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Arcus Alert Android (latest)" --notes "Signed release APK built from commit $GITHUB_SHA. Install it over the existing app."
+      - name: Attach APK to release v1.1.0
+        if: github.ref_name == 'feature/chart-analysis-tools'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Arcus Alert v1.1.0: web chart tools (trend lines, text notes, horizontal-line copy/delete/colour, fullscreen, typed timeframe, Ctrl+Z undo), manual Sync to Android, desktop alert notifications; Android shows only the newest alert and Clear history removes old ones. Web: https://esmail0karimi.github.io/arcus-alert/preview/"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Arcus-Alert-1.1.0.apk"
+          gh release create v1.1.0 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Arcus Alert v1.1.0" --notes "$NOTES" || true
+          gh release upload v1.1.0 "$RUNNER_TEMP/Arcus-Alert-1.1.0.apk" --clobber --repo "$GITHUB_REPOSITORY"

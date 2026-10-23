@@ -1,6 +1,6 @@
 {
   "name": "arcus-alert-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Arcus Alert portable desktop app for Windows",
   "main": "main.js",
