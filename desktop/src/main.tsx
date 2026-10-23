@@ -963,6 +963,7 @@ function App() {
     }
     previousPrices.current = next;
     if (fired.length) {
+      setAlertBanners((b) => [...fired, ...b].slice(0, 20));
       setHistory((h) => [...fired, ...h].slice(0, 200));
       setLevels((v) => v.filter((l) => !fired.some((f) => f.id === l.id)));
       for (const f of fired) {
@@ -984,20 +985,30 @@ function App() {
           } else window.arcusDesktop.alert({ title, body, sound, symbol: f.symbol });
         } else {
           if ("Notification" in window && Notification.permission === "granted") {
-            try {
-              const n = new Notification(title, {
-                body,
-                tag: "arcus-" + f.id,
-                requireInteraction: true,
-                renotify: true,
-              });
-              n.onclick = () => {
-                window.focus();
-                setSymbol(f.symbol);
-                setTab("Chart");
-                n.close();
-              };
-            } catch {}
+            const options: any = {
+              body,
+              tag: "arcus-" + f.id,
+              requireInteraction: true, // stays on screen until you click it
+              renotify: true,
+              data: { symbol: f.symbol },
+            };
+            const fallback = () => {
+              try {
+                const n = new Notification(title, options);
+                n.onclick = () => {
+                  window.focus();
+                  setSymbol(f.symbol);
+                  setTab("Chart");
+                  n.close();
+                };
+              } catch {}
+            };
+            if ("serviceWorker" in navigator)
+              navigator.serviceWorker
+                .getRegistration()
+                .then((reg) => (reg ? reg.showNotification(title, options) : fallback()))
+                .catch(fallback);
+            else fallback();
           }
           if (sound === "custom" && customSound) {
             try {
@@ -1454,6 +1465,7 @@ function App() {
       return;
     }
     const permission = await Notification.requestPermission();
+    setNotifPerm(permission);
     setStatus(
       permission === "granted"
         ? "Browser notifications enabled"
@@ -1493,7 +1505,36 @@ function App() {
     setFavorites((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
   const drawingDrag = useRef<string | null>(null),
     drawingMoved = useRef(false);
+  const [alertBanners, setAlertBanners] = useState<AlertEvent[]>([]);
+  const [notifPerm, setNotifPerm] = useState<string>(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  // Flash the tab title while an alert banner is waiting, so it is visible even from another tab.
+  useEffect(() => {
+    if (!alertBanners.length) return;
+    const base = document.title.replace(/^🔔 .* — /, "");
+    let on = true;
+    const t = window.setInterval(() => {
+      document.title = on ? "🔔 " + alertBanners[0].symbol + " — " + base : base;
+      on = !on;
+    }, 900);
+    return () => {
+      window.clearInterval(t);
+      document.title = base;
+    };
+  }, [alertBanners]);
+  // Clicking a system notification (handled by the service worker) opens that symbol.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "arcus-open-symbol" && e.data.symbol) {
+        setSymbol(String(e.data.symbol));
+        setTab("Chart");
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, []);
   const watchNavRef = useRef<string[]>([]),
     symbolRef = useRef(symbol);
   symbolRef.current = symbol;
@@ -1771,6 +1812,51 @@ function App() {
           </button>
         </div>
       </header>
+      {!window.arcusDesktop?.isDesktop && notifPerm !== "granted" && notifPerm !== "unsupported" && (
+        <div className="notif-strip">
+          {notifPerm === "denied" ? (
+            <span>
+              🔕 Notifications are blocked by the browser. Click the lock icon next to the address bar
+              and allow Notifications for this site, then reload.
+            </span>
+          ) : (
+            <>
+              <span>🔕 Desktop notifications are off, so you will not see which symbol triggered.</span>
+              <button onClick={enableBrowserNotifications}>Enable notifications</button>
+            </>
+          )}
+        </div>
+      )}
+      {alertBanners.length > 0 && (
+        <div className="alert-toasts">
+          {alertBanners.map((a, i) => (
+            <div className="alert-toast" key={a.id + "-" + a.time}>
+              <div
+                className="alert-toast-body"
+                onClick={() => {
+                  setSymbol(a.symbol);
+                  setTab("Chart");
+                  setAlertBanners((b) => b.filter((x) => x !== a));
+                }}
+              >
+                <b>🔔 {a.symbol}</b>
+                <span>
+                  Target {a.price.toLocaleString()} · now {a.actual.toLocaleString()} ·{" "}
+                  {new Date(a.time).toLocaleTimeString()}
+                </span>
+              </div>
+              <button title="Dismiss" onClick={() => setAlertBanners((b) => b.filter((x) => x !== a))}>
+                ×
+              </button>
+            </div>
+          ))}
+          {alertBanners.length > 1 && (
+            <button className="alert-toast-clear" onClick={() => setAlertBanners([])}>
+              Dismiss all
+            </button>
+          )}
+        </div>
+      )}
       <main className={chartFull && tab === "Chart" ? "chart-full" : ""}>
         {tab === "Market" && (
           <>

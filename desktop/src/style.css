@@ -224,3 +224,14 @@ main.chart-full .fs-only{display:inline-block!important}
 .sync-msg.ok{color:#00d7ae}
 .sync-msg.err{color:#ff5c6c}
 .sync-msg.warn{color:#f2b84b}
+
+/* alert banners + notification permission strip */
+.notif-strip{display:flex;gap:12px;align-items:center;justify-content:center;padding:7px 14px;background:#3a2a0e;color:#f2c94c;font-size:12px;border-bottom:1px solid #5a4416}
+.notif-strip button{padding:4px 10px;font-size:12px;background:#f2c94c;color:#241a05;border:0;font-weight:700}
+.alert-toasts{position:fixed;top:12px;right:12px;z-index:200;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.alert-toast{display:flex;align-items:stretch;background:#2a0f16;border:1px solid #d6455a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.6);overflow:hidden}
+.alert-toast-body{flex:1;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.alert-toast-body b{font-size:15px;color:#ffd0d6}
+.alert-toast-body span{font-size:11px;color:#e6a8b1}
+.alert-toast>button{border:0;border-radius:0;background:transparent;color:#ffb3bd;font-size:20px;padding:0 12px}
+.alert-toast-clear{align-self:flex-end;font-size:11px;padding:4px 10px}
