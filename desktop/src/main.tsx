@@ -135,7 +135,9 @@ function App() {
     [authPassword, setAuthPassword] = useState(""),
     [authBusy, setAuthBusy] = useState(false),
     [authError, setAuthError] = useState("");
-  const cloudSyncReady = useRef(false),
+  const cloudDirty = useRef(false),
+    cloudSeen = useRef<Record<string, string>>({}),
+    cloudSyncReady = useRef(false),
     latestCloudState = useRef({ levels, favorites, history, drawings });
   latestCloudState.current = { levels, favorites, history, drawings };
   const [railOpen, setRailOpen] = useState(() => {
@@ -584,6 +586,7 @@ function App() {
       return;
     }
     cloudSyncReady.current = false;
+    cloudDirty.current = false;
     const stateRef = doc(db, "users", user.uid, "appData", "state");
     const unsubscribe = onSnapshot(
       stateRef,
@@ -633,6 +636,12 @@ function App() {
               .slice(0, 200);
             const mergedDrawings = mergeById(current.drawings, remoteDrawings);
             const mergedFavorites = Array.from(new Set([...remoteFavorites, ...current.favorites]));
+            cloudSeen.current = {
+              levels: JSON.stringify(remoteLevels),
+              favorites: JSON.stringify(remoteFavorites),
+              history: JSON.stringify(remoteHistory),
+              drawings: JSON.stringify(remoteDrawings),
+            };
             setLevels(mergedLevels);
             setFavorites(mergedFavorites);
             setHistory(mergedHistory);
@@ -653,14 +662,20 @@ function App() {
             setStatus("Account connected · alerts synced");
             return;
           }
-          if (JSON.stringify(remoteLevels) !== JSON.stringify(current.levels))
-            setLevels(remoteLevels);
-          if (JSON.stringify(remoteFavorites) !== JSON.stringify(current.favorites))
-            setFavorites(remoteFavorites);
-          if (JSON.stringify(remoteHistory) !== JSON.stringify(current.history))
-            setHistory(remoteHistory);
-          if (JSON.stringify(remoteDrawings) !== JSON.stringify(current.drawings))
-            setDrawings(remoteDrawings);
+          // Never let a (possibly older) snapshot overwrite local edits that have not been written yet,
+          // and only apply a field when the cloud value actually changed since we last saw it.
+          if (cloudDirty.current) return;
+          const seen = cloudSeen.current;
+          const take = (key: string, remoteValue: any, currentValue: any, apply: (v: any) => void) => {
+            const json = JSON.stringify(remoteValue);
+            if (json === seen[key]) return;
+            seen[key] = json;
+            if (json !== JSON.stringify(currentValue)) apply(remoteValue);
+          };
+          take("levels", remoteLevels, current.levels, setLevels);
+          take("favorites", remoteFavorites, current.favorites, setFavorites);
+          take("history", remoteHistory, current.history, setHistory);
+          take("drawings", remoteDrawings, current.drawings, setDrawings);
           setStatus("Cloud sync active · " + (user.email || "signed in"));
         } catch (error: any) {
           setStatus("Cloud sync error: " + (error?.message || "Unknown error"));
@@ -677,7 +692,14 @@ function App() {
     if (!user || !cloudSyncReady.current) return;
     const stateRef = doc(db, "users", user.uid, "appData", "state");
     // Debounced: dragging an alert changes it on every pointer move; only the final position is written.
+    cloudDirty.current = true;
     const timer = window.setTimeout(() => {
+      cloudSeen.current = {
+        levels: JSON.stringify(levels),
+        favorites: JSON.stringify(favorites),
+        history: JSON.stringify(history.slice(0, 200)),
+        drawings: JSON.stringify(drawings),
+      };
       void setDoc(
         stateRef,
         {
@@ -690,6 +712,7 @@ function App() {
         },
         { merge: true },
       ).catch((error) => setStatus("Cloud save error: " + (error?.message || "Unknown error")));
+      cloudDirty.current = false;
     }, 600);
     return () => window.clearTimeout(timer);
   }, [user, levels, favorites, history, drawings]);
