@@ -1,0 +1,564 @@
+/*
+ * ChartX (lean): SMA 7, RSI 14, OHLC legend and a trend-line tool, attached to the existing
+ * lightweight-charts chart. Everything is optional, default off, and costs nothing while off.
+ * It never replaces the main candlestick series, so alerts and horizontal lines are untouched.
+ */
+import { LineSeries } from "lightweight-charts";
+import "./chartx.css";
+import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
+import { indexToTime, timeToIndex } from "./geometry";
+import { NotesLayer } from "./notes";
+import { undoManager } from "../undo";
+
+const PREFS_KEY = "arcus.chartx.prefs.v2",
+  DRAW_KEY = "arcus.chartx.drawings.v1";
+type P = { time: number; price: number };
+type Shape = { id: string; a: P; b: P; color: string };
+type Prefs = { sma7: boolean; rsi: boolean };
+
+const load = <T>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const save = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+};
+const h = <K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  text?: string,
+) => {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+};
+const svgEl = (tag: string, attrs: Record<string, string | number>) => {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, String(attrs[k]));
+  return el;
+};
+
+export class ChartX {
+  private candles: Candle[] = [];
+  private symbol = "";
+  private prefs: Prefs;
+  private shapes: Shape[] = [];
+  private draft: { a: P; b: P } | null = null;
+  private drawing = false;
+  private notes!: NotesLayer;
+  private railBtns: HTMLElement[] = [];
+  private railLine = h("button", "cx-rail-part", "╱");
+  private railText = h("button", "cx-rail-part", "T");
+  private smaS: any = null;
+  private rsiS: any = null;
+  private destroyed = false;
+  private refreshTimer: number | undefined;
+  private raf = 0;
+  private lastSig = "";
+  private cleanups: (() => void)[] = [];
+
+  private legend = h("div", "cx-legend");
+  private bar = h("div", "cx-bar");
+  private svg = svgEl("svg", { class: "cx-svg" }) as SVGSVGElement;
+  private catcher = h("div", "cx-catcher");
+  private smaBtn = h("button", "cx-btn", "SMA 7");
+  private rsiBtn = h("button", "cx-btn", "RSI");
+  private selected: string | null = null;
+  private pop = h("div", "line-actions cx-pop");
+  private popColor = h("input");
+  private moreBtn = h("button", "cx-btn cx-more", "ƒx");
+  private tools = h("div", "cx-tools");
+
+  constructor(
+    private chart: any,
+    private candle: any,
+    private host: HTMLElement,
+  ) {
+    this.prefs = load<Prefs>(PREFS_KEY, { sma7: false, rsi: false });
+    if (getComputedStyle(host).position === "static")
+      host.style.position = "relative";
+    this.buildUi();
+    this.notes = new NotesLayer(
+      chart,
+      candle,
+      host,
+      () => this.candles,
+      () => this.select(null),
+    );
+    this.notes.onPlacing = (on) =>
+      this.railText.classList.toggle("selected", on);
+    this.syncIndicators();
+    const onMove = (p: any) => this.updateLegend(p);
+    this.chart.subscribeCrosshairMove(onMove);
+    this.cleanups.push(() => this.chart.unsubscribeCrosshairMove(onMove));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        this.setDrawing(false);
+        this.notes.setPlacing(false);
+        this.select(null);
+      } else if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        this.selected
+      ) {
+        const t = e.target as HTMLElement | null;
+        if (
+          t &&
+          /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) &&
+          (t as HTMLInputElement).type !== "color"
+        )
+          return;
+        e.preventDefault();
+        this.deleteSelected();
+      }
+    };
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+    const onUp = (e: PointerEvent) => {
+      const d = down;
+      down = null;
+      if (
+        !d ||
+        this.drawing ||
+        Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5
+      )
+        return;
+      if ((e.target as HTMLElement)?.closest?.(".cx-bar,.cx-pop,.line-actions"))
+        return;
+      const r = this.host.getBoundingClientRect();
+      const hit = this.hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (hit || this.selected) this.select(hit);
+    };
+    this.host.addEventListener("pointerdown", onDown, true);
+    this.host.addEventListener("pointerup", onUp, true);
+    this.cleanups.push(() => {
+      this.host.removeEventListener("pointerdown", onDown, true);
+      this.host.removeEventListener("pointerup", onUp, true);
+    });
+    window.addEventListener("keydown", onKey);
+    this.cleanups.push(() => window.removeEventListener("keydown", onKey));
+    this.hookDrawing();
+    this.raf = requestAnimationFrame(this.loop);
+  }
+
+  /* ---------- hooks used by main.tsx ---------- */
+  setCandles(candles: Candle[], symbol: string) {
+    this.candles = candles.map((c) => ({ ...c }));
+    if (symbol !== this.symbol) {
+      this.symbol = symbol;
+      const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
+      this.shapes = Array.isArray(all[symbol]) ? all[symbol] : [];
+      this.notes.setSymbol(symbol);
+      undoManager.drop("cx");
+      this.draft = null;
+    }
+    this.fill(true);
+    this.updateLegend(null);
+    this.lastSig = "";
+  }
+  updateBar(bar: Candle) {
+    const n = this.candles.length;
+    if (!n) return;
+    const last = this.candles[n - 1];
+    if (bar.time === last.time) this.candles[n - 1] = { ...last, ...bar };
+    else if (bar.time > last.time) this.candles.push({ ...bar });
+    else return;
+    if (this.refreshTimer || (!this.smaS && !this.rsiS)) {
+      if (!this.refreshTimer) this.updateLegend(null);
+      return;
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = undefined;
+      this.fill(false);
+      this.updateLegend(null);
+    }, 500);
+  }
+  destroy() {
+    this.destroyed = true;
+    window.clearTimeout(this.refreshTimer);
+    cancelAnimationFrame(this.raf);
+    this.cleanups.forEach((fn) => {
+      try {
+        fn();
+      } catch {}
+    });
+    this.notes.destroy();
+    undoManager.drop("cx");
+    [
+      this.legend,
+      this.bar,
+      this.svg,
+      this.catcher,
+      this.pop,
+      this.railLine,
+      this.railText,
+    ].forEach((el) => el.remove());
+  }
+
+  /* ---------- UI ---------- */
+  private buildUi() {
+    const toggle = (btn: HTMLButtonElement, key: keyof Prefs) => {
+      btn.classList.toggle("on", this.prefs[key]);
+      btn.onclick = () => {
+        this.prefs[key] = !this.prefs[key];
+        btn.classList.toggle("on", this.prefs[key]);
+        save(PREFS_KEY, this.prefs);
+        this.syncIndicators();
+        this.fill(true);
+      };
+    };
+    toggle(this.smaBtn, "sma7");
+    toggle(this.rsiBtn, "rsi");
+    this.tools.append(this.smaBtn, this.rsiBtn);
+    const rail = this.host
+      .closest(".chart-workspace")
+      ?.querySelector(".drawing-rail") as HTMLElement | null;
+    this.railLine.title = "Trend line: click two points (Esc cancels)";
+    this.railLine.onclick = () => {
+      this.notes?.setPlacing(false);
+      this.setDrawing(!this.drawing);
+    };
+    this.railText.title = "Text: click a spot on the chart and type";
+    this.railText.onclick = () => {
+      this.setDrawing(false);
+      this.notes.setPlacing(!this.notes.isBusy());
+    };
+    if (rail) rail.append(this.railLine, this.railText);
+    this.moreBtn.title = "Indicators and trend lines";
+    const open = load<{ open: boolean }>("arcus.chartx.bar.v1", {
+      open: false,
+    }).open;
+    const sync = (o: boolean) => {
+      this.tools.style.display = o ? "flex" : "none";
+      this.moreBtn.classList.toggle("on", o);
+    };
+    sync(open);
+    this.moreBtn.onclick = () => {
+      const o = this.tools.style.display === "none";
+      sync(o);
+      save("arcus.chartx.bar.v1", { open: o });
+    };
+    this.bar.append(this.moreBtn, this.tools);
+    ["pointerdown", "wheel", "dblclick"].forEach((ev) =>
+      this.bar.addEventListener(ev, (e) => e.stopPropagation()),
+    );
+    this.popColor.type = "color";
+    this.popColor.title = "Line colour";
+    this.popColor.onchange = () => {
+      if (this.colorBefore) this.record(this.colorBefore);
+      this.colorBefore = null;
+    };
+    this.popColor.oninput = () => {
+      const sh = this.shapes.find((x) => x.id === this.selected);
+      if (!sh) return;
+      if (!this.colorBefore) this.colorBefore = this.cloneShapes();
+      sh.color = this.popColor.value;
+      this.persistShapes();
+      this.lastSig = "";
+    };
+    const del = h("button", "danger", "🗑");
+    del.title = "Delete line (Del)";
+    del.onclick = () => this.deleteSelected();
+    this.pop.append(this.popColor, del);
+    this.pop.style.display = "none";
+    ["pointerdown", "pointerup", "click"].forEach((ev) =>
+      this.pop.addEventListener(ev, (e) => e.stopPropagation()),
+    );
+    this.host.append(this.svg, this.legend, this.bar, this.catcher, this.pop);
+  }
+
+  private cloneShapes(): Shape[] {
+    return JSON.parse(JSON.stringify(this.shapes));
+  }
+  private setShapes(list: Shape[]) {
+    this.shapes = JSON.parse(JSON.stringify(list));
+    if (!this.shapes.some((x) => x.id === this.selected)) this.selected = null;
+    this.persistShapes();
+    this.lastSig = "";
+  }
+  /** Register an undo step: `before` is the list as it was, the current list is the "after". */
+  private record(before: Shape[]) {
+    const after = this.cloneShapes();
+    if (JSON.stringify(after) === JSON.stringify(before)) return;
+    const sym = this.symbol;
+    undoManager.push({
+      tag: "cx",
+      undo: () => this.symbol === sym && this.setShapes(before),
+      redo: () => this.symbol === sym && this.setShapes(after),
+    });
+  }
+  private colorBefore: Shape[] | null = null;
+
+  private persistShapes() {
+    const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
+    all[this.symbol] = this.shapes;
+    save(DRAW_KEY, all);
+  }
+
+  /* ---------- indicators ---------- */
+  private syncIndicators() {
+    const kill = (s: any) => {
+      try {
+        this.chart.removeSeries(s);
+      } catch {}
+    };
+    if (!this.prefs.sma7 && this.smaS) {
+      kill(this.smaS);
+      this.smaS = null;
+    }
+    if (!this.prefs.rsi && this.rsiS) {
+      kill(this.rsiS);
+      this.rsiS = null;
+    }
+    if (this.prefs.sma7 && !this.smaS)
+      this.smaS = this.chart.addSeries(LineSeries, {
+        color: "#f2b84b",
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    if (this.prefs.rsi && !this.rsiS) {
+      this.rsiS = this.chart.addSeries(
+        LineSeries,
+        { color: "#b388ff", lineWidth: 2, priceLineVisible: false },
+        1,
+      );
+      for (const price of [70, 30])
+        this.rsiS.createPriceLine({
+          price,
+          color: "#556a85",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: false,
+        });
+    }
+    try {
+      const panes = this.chart.panes();
+      if (panes.length > 1) {
+        panes[0].setStretchFactor(3);
+        panes[1].setStretchFactor(1);
+      }
+    } catch {}
+  }
+
+  /** full=true: setData; otherwise only push the last point (cheap, used for live ticks). */
+  private fill(full: boolean) {
+    if (this.destroyed || !this.candles.length) return;
+    const put = (s: any, d: Pt[]) => {
+      if (!s || !d.length) return;
+      if (full) s.setData(d);
+      else s.update(d[d.length - 1]);
+    };
+    try {
+      const tail = full ? this.candles : this.candles.slice(-200);
+      put(this.smaS, sma(tail, 7));
+      put(this.rsiS, rsi(tail, 14)); // 200 bars is plenty for Wilder smoothing to converge
+    } catch {}
+  }
+
+  /* ---------- legend ---------- */
+  private updateLegend(param: any) {
+    const c = this.candles;
+    if (!c.length) return;
+    let i = c.length - 1;
+    if (param?.time !== undefined) {
+      let lo = 0,
+        hi = c.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (c[mid].time === Number(param.time)) {
+          i = mid;
+          break;
+        }
+        if (c[mid].time < Number(param.time)) lo = mid + 1;
+        else hi = mid - 1;
+      }
+    }
+    const x = c[i],
+      prev = i > 0 ? c[i - 1].close : x.open,
+      chg = x.close - prev,
+      pct = prev ? (chg / prev) * 100 : 0,
+      cls = chg >= 0 ? "cx-up" : "cx-dn";
+    this.legend.innerHTML =
+      `<b>O</b> <i class="${cls}">${fmtPrice(x.open)}</i> <b>H</b> <i class="${cls}">${fmtPrice(x.high)}</i> ` +
+      `<b>L</b> <i class="${cls}">${fmtPrice(x.low)}</i> <b>C</b> <i class="${cls}">${fmtPrice(x.close)}</i> ` +
+      `<i class="${cls}">${chg >= 0 ? "+" : ""}${pct.toFixed(2)}%</i>` +
+      (x.volume ? ` <b>Vol</b> <i>${fmtVol(x.volume)}</i>` : "");
+  }
+
+  /* ---------- trend lines ---------- */
+  private setDrawing(on: boolean) {
+    this.drawing = on;
+    this.draft = null;
+    this.catcher.classList.toggle("on", on);
+    this.railLine.classList.toggle("selected", on);
+    this.lastSig = "";
+  }
+
+  private hookDrawing() {
+    const pt = (e: PointerEvent): P | null => {
+      const r = this.host.getBoundingClientRect();
+      const logical = this.chart
+        .timeScale()
+        .coordinateToLogical(e.clientX - r.left);
+      const price = this.candle.coordinateToPrice(e.clientY - r.top);
+      if (logical == null || price == null || !this.candles.length) return null;
+      return {
+        time: indexToTime(this.candles, barSpan(this.candles), Number(logical)),
+        price: Number(price),
+      };
+    };
+    this.catcher.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const p = pt(e);
+      if (!p || !this.drawing) return;
+      if (!this.draft) this.draft = { a: p, b: p };
+      else {
+        const before = this.cloneShapes();
+        this.shapes.push({
+          id: Date.now().toString(36),
+          a: this.draft.a,
+          b: p,
+          color: "#4aa3ff",
+        });
+        this.record(before);
+        this.persistShapes();
+        this.setDrawing(false);
+      }
+      this.lastSig = "";
+    });
+    this.catcher.addEventListener("pointermove", (e) => {
+      if (!this.draft) return;
+      const p = pt(e);
+      if (p) {
+        this.draft.b = p;
+        this.lastSig = "";
+      }
+    });
+  }
+
+  private select(id: string | null) {
+    if (id) this.notes?.deselect();
+    this.selected = id;
+    const sh = this.shapes.find((x) => x.id === id);
+    if (sh) this.popColor.value = sh.color;
+    this.lastSig = "";
+  }
+  private deleteSelected() {
+    if (!this.selected) return;
+    const before = this.cloneShapes();
+    this.shapes = this.shapes.filter((x) => x.id !== this.selected);
+    this.record(before);
+    this.selected = null;
+    this.persistShapes();
+    this.lastSig = "";
+  }
+  /** Nearest trend line within 9px of the point (generous so lines are easy to pick). */
+  private hitTest(px: number, py: number): string | null {
+    let best: string | null = null,
+      bestD = 9;
+    for (const s of this.shapes) {
+      const A = this.xy(s.a),
+        B = this.xy(s.b);
+      if (!A || !B) continue;
+      const dx = B.x - A.x,
+        dy = B.y - A.y,
+        len2 = dx * dx + dy * dy;
+      const t = len2
+        ? Math.max(0, Math.min(1, ((px - A.x) * dx + (py - A.y) * dy) / len2))
+        : 0;
+      const d = Math.hypot(px - (A.x + t * dx), py - (A.y + t * dy));
+      if (d < bestD) {
+        bestD = d;
+        best = s.id;
+      }
+    }
+    return best;
+  }
+
+  private xy(p: P) {
+    const x = this.chart
+      .timeScale()
+      .logicalToCoordinate(
+        timeToIndex(this.candles, barSpan(this.candles), p.time),
+      );
+    const y = this.candle.priceToCoordinate(p.price);
+    return x == null || y == null ? null : { x: Number(x), y: Number(y) };
+  }
+
+  /** Redraw only when something that affects the lines changed (no work while idle). */
+  private loop = () => {
+    if (this.destroyed) return;
+    this.raf = requestAnimationFrame(this.loop);
+    this.notes.tick();
+    if (!this.shapes.length && !this.draft) {
+      if (this.svg.firstChild) this.svg.replaceChildren();
+      this.pop.style.display = "none";
+      return;
+    }
+    const ts = this.chart.timeScale();
+    const sig = [
+      ts.logicalToCoordinate(0),
+      ts.logicalToCoordinate(50),
+      this.candle.coordinateToPrice(0),
+      this.candle.coordinateToPrice(300),
+      this.host.clientWidth,
+      this.host.clientHeight,
+      this.shapes.length,
+      this.draft?.b.time,
+      this.draft?.b.price,
+    ].join("|");
+    if (sig === this.lastSig) return;
+    this.lastSig = sig;
+    this.svg.replaceChildren();
+    this.svg.setAttribute("width", String(this.host.clientWidth));
+    this.svg.setAttribute("height", String(this.host.clientHeight));
+    const list = this.draft
+      ? [...this.shapes, { id: "d", color: "#4aa3ff", ...this.draft }]
+      : this.shapes;
+    this.pop.style.display = "none";
+    for (const s of list) {
+      const A = this.xy(s.a),
+        B = this.xy(s.b);
+      if (!A || !B) continue;
+      this.svg.append(
+        svgEl("line", {
+          x1: A.x,
+          y1: A.y,
+          x2: B.x,
+          y2: B.y,
+          stroke: s.color,
+          "stroke-width": s.id === this.selected ? 3 : 1.5,
+          "stroke-dasharray": s.id === "d" ? "5 4" : "",
+        }),
+        svgEl("circle", {
+          cx: A.x,
+          cy: A.y,
+          r: s.id === this.selected ? 5 : 3,
+          fill: s.color,
+        }),
+        svgEl("circle", {
+          cx: B.x,
+          cy: B.y,
+          r: s.id === this.selected ? 5 : 3,
+          fill: s.color,
+        }),
+      );
+      if (s.id === this.selected) {
+        this.pop.style.display = "flex";
+        this.pop.style.top = Math.max(4, (A.y + B.y) / 2 - 36) + "px";
+      }
+    }
+  };
+}
+
+export const attachChartX = (chart: any, candle: any, host: HTMLElement) =>
+  new ChartX(chart, candle, host);

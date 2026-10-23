@@ -1,0 +1,59 @@
+name: Build Arcus Alert Windows Portable
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-windows.yml'
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate Android-matching Windows app icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $bmp = New-Object System.Drawing.Bitmap 256,256
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+          $g.Clear([System.Drawing.Color]::FromArgb(4,12,25))
+          $cyan = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(0,220,210))
+          $outer = [System.Drawing.Point[]]@([System.Drawing.Point]::new(128,25),[System.Drawing.Point]::new(235,222),[System.Drawing.Point]::new(188,222),[System.Drawing.Point]::new(128,105),[System.Drawing.Point]::new(68,222),[System.Drawing.Point]::new(21,222))
+          $g.FillPolygon($cyan,$outer)
+          $dark = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(4,12,25))
+          $inner = [System.Drawing.Point[]]@([System.Drawing.Point]::new(128,112),[System.Drawing.Point]::new(181,222),[System.Drawing.Point]::new(149,222),[System.Drawing.Point]::new(128,181),[System.Drawing.Point]::new(107,222),[System.Drawing.Point]::new(75,222))
+          $g.FillPolygon($dark,$inner); $g.Dispose()
+          $ms = New-Object System.IO.MemoryStream; $bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png); $png=$ms.ToArray(); $ms.Dispose(); $bmp.Dispose()
+          $ico=New-Object System.IO.MemoryStream; $w=New-Object System.IO.BinaryWriter($ico)
+          $w.Write([UInt16]0); $w.Write([UInt16]1); $w.Write([UInt16]1); $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0); $w.Write([UInt16]1); $w.Write([UInt16]32); $w.Write([UInt32]$png.Length); $w.Write([UInt32]22); $w.Write($png); $w.Flush()
+          [System.IO.File]::WriteAllBytes('desktop/arcus.ico',$ico.ToArray()); $w.Dispose(); $ico.Dispose()
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+      - name: Build portable Windows app
+        working-directory: desktop
+        run: npm run dist:win
+      - name: Upload portable app
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcus-alert-windows-portable-x64
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Attach to release v1.1.0
+        if: github.ref_name == 'feature/chart-analysis-tools'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Arcus Alert v1.1.0: web chart tools (trend lines, text notes, horizontal-line copy/delete/colour, fullscreen, typed timeframe, Ctrl+Z undo), manual Sync to Android, desktop alert notifications; Android shows only the newest alert and Clear history removes old ones. Web: https://esmail0karimi.github.io/arcus-alert/preview/"
+          gh release create v1.1.0 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Arcus Alert v1.1.0" --notes "$NOTES" || true
+          gh release upload v1.1.0 desktop/dist/*.exe --clobber --repo "$GITHUB_REPOSITORY"
