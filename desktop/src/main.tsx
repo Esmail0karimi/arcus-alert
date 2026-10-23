@@ -135,9 +135,7 @@ function App() {
     [authPassword, setAuthPassword] = useState(""),
     [authBusy, setAuthBusy] = useState(false),
     [authError, setAuthError] = useState("");
-  const cloudDirty = useRef(false),
-    cloudSeen = useRef<Record<string, string>>({}),
-    cloudSyncReady = useRef(false),
+  const cloudSyncReady = useRef(false),
     latestCloudState = useRef({ levels, favorites, history, drawings });
   latestCloudState.current = { levels, favorites, history, drawings };
   const [railOpen, setRailOpen] = useState(() => {
@@ -580,142 +578,152 @@ function App() {
       tx.onerror = () => db.close();
     };
   }, [customSound, soundStorageReady]);
+  // The web app is the master copy. Nothing is written to the cloud automatically on every edit:
+  // the user presses "Sync to Android" (and an automatic push runs at most every 4 hours when there
+  // are changes). The cloud is read only once after signing in, to restore an empty browser.
+  const SYNC_EVERY_MS = 4 * 60 * 60 * 1000;
+  const lastPushedJson = useRef<string | null>(null);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [unsynced, setUnsynced] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const stateJson = (v: { levels: any[]; favorites: any[]; history: any[]; drawings: any[] }) =>
+    JSON.stringify({
+      levels: v.levels,
+      favorites: v.favorites,
+      history: v.history.slice(0, 200),
+      drawings: v.drawings,
+    });
   useEffect(() => {
-    if (!user) {
-      cloudSyncReady.current = false;
-      return;
-    }
     cloudSyncReady.current = false;
-    cloudDirty.current = false;
+    setCloudReady(false);
+    if (!user) return;
+    let finished = false;
+    let unsub: (() => void) | null = null;
     const stateRef = doc(db, "users", user.uid, "appData", "state");
-    const unsubscribe = onSnapshot(
+    unsub = onSnapshot(
       stateRef,
-      async (snapshot) => {
+      (snapshot) => {
+        if (finished) return;
+        finished = true;
+        setTimeout(() => unsub?.(), 0); // read once
         try {
-          // Our own not-yet-confirmed write echoing back must not overwrite what the user is doing (e.g. dragging an alert).
-          if (cloudSyncReady.current && snapshot.metadata.hasPendingWrites) return;
           const remote = snapshot.exists() ? snapshot.data() : null;
-          if (!remote) {
-            const current = latestCloudState.current;
-            await setDoc(stateRef, {
-              levels: current.levels,
-              favorites: current.favorites,
-              history: current.history.slice(0, 200),
-              drawings: current.drawings,
-              schemaVersion: 1,
-              updatedAt: serverTimestamp(),
-            });
-            cloudSyncReady.current = true;
-            setStatus("Account connected · cloud backup ready");
-            return;
-          }
-          const current = latestCloudState.current;
-          const tomb = deletedLevelIds.current;
-          const remoteLevels = (Array.isArray(remote.levels) ? remote.levels : []).filter(
-            (l: any) => !tomb.has(String(l?.id)),
-          );
-          const remoteFavorites = Array.isArray(remote.favorites) ? remote.favorites : [];
-          const remoteHistory = Array.isArray(remote.history) ? remote.history : [];
-          const remoteDrawings = Array.isArray(remote.drawings) ? remote.drawings : [];
-          if (!cloudSyncReady.current) {
-            const mergeById = (local: any[], cloud: any[]) => {
-              const merged = new Map<string, any>();
-              cloud.forEach((item) => {
-                if (item?.id) merged.set(String(item.id), item);
-              });
-              local.forEach((item) => {
-                if (item?.id && !merged.has(String(item.id))) merged.set(String(item.id), item);
-              });
-              return Array.from(merged.values());
-            };
-            const mergedLevels = mergeById(current.levels, remoteLevels).filter(
+          const cur = latestCloudState.current;
+          const localEmpty = !cur.levels.length && !cur.favorites.length && !cur.drawings.length;
+          if (remote && localEmpty) {
+            const tomb = deletedLevelIds.current;
+            const rl = (Array.isArray(remote.levels) ? remote.levels : []).filter(
               (l: any) => !tomb.has(String(l?.id)),
             );
-            const mergedHistory = mergeById(current.history, remoteHistory)
-              .sort((a, b) => Number(b.time) - Number(a.time))
-              .slice(0, 200);
-            const mergedDrawings = mergeById(current.drawings, remoteDrawings);
-            const mergedFavorites = Array.from(new Set([...remoteFavorites, ...current.favorites]));
-            cloudSeen.current = {
-              levels: JSON.stringify(remoteLevels),
-              favorites: JSON.stringify(remoteFavorites),
-              history: JSON.stringify(remoteHistory),
-              drawings: JSON.stringify(remoteDrawings),
-            };
-            setLevels(mergedLevels);
-            setFavorites(mergedFavorites);
-            setHistory(mergedHistory);
-            setDrawings(mergedDrawings);
-            await setDoc(
-              stateRef,
-              {
-                levels: mergedLevels,
-                favorites: mergedFavorites,
-                history: mergedHistory,
-                drawings: mergedDrawings,
-                schemaVersion: 1,
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true },
-            );
-            cloudSyncReady.current = true;
-            setStatus("Account connected · alerts synced");
-            return;
+            const rf = Array.isArray(remote.favorites) ? remote.favorites : [];
+            const rh = Array.isArray(remote.history) ? remote.history : [];
+            const rd = Array.isArray(remote.drawings) ? remote.drawings : [];
+            setLevels(rl);
+            setFavorites(rf);
+            setHistory(rh);
+            setDrawings(rd);
+            lastPushedJson.current = stateJson({
+              levels: rl,
+              favorites: rf,
+              history: rh,
+              drawings: rd,
+            });
+            setSyncMsg({ ok: true, text: "Restored from your account" });
+          } else {
+            lastPushedJson.current = null; // this browser's data is the master; push when ready
           }
-          // Never let a (possibly older) snapshot overwrite local edits that have not been written yet,
-          // and only apply a field when the cloud value actually changed since we last saw it.
-          if (cloudDirty.current) return;
-          const seen = cloudSeen.current;
-          const take = (key: string, remoteValue: any, currentValue: any, apply: (v: any) => void) => {
-            const json = JSON.stringify(remoteValue);
-            if (json === seen[key]) return;
-            seen[key] = json;
-            if (json !== JSON.stringify(currentValue)) apply(remoteValue);
-          };
-          take("levels", remoteLevels, current.levels, setLevels);
-          take("favorites", remoteFavorites, current.favorites, setFavorites);
-          take("history", remoteHistory, current.history, setHistory);
-          take("drawings", remoteDrawings, current.drawings, setDrawings);
-          setStatus("Cloud sync active · " + (user.email || "signed in"));
+          cloudSyncReady.current = true;
+          setCloudReady(true);
         } catch (error: any) {
-          setStatus("Cloud sync error: " + (error?.message || "Unknown error"));
+          setSyncMsg({ ok: false, text: "Could not read your account data: " + (error?.message || error) });
         }
       },
-      (error) => setStatus("Cloud sync error: " + error.message),
+      (error: any) =>
+        setSyncMsg({ ok: false, text: "Cloud error: " + (error?.code ? error.code + " · " : "") + error.message }),
     );
     return () => {
+      finished = true;
       cloudSyncReady.current = false;
-      unsubscribe();
+      unsub?.();
     };
   }, [user]);
   useEffect(() => {
-    if (!user || !cloudSyncReady.current) return;
-    const stateRef = doc(db, "users", user.uid, "appData", "state");
-    // Debounced: dragging an alert changes it on every pointer move; only the final position is written.
-    cloudDirty.current = true;
-    const timer = window.setTimeout(() => {
-      cloudSeen.current = {
-        levels: JSON.stringify(levels),
-        favorites: JSON.stringify(favorites),
-        history: JSON.stringify(history.slice(0, 200)),
-        drawings: JSON.stringify(drawings),
-      };
-      void setDoc(
-        stateRef,
-        {
-          levels,
-          favorites,
-          history: history.slice(0, 200),
-          drawings,
-          schemaVersion: 1,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      ).catch((error) => setStatus("Cloud save error: " + (error?.message || "Unknown error")));
-      cloudDirty.current = false;
-    }, 600);
-    return () => window.clearTimeout(timer);
-  }, [user, levels, favorites, history, drawings]);
+    if (!user || !cloudReady) {
+      setUnsynced(false);
+      return;
+    }
+    const dirty = lastPushedJson.current !== stateJson({ levels, favorites, history, drawings });
+    setUnsynced(dirty);
+    if (dirty && syncMsg?.ok) setSyncMsg(null);
+  }, [user, cloudReady, levels, favorites, history, drawings]);
+  const unsyncedRef = useRef(false);
+  unsyncedRef.current = unsynced;
+  const syncToCloud = async (auto = false) => {
+    if (!user) {
+      accountAction();
+      return;
+    }
+    if (!cloudSyncReady.current) {
+      setSyncMsg({ ok: false, text: "Still connecting to your account — try again in a moment" });
+      return;
+    }
+    setSyncBusy(true);
+    const cur = latestCloudState.current;
+    const json = stateJson(cur);
+    try {
+      await Promise.race([
+        setDoc(
+          doc(db, "users", user.uid, "appData", "state"),
+          {
+            levels: cur.levels,
+            favorites: cur.favorites,
+            history: cur.history.slice(0, 200),
+            drawings: cur.drawings,
+            schemaVersion: 1,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        ),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("no response from the server within 20 s (check the connection / VPN)")),
+            20000,
+          ),
+        ),
+      ]);
+      lastPushedJson.current = json;
+      try {
+        localStorage.setItem("arcus.lastSyncAt", String(Date.now()));
+      } catch {}
+      setUnsynced(false);
+      setSyncMsg({
+        ok: true,
+        text: (auto ? "Auto-synced " : "Synced to Android ") + new Date().toLocaleTimeString(),
+      });
+    } catch (error: any) {
+      setSyncMsg({
+        ok: false,
+        text: "Sync failed: " + (error?.code ? error.code + " · " : "") + (error?.message || "unknown error"),
+      });
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+  const syncToCloudRef = useRef(syncToCloud);
+  syncToCloudRef.current = syncToCloud;
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => {
+      let last = 0;
+      try {
+        last = Number(localStorage.getItem("arcus.lastSyncAt")) || 0;
+      } catch {}
+      if (cloudSyncReady.current && unsyncedRef.current && Date.now() - last >= SYNC_EVERY_MS)
+        void syncToCloudRef.current(true);
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [user]);
   useEffect(() => {
     if (window.arcusDesktop?.isDesktop) {
       window.arcusDesktop.onPrices((d: any) => {
@@ -1727,6 +1735,26 @@ function App() {
               />
             )}
           </label>
+          <button
+            className={"history-button sync-button" + (unsynced ? " dirty" : "")}
+            disabled={syncBusy}
+            title={
+              user
+                ? "Send everything from the web app to your account so the Android app gets it"
+                : "Sign in first, then sync to Android"
+            }
+            onClick={() => void syncToCloud(false)}
+          >
+            {syncBusy ? "Syncing…" : "⇅ Sync to Android"}
+          </button>
+          {user && (syncMsg || unsynced) && (
+            <span
+              className={"sync-msg " + (syncMsg ? (syncMsg.ok ? "ok" : "err") : "warn")}
+              title={syncMsg?.text}
+            >
+              {syncMsg ? syncMsg.text : "● Unsynced changes"}
+            </span>
+          )}
           <button
             className="history-button account-button"
             title={user?.email || "Sign in to sync alerts across devices"}

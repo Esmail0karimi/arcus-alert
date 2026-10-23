@@ -114,7 +114,7 @@ public final class FirebaseSync {
         if (listener != null || !signedIn()) return;
         listener = stateRef().addSnapshotListener((snapshot, error) -> {
             if (error != null) { notifyStatus(currentStatus, "Cloud sync error: " + error.getMessage()); return; }
-            if (snapshot == null || !snapshot.exists()) { syncNow(); return; }
+            if (snapshot == null || !snapshot.exists()) return; // web app is the master: nothing to push
             boolean firstCloudSnapshot = !cloudInitialized;
             try {
                 applying = true;
@@ -145,81 +145,24 @@ public final class FirebaseSync {
                     JSONArray local = new JSONArray(p.getString("levels", "[]"));
                     LinkedHashMap<String, JSONObject> merged = new LinkedHashMap<>();
                     for (int i=0;i<cloud.length();i++) { JSONObject o=cloud.optJSONObject(i); if(o!=null) merged.put(levelKey(o),o); }
-                    if (firstCloudSnapshot) for (int i=0;i<local.length();i++) { JSONObject o=local.optJSONObject(i); if(o!=null) merged.putIfAbsent(levelKey(o),o); }
                     JSONArray result = new JSONArray(); for(JSONObject o:merged.values()) result.put(o);
                     p.edit().putString("levels", result.toString()).apply();
                 }
                 if (snapshot.contains("favorites")) {
-                    Set<String> merged = firstCloudSnapshot ? new HashSet<>(p.getStringSet("favorites", new HashSet<>())) : new HashSet<>();
+                    Set<String> merged = new HashSet<>();
                     Object v = snapshot.get("favorites");
                     if (v instanceof List) for (Object s : (List<?>)v) if(s!=null) merged.add(String.valueOf(s));
                     p.edit().putStringSet("favorites", merged).apply();
-                }
-                if (snapshot.contains("history") && snapshot.get("history") instanceof List) {
-                    JSONArray h = new JSONArray();
-                    for (Object item : (List<?>)snapshot.get("history")) if(item instanceof Map) {
-                        Map<?,?> m=(Map<?,?>)item; JSONObject o=new JSONObject();
-                        o.put("symbol",String.valueOf(m.get("symbol")));
-                        o.put("price",number(m.get("actual") == null ? m.get("price") : m.get("actual")));
-                        o.put("target",number(m.get("price")));
-                        o.put("time",String.valueOf(m.get("time")));
-                        h.put(o);
-                    }
-                    if (firstCloudSnapshot) {
-                        JSONArray localHistory = new JSONArray(p.getString("history", "[]"));
-                        Set<String> seen = new HashSet<>();
-                        for (int i=0;i<h.length();i++) { JSONObject o=h.optJSONObject(i); if(o!=null) seen.add(o.optString("symbol")+"|"+o.optString("target",o.optString("price"))+"|"+o.optString("time")); }
-                        for (int i=0;i<localHistory.length();i++) { JSONObject o=localHistory.optJSONObject(i); if(o==null) continue; String key=o.optString("symbol")+"|"+o.optString("target",o.optString("price"))+"|"+o.optString("time"); if(seen.add(key)) h.put(o); }
-                    }
-                    p.edit().putString("history",h.toString()).apply();
                 }
                 notifyStatus(currentStatus, "Cloud sync active · " + accountEmail());
                 cloudInitialized = true;
             } catch (Exception e) { notifyStatus(currentStatus, "Cloud data error: " + e.getMessage()); }
             finally { applying = false; }
-            if (firstCloudSnapshot) main.postDelayed(FirebaseSync::syncNow, 400);
         });
     }
 
-    public static void syncNow() {
-        if (!signedIn() || applying || db == null || appContext == null) return;
-        try {
-            SharedPreferences p = appContext.getSharedPreferences("arcus_native", 0);
-            JSONArray local = new JSONArray(p.getString("levels", "[]"));
-            ArrayList<Map<String,Object>> levels = new ArrayList<>();
-            for (int i=0;i<local.length();i++) {
-                JSONObject o=local.optJSONObject(i); if(o==null) continue;
-                int mode=o.optInt("mode",0);
-                Map<String,Object> item=new HashMap<>();
-                item.put("id",levelId(o));
-                item.put("symbol",o.optString("symbol"));
-                item.put("price",o.optDouble("price",0));
-                item.put("mode",mode==2?"NEAR":mode==1?"TOUCH":"CROSS");
-                item.put("nearPct",o.optDouble("nearPct",0.1));
-                item.put("enabled",o.optBoolean("enabled",true));
-                levels.add(item);
-            }
-            Set<String> fav=p.getStringSet("favorites",new HashSet<>());
-            ArrayList<String> favorites=new ArrayList<>(fav);
-            JSONArray rawHistory=new JSONArray(p.getString("history","[]"));
-            ArrayList<Map<String,Object>> history=new ArrayList<>();
-            for(int i=0;i<rawHistory.length();i++) {
-                JSONObject o=rawHistory.optJSONObject(i); if(o==null) continue;
-                Map<String,Object> item=new HashMap<>();
-                item.put("id",String.valueOf(o.optString("time",i+"")));
-                item.put("symbol",o.optString("symbol"));
-                item.put("price",o.optDouble("target",o.optDouble("price",0)));
-                item.put("actual",o.optDouble("price",0));
-                item.put("time",System.currentTimeMillis());
-                history.add(item);
-            }
-            Map<String,Object> data=new HashMap<>();
-            data.put("levels",levels); data.put("favorites",favorites); data.put("history",history);
-            data.put("schemaVersion",1); data.put("updatedAt",FieldValue.serverTimestamp());
-            stateRef().set(data, com.google.firebase.firestore.SetOptions.merge())
-                .addOnFailureListener(e -> {});
-        } catch (Exception ignored) {}
-    }
+    /** The web app is the master copy: the phone only receives alerts and never writes them back. */
+    public static void syncNow() { }
 
     /** Id shared with the cloud: the stored cloud id, or the creation time for alerts made on this phone. */
     private static String levelId(JSONObject o) {

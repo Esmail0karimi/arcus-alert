@@ -217,3 +217,10 @@ main.chart-full .fs-only{display:inline-block!important}
   .chart-workspace.watch-closed{grid-template-columns:40px minmax(0,1fr)!important}
   .chart-workspace.rail-closed.watch-closed{grid-template-columns:minmax(0,1fr)!important}
 }
+
+/* sync to Android */
+.sync-button.dirty{border-color:#f2b84b;color:#f2b84b}
+.sync-msg{font-size:11px;max-width:300px;line-height:1.35;font-weight:600}
+.sync-msg.ok{color:#00d7ae}
+.sync-msg.err{color:#ff5c6c}
+.sync-msg.warn{color:#f2b84b}
