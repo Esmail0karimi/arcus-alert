@@ -1,6 +1,7 @@
 /* Text notes on the chart: place, edit, drag, recolour, resize, delete. Stored per symbol (localStorage). */
 import { Candle, barSpan } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
+import { undoManager } from "../undo";
 
 const KEY = "arcus.chartx.notes.v1";
 type Note = {
@@ -40,6 +41,27 @@ export class NotesLayer {
   private cleanups: (() => void)[] = [];
   private editing = false;
   private color = "#f2b84b";
+  private clone(): Note[] {
+    return JSON.parse(JSON.stringify(this.notes));
+  }
+  private setNotes(list: Note[]) {
+    this.notes = JSON.parse(JSON.stringify(list));
+    if (!this.notes.some((n) => n.id === this.selected)) this.selected = null;
+    this.persist();
+    this.dirty = true;
+  }
+  private record(before: Note[]) {
+    const after = this.clone();
+    if (JSON.stringify(after) === JSON.stringify(before)) return;
+    const sym = this.symbol;
+    undoManager.push({
+      tag: "cx",
+      undo: () => this.symbol === sym && this.setNotes(before),
+      redo: () => this.symbol === sym && this.setNotes(after),
+    });
+  }
+  private dragBefore: Note[] | null = null;
+  private colorBefore: Note[] | null = null;
 
   private svg = svgEl("svg", { class: "cx-svg cx-notes" }) as SVGSVGElement;
   private catcher = document.createElement("div");
@@ -58,7 +80,22 @@ export class NotesLayer {
     this.pop.style.display = "none";
     this.popColor.type = "color";
     this.popColor.title = "Text colour";
-    this.popColor.oninput = () => this.patch({ color: this.popColor.value });
+    this.popColor.oninput = () => {
+      if (!this.colorBefore) this.colorBefore = this.clone();
+      const n = this.sel();
+      if (n) {
+        n.color = this.popColor.value;
+        this.dirty = true;
+      }
+    };
+    this.popColor.onchange = () => {
+      if (this.colorBefore) {
+        const b = this.colorBefore;
+        this.colorBefore = null;
+        this.persist();
+        this.record(b);
+      }
+    };
     const smaller = btn("A−", "Smaller text"),
       bigger = btn("A+", "Bigger text"),
       edit = btn("✎", "Edit text"),
@@ -94,6 +131,7 @@ export class NotesLayer {
       e.preventDefault();
       this.select(hit);
       this.drag = { id: hit, moved: false };
+      this.dragBefore = this.clone();
       this.onSelected();
     };
     const onMove = (e: PointerEvent) => {
@@ -109,7 +147,11 @@ export class NotesLayer {
     const onUp = (e: PointerEvent) => {
       if (!this.drag) return;
       e.stopImmediatePropagation();
-      if (this.drag.moved) this.persist();
+      if (this.drag.moved) {
+        this.persist();
+        if (this.dragBefore) this.record(this.dragBefore);
+      }
+      this.dragBefore = null;
       this.drag = null;
     };
     const onDbl = (e: MouseEvent) => {
@@ -195,6 +237,21 @@ export class NotesLayer {
     this.host.querySelectorAll(".cx-note-input").forEach((el) => el.remove());
   }
 
+  /** Snapshot / restore used by the undo stack in ChartX. */
+  getState(): string {
+    return JSON.stringify(this.notes);
+  }
+  setState(json: string) {
+    try {
+      this.notes = JSON.parse(json);
+    } catch {
+      this.notes = [];
+    }
+    this.selected = null;
+    this.persist();
+    this.dirty = true;
+  }
+
   /** Called every animation frame by ChartX; only redraws when the view or the notes changed. */
   tick() {
     const ts = this.chart.timeScale();
@@ -225,7 +282,9 @@ export class NotesLayer {
   private patch(p: Partial<Note>) {
     const n = this.sel();
     if (!n) return;
+    const before = this.clone();
     Object.assign(n, p);
+    this.record(before);
     this.persist();
     this.dirty = true;
   }
@@ -238,7 +297,9 @@ export class NotesLayer {
   }
   private deleteSelected() {
     if (!this.selected) return;
+    const before = this.clone();
     this.notes = this.notes.filter((n) => n.id !== this.selected);
+    this.record(before);
     this.selected = null;
     this.persist();
     this.dirty = true;
@@ -309,6 +370,7 @@ export class NotesLayer {
       input.remove();
       this.editing = false;
       if (commit) {
+        const before = this.clone();
         if (existing) {
           if (text) existing.text = text;
           else this.notes = this.notes.filter((n) => n.id !== existing.id);
@@ -325,6 +387,7 @@ export class NotesLayer {
           this.select(n.id);
           this.onSelected();
         }
+        this.record(before);
         this.persist();
       }
       this.dirty = true;

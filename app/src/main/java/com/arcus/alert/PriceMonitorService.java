@@ -27,6 +27,9 @@ Iterator<String> it=stats.keys();while(it.hasNext()){String symbol=it.next();JSO
 }catch(Exception ignored){}
 }
 JSONObject find(JSONObject d,String symbol){Iterator<String> it=d.keys();while(it.hasNext()){String key=it.next();JSONObject o=d.optJSONObject(key);if(o!=null&&(symbol.equalsIgnoreCase(key)||symbol.equalsIgnoreCase(o.optString("marketDisplayName"))||symbol.equalsIgnoreCase(o.optString("symbol"))||symbol.equalsIgnoreCase(o.optString("marketId"))))return o;}return null;}
+static final java.util.HashMap<Integer,Long> ALERT_NOTIFICATIONS=new java.util.HashMap<>();
+/** Removes earlier alert notifications (older than ageMs) so only the newest alert is on screen. */
+static void cancelOldAlertNotifications(android.content.Context c,long ageMs){NotificationManager m=(NotificationManager)c.getSystemService(NOTIFICATION_SERVICE);long now=System.currentTimeMillis();synchronized(ALERT_NOTIFICATIONS){java.util.Iterator<java.util.Map.Entry<Integer,Long>> it=ALERT_NOTIFICATIONS.entrySet().iterator();while(it.hasNext()){java.util.Map.Entry<Integer,Long> e=it.next();if(now-e.getValue()>=ageMs){m.cancel(e.getKey());it.remove();}}}}
 void alert(String sym,double target,double price){
 String direction="cross";String body=sym+" "+direction+" "+String.format(Locale.US,"%,.0f",target)+" · Current price "+String.format(Locale.US,"%,.0f",price);
 String key=sym+"|"+target+"|"+System.currentTimeMillis();
@@ -39,10 +42,10 @@ PendingIntent stopPending=PendingIntent.getService(this,notificationId,stopInten
 Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,ALERT_CHANNEL):new Notification.Builder(this);
 b.setContentTitle(sym+" "+direction+" "+String.format(Locale.US,"%,.0f",target)).setContentText("Current price "+String.format(Locale.US,"%,.0f",price))
 .setStyle(new Notification.BigTextStyle().bigText("ARCUS ALERT\\n"+body)).setSmallIcon(android.R.drawable.stat_notify_sync_noanim).setLargeIcon(notificationLogo()).setColor(Color.rgb(0,220,210))
-.setContentIntent(contentPending).setAutoCancel(true).setOngoing(true).setPriority(Notification.PRIORITY_MAX)
+.setContentIntent(contentPending).setAutoCancel(true).setOngoing(false).setPriority(Notification.PRIORITY_MAX)
 .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC).setDefaults(Notification.DEFAULT_VIBRATE)
 .addAction(android.R.drawable.ic_media_pause,"Stop sound",stopPending);
-((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(notificationId,b.build());
+cancelOldAlertNotifications(this,3000);((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(notificationId,b.build());synchronized(ALERT_NOTIFICATIONS){ALERT_NOTIFICATIONS.put(notificationId,System.currentTimeMillis());}
 playCustomSound();mainHandler.removeCallbacks(autoStop);mainHandler.postDelayed(autoStop,60000);
 getSharedPreferences(PREF,0).edit().putString("last_alert",body+" @ "+new Date()).apply();
 saveHistory(sym,price,target);

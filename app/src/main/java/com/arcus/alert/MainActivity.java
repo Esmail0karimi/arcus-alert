@@ -158,7 +158,7 @@ JSONArray h;try{h=new JSONArray(getSharedPreferences(PREF,0).getString("history"
 if(h.length()==0)box.addView(text("No notifications yet.",13,muted));
 for(int i=h.length()-1;i>=0;i--){JSONObject o=h.optJSONObject(i);if(o==null)continue;LinearLayout row=column();row.setPadding(dp(10),dp(9),dp(10),dp(9));row.setBackground(shape(card,10,0));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(6);box.addView(row,rp);row.addView(text(o.optString("symbol")+" · "+o.optString("price"),14,Color.WHITE));row.addView(text(o.optString("time"),11,muted));}
 ScrollView sv=new ScrollView(this);sv.addView(box);
-new AlertDialog.Builder(this).setTitle("Notifications").setView(sv).setNeutralButton("Clear history",(d,w)->{getSharedPreferences(PREF,0).edit().putString("history","[]").apply();renderHistory();}).setPositiveButton("Close",null).show();
+new AlertDialog.Builder(this).setTitle("Notifications").setView(sv).setNeutralButton("Clear history",(d,w)->{getSharedPreferences(PREF,0).edit().putString("history","[]").apply();PriceMonitorService.cancelOldAlertNotifications(this,0);renderHistory();}).setPositiveButton("Close",null).show();
 }
 String percentText(JSONObject o,int tf){
 String wanted=new String[]{"24h","4h","1h","15m"}[Math.max(0,Math.min(3,tf))];

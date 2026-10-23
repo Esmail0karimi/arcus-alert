@@ -8,6 +8,7 @@ import "./chartx.css";
 import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
 import { NotesLayer } from "./notes";
+import { undoManager } from "../undo";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
   DRAW_KEY = "arcus.chartx.drawings.v1";
@@ -154,6 +155,7 @@ export class ChartX {
       const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
       this.shapes = Array.isArray(all[symbol]) ? all[symbol] : [];
       this.notes.setSymbol(symbol);
+      undoManager.drop("cx");
       this.draft = null;
     }
     this.fill(true);
@@ -187,6 +189,7 @@ export class ChartX {
       } catch {}
     });
     this.notes.destroy();
+    undoManager.drop("cx");
     [
       this.legend,
       this.bar,
@@ -247,9 +250,14 @@ export class ChartX {
     );
     this.popColor.type = "color";
     this.popColor.title = "Line colour";
+    this.popColor.onchange = () => {
+      if (this.colorBefore) this.record(this.colorBefore);
+      this.colorBefore = null;
+    };
     this.popColor.oninput = () => {
       const sh = this.shapes.find((x) => x.id === this.selected);
       if (!sh) return;
+      if (!this.colorBefore) this.colorBefore = this.cloneShapes();
       sh.color = this.popColor.value;
       this.persistShapes();
       this.lastSig = "";
@@ -264,6 +272,28 @@ export class ChartX {
     );
     this.host.append(this.svg, this.legend, this.bar, this.catcher, this.pop);
   }
+
+  private cloneShapes(): Shape[] {
+    return JSON.parse(JSON.stringify(this.shapes));
+  }
+  private setShapes(list: Shape[]) {
+    this.shapes = JSON.parse(JSON.stringify(list));
+    if (!this.shapes.some((x) => x.id === this.selected)) this.selected = null;
+    this.persistShapes();
+    this.lastSig = "";
+  }
+  /** Register an undo step: `before` is the list as it was, the current list is the "after". */
+  private record(before: Shape[]) {
+    const after = this.cloneShapes();
+    if (JSON.stringify(after) === JSON.stringify(before)) return;
+    const sym = this.symbol;
+    undoManager.push({
+      tag: "cx",
+      undo: () => this.symbol === sym && this.setShapes(before),
+      redo: () => this.symbol === sym && this.setShapes(after),
+    });
+  }
+  private colorBefore: Shape[] | null = null;
 
   private persistShapes() {
     const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
@@ -392,12 +422,14 @@ export class ChartX {
       if (!p || !this.drawing) return;
       if (!this.draft) this.draft = { a: p, b: p };
       else {
+        const before = this.cloneShapes();
         this.shapes.push({
           id: Date.now().toString(36),
           a: this.draft.a,
           b: p,
           color: "#4aa3ff",
         });
+        this.record(before);
         this.persistShapes();
         this.setDrawing(false);
       }
@@ -422,7 +454,9 @@ export class ChartX {
   }
   private deleteSelected() {
     if (!this.selected) return;
+    const before = this.cloneShapes();
     this.shapes = this.shapes.filter((x) => x.id !== this.selected);
+    this.record(before);
     this.selected = null;
     this.persistShapes();
     this.lastSig = "";

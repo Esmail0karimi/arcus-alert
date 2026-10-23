@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
 import { categoryFromMarket, classifySymbol, type Category } from "./category";
+import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
 import {
@@ -619,6 +620,7 @@ function App() {
             const rf = Array.isArray(remote.favorites) ? remote.favorites : [];
             const rh = Array.isArray(remote.history) ? remote.history : [];
             const rd = Array.isArray(remote.drawings) ? remote.drawings : [];
+            skipUndoOnce();
             setLevels(rl);
             setFavorites(rf);
             setHistory(rh);
@@ -963,6 +965,7 @@ function App() {
     }
     previousPrices.current = next;
     if (fired.length) {
+      skipUndoOnce();
       setAlertBanners((b) => [...fired, ...b].slice(0, 20));
       setHistory((h) => [...fired, ...h].slice(0, 200));
       setLevels((v) => v.filter((l) => !fired.some((f) => f.id === l.id)));
@@ -1505,6 +1508,63 @@ function App() {
     setFavorites((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
   const drawingDrag = useRef<string | null>(null),
     drawingMoved = useRef(false);
+  // ---- Undo / redo (Ctrl+Z, Ctrl+Y) for alerts, favourites and horizontal lines ----
+  const appPrev = useRef({ levels, favorites, drawings }),
+    appSkip = useRef(true),
+    appLastPush = useRef(0);
+  const skipUndoOnce = () => {
+    appSkip.current = true;
+    window.setTimeout(() => (appSkip.current = false), 120);
+  };
+  useEffect(() => {
+    const prev = appPrev.current;
+    appPrev.current = { levels, favorites, drawings };
+    if (appSkip.current) {
+      appSkip.current = false;
+      return;
+    }
+    if (prev.levels === levels && prev.favorites === favorites && prev.drawings === drawings) return;
+    const now = Date.now();
+    // a drag produces many changes in a row: keep one undo step for the whole gesture
+    if (now - appLastPush.current > 700) {
+      const before = prev;
+      let after = { levels, favorites, drawings };
+      const restore = (v: { levels: any[]; favorites: any[]; drawings: any[] }) => {
+        skipUndoOnce();
+        setLevels(v.levels);
+        setFavorites(v.favorites);
+        setDrawings(v.drawings);
+      };
+      undoManager.push({
+        tag: "app",
+        undo: () => {
+          const c = latestCloudState.current;
+          after = { levels: c.levels, favorites: c.favorites, drawings: c.drawings };
+          restore(before);
+        },
+        redo: () => restore(after),
+      });
+    }
+    appLastPush.current = now;
+  }, [levels, favorites, drawings]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && (t as HTMLInputElement).type !== "color")
+        return; // let text fields use their own undo
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        setStatus(undoManager.undo() ? "Undone (Ctrl+Z)" : "Nothing to undo");
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        setStatus(undoManager.redo() ? "Redone (Ctrl+Y)" : "Nothing to redo");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [alertBanners, setAlertBanners] = useState<AlertEvent[]>([]);
   const [notifPerm, setNotifPerm] = useState<string>(() =>
     typeof Notification === "undefined" ? "unsupported" : Notification.permission,
