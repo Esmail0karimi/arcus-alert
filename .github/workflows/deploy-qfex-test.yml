@@ -1,0 +1,76 @@
+name: Deploy QFEX experiment (isolated test path)
+
+# Publishes the SAME site users already see (production root + /preview) plus an experimental build at /qfex-test/.
+# The experiment build has cloud sync pointed at a dummy Firebase project, so it can never touch real user data.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/qfex
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: arcus-alert-preview-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout production web branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/web-platform
+          path: production
+      - name: Checkout preview branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/final-polish-web-2026
+          path: preview-src
+      - name: Checkout QFEX experiment
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/qfex
+          path: qfex-src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build production site
+        working-directory: production/desktop
+        run: |
+          npm install
+          npm run build
+      - name: Build preview
+        working-directory: preview-src/desktop
+        run: |
+          npm install
+          npm run build
+      - name: Build QFEX experiment
+        working-directory: qfex-src/desktop
+        run: |
+          npm install
+          npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p site/preview site/qfex-test
+          cp -a production/desktop/renderer/. site/
+          cp -a preview-src/desktop/renderer/. site/preview/
+          cp -a qfex-src/desktop/renderer/. site/qfex-test/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}qfex-test/
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

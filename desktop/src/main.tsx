@@ -8,6 +8,7 @@ import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
+import { isQfexSymbol, fetchQfexCandles, startQfexFeed } from "./qfex";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -89,6 +90,7 @@ function App() {
   const [tab, setTab] = useState("Market"),
     [prices, setPrices] = useState<Record<string, Price>>({}),
     [status, setStatus] = useState("Connecting to Arcus…"),
+    [qfexMsg, setQfexMsg] = useState("QFEX: connecting…"),
     [symbol, setSymbol] = useState(""),
     [query, setQuery] = useState(""),
     [tf, setTf] = useState("15m"),
@@ -915,7 +917,19 @@ function App() {
       }
     };
     connect();
+    // EXPERIMENT: QFEX feed (symbols are prefixed "QFEX:")
+    const stopQfex = startQfexFeed(
+      applyPrices,
+      (names) => {
+        for (const n of names) {
+          const base = n.replace(/^QFEX:/, "").replace(/-USD$/, "");
+          marketCategories.current[n] = classifySymbol(base) === "Commodities" ? "Commodities" : "Stocks";
+        }
+      },
+      (m) => setQfexMsg(m),
+    );
     return () => {
+      stopQfex();
       stopped = true;
       if (flushTimer !== undefined) window.clearTimeout(flushTimer);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
@@ -1124,6 +1138,7 @@ function App() {
       requestTf = tf;
     setChartStatus("Loading " + requestSymbol + " · " + requestTf + " candles…");
     if (series.current) series.current.setData([]);
+    const isQ = isQfexSymbol(requestSymbol);
     const load = async () => {
       try {
         const readyAt = Date.now() + 2500;
@@ -1136,13 +1151,14 @@ function App() {
         const idWaitUntil = Date.now() + 3000;
         while (
           !cancelled &&
+          !isQ &&
           !pricesRef.current[requestSymbol]?.marketId &&
           Date.now() < idWaitUntil
         )
           await new Promise((r) => setTimeout(r, 60));
         if (cancelled) return;
         const marketId = pricesRef.current[requestSymbol]?.marketId;
-        const marketKeys = [
+        const marketKeys = isQ ? [] : [
           ...(marketId ? [marketId] : []),
           ...(marketId && marketId !== requestSymbol
             ? [requestSymbol]
@@ -1155,6 +1171,15 @@ function App() {
         const cacheKey = requestSymbol + "|" + requestTf;
         const cached = CANDLE_CACHE.get(cacheKey);
         if (cached && Date.now() - cached.at < 30000) candles = cached.candles;
+        if (isQ && !candles.length) {
+          try {
+            candles = await fetchQfexCandles(requestSymbol, requestTf, controller.signal);
+            CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
+          } catch (err: any) {
+            if (err?.name === "AbortError" || cancelled) return;
+            lastError = err?.message || "QFEX candle request failed";
+          }
+        }
         // Phase 1: a small request (250 candles) so the chart appears quickly; the full history follows.
         let fastShown = false;
         const spanByTf: Record<string, number> = {
@@ -1799,7 +1824,7 @@ function App() {
           </div>
         </div>
         <div className="connection">
-          <i /> {status}
+          <i /> {status} · {qfexMsg} · EXPERIMENT
         </div>
         <div className="header-actions">
           {!window.arcusDesktop?.isDesktop && (
