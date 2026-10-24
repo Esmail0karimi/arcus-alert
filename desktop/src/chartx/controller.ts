@@ -65,6 +65,7 @@ export class ChartX {
   private cleanups: (() => void)[] = [];
 
   private legend = h("div", "cx-legend");
+  private srcEl = h("div", "cx-src");
   private bar = h("div", "cx-bar");
   private svg = svgEl("svg", { class: "cx-svg" }) as SVGSVGElement;
   private catcher = h("div", "cx-catcher");
@@ -270,7 +271,7 @@ export class ChartX {
     ["pointerdown", "pointerup", "click"].forEach((ev) =>
       this.pop.addEventListener(ev, (e) => e.stopPropagation()),
     );
-    this.host.append(this.svg, this.legend, this.bar, this.catcher, this.pop);
+    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop);
   }
 
   private cloneShapes(): Shape[] {
@@ -361,6 +362,11 @@ export class ChartX {
       put(this.smaS, sma(tail, 7));
       put(this.rsiS, rsi(tail, 14)); // 200 bars is plenty for Wilder smoothing to converge
     } catch {}
+  }
+
+  /** Small label at the top left telling where the candles come from. */
+  setSource(text: string) {
+    this.srcEl.textContent = text;
   }
 
   /* ---------- legend ---------- */

@@ -8,7 +8,7 @@ import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
-import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote } from "./exchanges";
+import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote, candleSrc, getCandles } from "./exchanges";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -1241,9 +1241,13 @@ function App() {
         const cacheKey = requestSymbol + "|" + requestTf;
         const cached = CANDLE_CACHE.get(cacheKey);
         if (cached && Date.now() - cached.at < 30000) candles = cached.candles;
+        let srcLabel = ex ? (candles.length ? candleSrc[requestSymbol] || ex.label : "") : "Arcus";
         if (ex && !candles.length) {
           try {
-            candles = ex.candles ? await ex.candles(requestSymbol, requestTf, controller.signal) : [];
+            const res = await getCandles(ex, requestSymbol, requestTf, controller.signal);
+            candles = res.rows;
+            lastError = res.err || lastError;
+            srcLabel = res.source;
             if (candles.length) CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
             if (candles.length && candleNote[requestSymbol]) setChartStatus(candleNote[requestSymbol]);
           } catch (err: any) {
@@ -1254,6 +1258,7 @@ function App() {
             const own = sampleCandles(requestSymbol, requestTf);
             if (own.length > 1) {
               candles = own;
+              srcLabel = "prices saved by this app";
               setChartStatus(ex.label + ": candles built from prices saved by this app (" + lastError + ")");
             }
           }
@@ -1267,6 +1272,7 @@ function App() {
               const sp = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 } as Record<string, number>)[requestTf] || 900;
               const t0 = Math.floor(Date.now() / 1000 / sp) * sp;
               candles = [{ time: t0, open: px, high: px, low: px, close: px, volume: 0 }];
+              srcLabel = "live ticks only";
               setChartStatus(ex.label + ": no candle history (" + lastError + ") · building live candles");
             }
           }
@@ -1435,6 +1441,7 @@ function App() {
         fullDone = true;
         activeSeries.setData(candles);
         chartX.current?.setCandles(candles, requestSymbol);
+        chartX.current?.setSource("Candles: " + (srcLabel || ex?.label || "Arcus"));
         const secondsByTf: Record<string, number> = {
           "1m": 60,
           "3m": 180,
@@ -2309,7 +2316,7 @@ function App() {
                     ? "Click chart to place a horizontal line"
                     : "Select the horizontal-line tool to draw"}
                 </div>
-                {adapterOf(symbol) && /no candle|error|built from|fail|blocked|http/i.test(chartStatus) && (
+                {adapterOf(symbol) && /^Chart error|no candle history/i.test(chartStatus) && (
                   <div className="chart-note">{chartStatus}</div>
                 )}
                 <div

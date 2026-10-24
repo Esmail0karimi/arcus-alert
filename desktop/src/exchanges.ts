@@ -291,26 +291,6 @@ const variational: Adapter = {
     const t = window.setInterval(poll, 2000);
     return () => window.clearInterval(t);
   },
-  // Variational publishes no candles: use Hyperliquid's candles of the same coin as history (live bars come from Variational).
-  candles: async (symbol, tf, signal) => {
-    const hk = hlMatch(symbol.slice(VR_P.length).split("-")[0]);
-    if (!hk) {
-      const base = symbol.slice(VR_P.length).split("-")[0];
-      try {
-        const rows = await binanceCandles(base, tf, signal);
-        if (rows.length) {
-          candleNote[symbol] = "Variational: history from Binance " + base + "USDT futures (Variational publishes no candles), live bars from Variational";
-          return rows;
-        }
-      } catch (e2: any) {
-        if (e2?.name === "AbortError") throw e2;
-      }
-      throw new Error("no Hyperliquid or Binance market with the same name to borrow history from");
-    }
-    const rows = await hlCandles(hk, tf, signal);
-    candleNote[symbol] = "Variational: history from Hyperliquid " + hk + " (Variational publishes no candles), live bars from Variational";
-    return rows;
-  },
 };
 
 /* ---------------- QFEX ---------------- */
@@ -353,28 +333,142 @@ async function binanceCandles(base: string, tf: string, signal?: AbortSignal): P
 const qfex: Adapter = {
   id: "qfex", label: "QFEX", prefix: QFEX_PREFIX, defaultCat: "Stocks", ownHistory: true,
   start: (p, s, st) => startQfexFeed(p as any, s, st),
-  candles: async (symbol, tf, signal) => {
-    try {
-      return await fetchQfexCandles(symbol, tf, signal);
-    } catch (err: any) {
-      if (err?.name === "AbortError") throw err;
-      const base = symbol.slice(QFEX_PREFIX.length).split("-")[0].toUpperCase();
-      try {
-        const rows = await binanceCandles(base, tf, signal);
-        if (rows.length) {
-          candleNote[symbol] = "QFEX: history from Binance " + base + "USDT futures (QFEX candle API is blocked for web pages), live bars from QFEX";
-          return rows;
-        }
-      } catch (e2: any) {
-        if (e2?.name === "AbortError") throw e2;
-      }
-      const k = await xyzFor(base);
-      if (!k) throw new Error((err?.message || "QFEX candles unavailable") + " · and no Hyperliquid (xyz) market named " + base);
-      const rows = await hlCandles(k, tf, signal);
-      candleNote[symbol] = "QFEX: history from Hyperliquid " + k + " (QFEX candle API is blocked for web pages), live bars from QFEX";
-      return rows;
-    }
+  candles: fetchQfexCandles,
+};
+
+/* ---- other public exchanges used as fallback history / 24h change ---- */
+const jget = async (url: string, signal?: AbortSignal) => {
+  const r = await fetch(url, { signal });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+};
+const BYBIT_IV: Record<string, string> = { "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "2h": "120", "4h": "240", "1d": "D", "1w": "W" };
+const OKX_IV: Record<string, string> = { "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H", "4h": "4H", "1d": "1D", "1w": "1W" };
+const CB_IV: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 };
+type Src = { name: string; fn: (base: string, tf: string, signal?: AbortSignal) => Promise<QCandle[]> };
+const SOURCES: Src[] = [
+  { name: "Binance", fn: (base, tf, signal) => binanceCandles(base, tf, signal) },
+  {
+    name: "Hyperliquid",
+    fn: async (base, tf, signal) => {
+      const k = hlMatch(base) || (await xyzFor(base));
+      if (!k) throw new Error("no market");
+      return hlCandles(k, tf, signal);
+    },
   },
+  {
+    name: "Bybit",
+    fn: async (base, tf, signal) => {
+      if (!BYBIT_IV[tf]) throw new Error("timeframe");
+      const j = await jget("https://api.bybit.com/v5/market/kline?category=linear&symbol=" + base + "USDT&interval=" + BYBIT_IV[tf] + "&limit=1000", signal);
+      return cleanCandles((j?.result?.list || []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
+    },
+  },
+  {
+    name: "OKX",
+    fn: async (base, tf, signal) => {
+      if (!OKX_IV[tf]) throw new Error("timeframe");
+      const j = await jget("https://www.okx.com/api/v5/market/candles?instId=" + base + "-USDT-SWAP&bar=" + OKX_IV[tf] + "&limit=300", signal);
+      return cleanCandles((j?.data || []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
+    },
+  },
+  {
+    name: "Coinbase",
+    fn: async (base, tf, signal) => {
+      if (!CB_IV[tf]) throw new Error("timeframe");
+      const k = await jget("https://api.exchange.coinbase.com/products/" + base + "-USD/candles?granularity=" + CB_IV[tf], signal);
+      return cleanCandles((Array.isArray(k) ? k : []).map((c: any) => ({ time: num(c[0]), low: num(c[1]), high: num(c[2]), open: num(c[3]), close: num(c[4]), volume: num(c[5]) })));
+    },
+  },
+];
+const baseOf = (ad: Adapter, symbol: string) => symbol.slice(ad.prefix.length).split("-")[0].toUpperCase();
+const baseVariants = (b: string) => {
+  const s = /^K[A-Z]{3,}$/.test(b) ? b.slice(1) : b;
+  return Array.from(new Set([b, s, "1000" + s]));
+};
+export const candleSrc: Record<string, string> = {};
+const deadUntil: Record<string, number> = {};
+/** Candles for a symbol: the exchange's own API first, then other public exchanges that list the same asset. */
+export async function getCandles(ad: Adapter, symbol: string, tf: string, signal?: AbortSignal) {
+  const errs: string[] = [];
+  delete candleNote[symbol];
+  delete candleSrc[symbol];
+  if (ad.candles) {
+    try {
+      const rows = await ad.candles(symbol, tf, signal);
+      if (rows.length) return { rows, source: ad.label, err: "" };
+      errs.push(ad.label + ": no candles");
+    } catch (e: any) {
+      if (e?.name === "AbortError") throw e;
+      errs.push(ad.label + ": " + (e?.message || "failed"));
+    }
+  } else errs.push(ad.label + " has no candle history");
+  const base = baseOf(ad, symbol);
+  for (const src of SOURCES) {
+    if ((deadUntil[src.name] || 0) > Date.now()) continue;
+    for (const v of baseVariants(base)) {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 7000);
+      const onAbort = () => ctl.abort();
+      signal?.addEventListener("abort", onAbort);
+      try {
+        const rows = await src.fn(v, tf, ctl.signal);
+        if (rows.length) {
+          candleSrc[symbol] = src.name + " " + v;
+          candleNote[symbol] = ad.label + " has no usable candle API here: history from " + src.name + " " + v + ", live bars from " + ad.label;
+          return { rows, source: src.name + " " + v, err: errs.join(" · ") };
+        }
+      } catch (e: any) {
+        if (signal?.aborted) throw e;
+        // unreachable host (blocked / timeout): skip this exchange for a while instead of waiting every time
+        if (e instanceof TypeError || e?.name === "AbortError") {
+          deadUntil[src.name] = Date.now() + 10 * 60 * 1000;
+          break;
+        }
+      } finally {
+        window.clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      }
+    }
+  }
+  return { rows: [] as QCandle[], source: "", err: errs.join(" · ") + " · no other exchange lists " + base };
+}
+
+/* ---- 24h change from other exchanges, when the exchange itself gives none ---- */
+const extChange: Record<string, number> = {};
+let extStarted = false;
+const putExt = (sym: string, pct: number) => {
+  if (!Number.isFinite(pct)) return;
+  let b = sym.replace(/USDT$|-USDT-SWAP$/, "").toUpperCase().replace(/^1000(?=[A-Z])/, "");
+  if (b && extChange[b] == null) extChange[b] = pct;
+};
+const startExtChange = () => {
+  if (extStarted) return;
+  extStarted = true;
+  const run = async () => {
+    const [bn, by, ok] = await Promise.allSettled([
+      jget("https://fapi.binance.com/fapi/v1/ticker/24hr"),
+      jget("https://api.bybit.com/v5/market/tickers?category=linear"),
+      jget("https://www.okx.com/api/v5/market/tickers?instType=SWAP"),
+    ]);
+    const fresh: Record<string, number> = {};
+    const keep = { ...extChange };
+    for (const k of Object.keys(extChange)) delete extChange[k];
+    if (bn.status === "fulfilled" && Array.isArray(bn.value)) for (const t of bn.value) if (/USDT$/.test(t.symbol)) putExt(t.symbol, num(t.priceChangePercent));
+    if (by.status === "fulfilled") for (const t of by.value?.result?.list || []) if (/USDT$/.test(t.symbol)) putExt(t.symbol, num(t.price24hPcnt) * 100);
+    if (ok.status === "fulfilled") for (const t of ok.value?.data || []) if (/-USDT-SWAP$/.test(t.instId) && num(t.open24h) > 0) putExt(t.instId, (num(t.last) / num(t.open24h) - 1) * 100);
+    if (!Object.keys(extChange).length) Object.assign(extChange, keep, fresh);
+  };
+  void run();
+  window.setInterval(run, 60000);
+};
+export const extChangeFor = (base: string): number | null => {
+  const b = base.toUpperCase();
+  for (const v of baseVariants(b)) {
+    const x = extChange[v.replace(/^1000/, "")];
+    if (x != null) return x;
+  }
+  return null;
 };
 
 export const ADAPTERS: Adapter[] = [qfex, hyperliquid, lighter, variational];
@@ -384,17 +478,22 @@ export const displayName = (symbol: string) => {
   return a ? symbol.slice(a.prefix.length) : symbol;
 };
 
-/** Starts an adapter; adapters without own 24h data get it from saved samples. */
+/** Starts an adapter. A missing 24h change comes from other exchanges, then from prices saved by this app. */
 export function startAdapter(ad: Adapter, onPrices: (t: Tick[]) => void, onSymbols: (r: SymRow[]) => void, onStatus: (m: string) => void) {
-  const wrapped = ad.ownHistory
-    ? (items: Tick[]) => {
-        for (const t of items) {
-          recordSample(t.marketDisplayName, t.markPrice);
+  startExtChange();
+  const wrapped = (items: Tick[]) => {
+    for (const t of items) {
+      if (ad.ownHistory) recordSample(t.marketDisplayName, t.markPrice);
+      if (t.change24h == null) {
+        const x = extChangeFor(baseOf(ad, t.marketDisplayName));
+        if (x != null) t.change24h = x;
+        else if (ad.ownHistory) {
           const c = ownChange24h(t.marketDisplayName, t.markPrice);
-          if (c != null && t.change24h == null) t.change24h = c;
+          if (c != null) t.change24h = c;
         }
-        onPrices(items);
       }
-    : onPrices;
+    }
+    onPrices(items);
+  };
   return ad.start(wrapped, onSymbols, onStatus);
 }

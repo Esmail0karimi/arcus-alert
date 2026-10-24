@@ -80,3 +80,5 @@
 .cx-text-catcher{cursor:text}
 .cx-notes{z-index:4}
 .cx-note-input{position:absolute;z-index:30;background:rgba(0,0,0,.85);border:1px solid #4aa3ff;border-radius:4px;padding:2px 6px;min-width:120px;width:auto;outline:none;font-weight:600}
+
+.cx-src{position:absolute;left:8px;top:24px;z-index:4;font-size:10px;color:#7f97b2;pointer-events:none;letter-spacing:.2px}
