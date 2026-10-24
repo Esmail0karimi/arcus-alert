@@ -8,7 +8,7 @@ import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
-import { ADAPTERS, adapterOf, displayName } from "./exchanges";
+import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles } from "./exchanges";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -825,6 +825,7 @@ function App() {
         const marketId = String(item?.marketId ?? "");
         const price = Number(item?.markPrice ?? item?.price);
         if (!name || !Number.isFinite(price) || price <= 0) continue;
+        if (Number.isFinite(item?.change24h)) marketChanges.current[name] = Number(item.change24h);
         pendingPrices[name] = {
           price,
           source: item?.markPrice != null ? "mark" : "oracle",
@@ -882,7 +883,7 @@ function App() {
           const value = Number(market?.priceChange24h);
           if (name && Number.isFinite(value)) changes[name] = value * 100;
         }
-        marketChanges.current = changes;
+        marketChanges.current = { ...marketChanges.current, ...changes };
         setPrices((current) => {
           const next = { ...current };
           for (const name of Object.keys(next))
@@ -949,7 +950,8 @@ function App() {
     connect();
     // EXPERIMENT: extra exchanges (symbols are prefixed, e.g. "QFEX:", "HL:", "LT:", "VR:")
     const stops = ADAPTERS.map((ad) =>
-      ad.start(
+      startAdapter(
+        ad,
         applyPrices,
         (rows) => {
           for (const { name: n, cat } of rows) {
@@ -1223,6 +1225,13 @@ function App() {
           } catch (err: any) {
             if (err?.name === "AbortError" || cancelled) return;
             lastError = err?.message || ex.label + " candle request failed";
+          }
+          if (!candles.length && ex.ownHistory) {
+            const own = sampleCandles(requestSymbol, requestTf);
+            if (own.length > 1) {
+              candles = own;
+              setChartStatus(ex.label + ": candles built from prices saved by this app (" + lastError + ")");
+            }
           }
           if (!candles.length) {
             // No history available (or blocked): start the chart from the live price and build candles from ticks.

@@ -2,8 +2,8 @@
    Symbols are namespaced with the adapter prefix so they never collide with Arcus symbols. */
 import { QFEX_PREFIX, startQfexFeed, fetchQfexCandles, type QCandle } from "./qfex";
 
-export type Tick = { marketDisplayName: string; marketId: string; markPrice: number; timestamp: number };
-export type SymRow = { name: string; cat: string };
+export type Tick = { marketDisplayName: string; marketId: string; markPrice: number; timestamp: number; change24h?: number };
+export type SymRow = { name: string; cat: string; change?: number };
 export type Adapter = {
   id: string;
   label: string;
@@ -12,7 +12,51 @@ export type Adapter = {
   defaultCat: "Crypto" | "Stocks";
   start: (onPrices: (t: Tick[]) => void, onSymbols: (r: SymRow[]) => void, onStatus: (m: string) => void) => () => void;
   candles?: (symbol: string, tf: string, signal?: AbortSignal) => Promise<QCandle[]>;
+  /** no usable 24h change / history from the exchange: derive them from prices this app saved itself */
+  ownHistory?: boolean;
 };
+
+/* ---- own price samples (every ~10 min, kept 26 h) -> 24h change and coarse candles ---- */
+const SKEY = "arcus.samples.v1", SAMPLE_MS = 10 * 60 * 1000, KEEP_MS = 26 * 3600 * 1000;
+let store: Record<string, [number, number][]> = {};
+try { store = JSON.parse(localStorage.getItem(SKEY) || "{}") || {}; } catch { store = {}; }
+let dirty = false;
+const saveStore = () => {
+  if (!dirty) return;
+  dirty = false;
+  try { localStorage.setItem(SKEY, JSON.stringify(store)); } catch {}
+};
+if (typeof window !== "undefined") {
+  window.setInterval(saveStore, 60000);
+  window.addEventListener("beforeunload", saveStore);
+}
+export function recordSample(name: string, price: number, now = Date.now()) {
+  const arr = store[name] || (store[name] = []);
+  const last = arr[arr.length - 1];
+  if (last && now - last[0] < SAMPLE_MS) return;
+  arr.push([now, price]);
+  while (arr.length && arr[0][0] < now - KEEP_MS) arr.shift();
+  dirty = true;
+}
+/** % change versus ~24 h ago; null until at least 22 h of own history exist */
+export function ownChange24h(name: string, price: number, now = Date.now()): number | null {
+  const arr = store[name];
+  if (!arr || arr.length < 2 || arr[0][0] > now - 22 * 3600 * 1000) return null;
+  let base = arr[0];
+  for (const s of arr) if (Math.abs(s[0] - (now - 24 * 3600 * 1000)) < Math.abs(base[0] - (now - 24 * 3600 * 1000))) base = s;
+  return base[1] > 0 ? (price / base[1] - 1) * 100 : null;
+}
+export function sampleCandles(name: string, tf: string): QCandle[] {
+  const sp = SPAN[tf] || 900;
+  const out: QCandle[] = [];
+  for (const [t, p] of store[name] || []) {
+    const b = Math.floor(t / 1000 / sp) * sp, last = out[out.length - 1];
+    if (last && last.time === b) {
+      last.high = Math.max(last.high, p); last.low = Math.min(last.low, p); last.close = p;
+    } else out.push({ time: b, open: p, high: p, low: p, close: p, volume: 0 });
+  }
+  return out;
+}
 
 const SPAN: Record<string, number> = {
   "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800,
@@ -56,6 +100,7 @@ function socket(url: string, onOpen: (ws: WebSocket) => void, onMsg: (m: any) =>
 /* ---------------- Hyperliquid ---------------- */
 const HL = "https://api.hyperliquid.xyz/info";
 const HL_P = "HL:";
+const hlCoin: Record<string, string> = {}; // upper-case key -> exact coin name (e.g. kPEPE)
 const hlPost = async (body: any, signal?: AbortSignal) => {
   const r = await fetch(HL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   if (!r.ok) throw new Error("Hyperliquid HTTP " + r.status);
@@ -74,8 +119,18 @@ const hyperliquid: Adapter = {
         (meta.universe || []).forEach((u: any, i: number) => {
           if (u.isDelisted) return;
           const px = num(ctxs[i]?.markPx);
-          rows.push({ name: HL_P + String(u.name).toUpperCase(), cat: "" });
-          if (px > 0) list.push({ marketDisplayName: HL_P + String(u.name).toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000 });
+          const prev = num(ctxs[i]?.prevDayPx);
+          hlCoin[String(u.name).toUpperCase()] = String(u.name);
+          rows.push({
+            name: HL_P + String(u.name).toUpperCase(),
+            cat: "",
+            change: px > 0 && prev > 0 ? ((px - prev) / prev) * 100 : undefined,
+          });
+          if (px > 0)
+            list.push({
+              marketDisplayName: HL_P + String(u.name).toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000,
+              change24h: prev > 0 ? (px / prev - 1) * 100 : undefined,
+            });
         });
         known = rows.length;
         onSymbols(rows);
@@ -104,7 +159,7 @@ const hyperliquid: Adapter = {
   async candles(symbol, tf, signal) {
     const interval = SPAN[tf] ? tf : "15m";
     const end = Date.now();
-    const rows = await hlPost({ type: "candleSnapshot", req: { coin: symbol.slice(HL_P.length), interval, startTime: end - SPAN[interval] * 1000 * 1500, endTime: end } }, signal);
+    const rows = await hlPost({ type: "candleSnapshot", req: { coin: hlCoin[symbol.slice(HL_P.length)] || symbol.slice(HL_P.length), interval, startTime: end - SPAN[interval] * 1000 * 1500, endTime: end } }, signal);
     return cleanCandles((Array.isArray(rows) ? rows : []).map((c: any) => ({ time: Math.floor(num(c.t) / 1000), open: num(c.o), high: num(c.h), low: num(c.l), close: num(c.c), volume: num(c.v) })));
   },
 };
@@ -125,7 +180,11 @@ const lighter: Adapter = {
         const px = num(s.mark_price ?? s.last_trade_price ?? s.index_price);
         if (s.market_id != null) ltIds[name] = Number(s.market_id);
         if (!seen.has(name)) { seen.add(name); onSymbols([{ name, cat: "" }]); }
-        if (px > 0) { lastMsg = Date.now(); onPrices([{ marketDisplayName: name, marketId: "LT", markPrice: px, timestamp: Date.now() / 1000 }]); }
+        if (px > 0) {
+          lastMsg = Date.now();
+          const ch = Number(s.daily_price_change ?? s.price_change_24h);
+          onPrices([{ marketDisplayName: name, marketId: "LT", markPrice: px, timestamp: Date.now() / 1000, change24h: Number.isFinite(ch) ? ch : undefined }]);
+        }
       } else for (const v of Object.values(s)) if (v && typeof v === "object") handleStat(v);
     };
     const stop = socket(LT.replace("https", "wss") + "/stream?readonly=true",
@@ -158,7 +217,7 @@ const lighter: Adapter = {
 /* ---------------- Variational (prices only, no candle history is published) ---------------- */
 const VR_P = "VR:";
 const variational: Adapter = {
-  id: "vr", label: "Variational", prefix: VR_P, defaultCat: "Crypto",
+  id: "vr", label: "Variational", prefix: VR_P, defaultCat: "Crypto", ownHistory: true,
   start(onPrices, onSymbols, onStatus) {
     const poll = async () => {
       try {
@@ -185,7 +244,7 @@ const variational: Adapter = {
 
 /* ---------------- QFEX ---------------- */
 const qfex: Adapter = {
-  id: "qfex", label: "QFEX", prefix: QFEX_PREFIX, defaultCat: "Stocks",
+  id: "qfex", label: "QFEX", prefix: QFEX_PREFIX, defaultCat: "Stocks", ownHistory: true,
   start: (p, s, st) => startQfexFeed(p as any, s, st),
   candles: fetchQfexCandles,
 };
@@ -196,3 +255,18 @@ export const displayName = (symbol: string) => {
   const a = adapterOf(symbol);
   return a ? symbol.slice(a.prefix.length) : symbol;
 };
+
+/** Starts an adapter; adapters without own 24h data get it from saved samples. */
+export function startAdapter(ad: Adapter, onPrices: (t: Tick[]) => void, onSymbols: (r: SymRow[]) => void, onStatus: (m: string) => void) {
+  const wrapped = ad.ownHistory
+    ? (items: Tick[]) => {
+        for (const t of items) {
+          recordSample(t.marketDisplayName, t.markPrice);
+          const c = ownChange24h(t.marketDisplayName, t.markPrice);
+          if (c != null) t.change24h = c;
+        }
+        onPrices(items);
+      }
+    : onPrices;
+  return ad.start(wrapped, onSymbols, onStatus);
+}
