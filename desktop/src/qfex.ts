@@ -104,13 +104,18 @@ export function startQfexFeed(
         err = e?.message || "";
       }
       if (!rows.length) {
-        const body = await getJson("/md/contracts");
-        rows = (Array.isArray(body?.data) ? body.data : []).map((c: any) => ({
-          sym: String(c.ticker_id),
-          price: Number(c.last_price ?? c.index_price),
-          cat: String(c.product_type || ""),
-        }));
-        if (!rows.length && err) throw new Error(err);
+        try {
+          const body = await getJson("/md/contracts");
+          rows = (Array.isArray(body?.data) ? body.data : []).map((c: any) => ({
+            sym: String(c.ticker_id),
+            price: Number(c.last_price ?? c.index_price),
+            cat: String(c.product_type || ""),
+          }));
+        } catch (e: any) {
+          if (e instanceof TypeError) throw e;
+          throw new Error((err ? err + " | " : "") + (e?.message || ""));
+        }
+        if (!rows.length) throw new Error((err ? err + " | " : "") + "QFEX returned an empty market list");
       }
       onSymbols(rows.map((c) => ({ name: QFEX_PREFIX + c.sym.toUpperCase(), cat: c.cat })));
       const stale = Date.now() - lastWs > 20000; // WebSocket silent: use the REST prices

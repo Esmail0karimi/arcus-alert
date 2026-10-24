@@ -235,3 +235,12 @@ main.chart-full .fs-only{display:inline-block!important}
 .alert-toast-body span{font-size:11px;color:#e6a8b1}
 .alert-toast>button{border:0;border-radius:0;background:transparent;color:#ffb3bd;font-size:20px;padding:0 12px}
 .alert-toast-clear{align-self:flex-end;font-size:11px;padding:4px 10px}
+
+/* exchange toggles (experiment) */
+.connection{flex-wrap:wrap}
+.exchange-row{display:flex;gap:6px;align-items:center;width:100%;margin-top:4px}
+.ex-btn{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font-size:12px;border-radius:999px;border:1px solid #1b3a52;background:#06182b;color:#9ab;cursor:pointer}
+.ex-btn i{width:8px;height:8px;border-radius:50%;background:#e0a21b;display:inline-block}
+.ex-btn.ok i{background:#00c9a7}.ex-btn.err i{background:#f06470}
+.ex-btn.on{color:#e8f4ff;border-color:#00c9a7}.ex-btn.off{opacity:.45}
+.ex-err{color:#f06470;font-size:11px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

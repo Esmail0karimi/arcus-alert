@@ -359,7 +359,28 @@ function App() {
     setQrOpen(true);
     setQrTitle("All alerts · Text export");
   };
-  const symbols = useMemo(() => Object.keys(prices).sort(), [prices]);
+  // Exchanges: each one is a toggle; only symbols of enabled exchanges are listed.
+  const [exOn, setExOn] = useState<{ arcus: boolean; qfex: boolean }>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("arcus.exchanges") || "");
+      return { arcus: v.arcus !== false, qfex: v.qfex !== false };
+    } catch {
+      return { arcus: true, qfex: true };
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.exchanges", JSON.stringify(exOn));
+    } catch {}
+  }, [exOn]);
+  const dn = (s: string) => (isQfexSymbol(s) ? s.slice(5) + (exOn.arcus ? " ·Q" : "") : s);
+  const symbols = useMemo(
+    () =>
+      Object.keys(prices)
+        .filter((s) => (isQfexSymbol(s) ? exOn.qfex : exOn.arcus))
+        .sort(),
+    [prices, exOn],
+  );
   useEffect(
     () =>
       onAuthStateChanged(auth, (next) => {
@@ -1826,7 +1847,29 @@ function App() {
           </div>
         </div>
         <div className="connection">
-          <i /> {status} · {qfexMsg} · EXPERIMENT
+          <i /> {status}
+          <div className="exchange-row">
+            {(() => {
+              const arcusState = /^Live/.test(status) ? "ok" : /error|disconnect|interrupt/i.test(status) ? "err" : "wait";
+              const qfexState = /markets/.test(qfexMsg) ? "ok" : /error|blocked/i.test(qfexMsg) ? "err" : "wait";
+              const btn = (key: "arcus" | "qfex", label: string, st: string, msg: string) => (
+                <button
+                  className={"ex-btn " + (exOn[key] ? "on " : "off ") + st}
+                  title={msg + (exOn[key] ? " · click to hide this exchange" : " · click to show this exchange")}
+                  onClick={() => setExOn((v) => ({ ...v, [key]: !v[key] }))}
+                >
+                  <i /> {label} · {st === "ok" ? "Live" : st === "err" ? "Error" : "…"}
+                </button>
+              );
+              return (
+                <>
+                  {btn("arcus", "Arcus", arcusState, status)}
+                  {btn("qfex", "QFEX", qfexState, qfexMsg)}
+                  {qfexState === "err" && <small className="ex-err">{qfexMsg}</small>}
+                </>
+              );
+            })()}
+          </div>
         </div>
         <div className="header-actions">
           {!window.arcusDesktop?.isDesktop && (
@@ -1926,7 +1969,7 @@ function App() {
                   setAlertBanners((b) => b.filter((x) => x !== a));
                 }}
               >
-                <b>🔔 {a.symbol}</b>
+                <b>🔔 {dn(a.symbol)}</b>
                 <span>
                   Target {a.price.toLocaleString()} · now {a.actual.toLocaleString()} ·{" "}
                   {new Date(a.time).toLocaleTimeString()}
@@ -1970,7 +2013,7 @@ function App() {
                     setTab("Chart");
                   }}
                 >
-                  <b>{s}</b>
+                  <b>{dn(s)}</b>
                   <button
                     className="market-favorite"
                     aria-label={favorites.includes(s) ? "Remove favorite" : "Add favorite"}
@@ -2025,7 +2068,7 @@ function App() {
                     setTab("Chart");
                   }}
                 >
-                  <b>{s}</b>
+                  <b>{dn(s)}</b>
                   <button
                     className="market-favorite"
                     aria-label="Remove favorite"
@@ -2076,7 +2119,7 @@ function App() {
                       setQuery("");
                     }}
                   >
-                    <span>{symbol || "Select market"}</span>
+                    <span>{symbol ? dn(symbol) : "Select market"}</span>
                     <b>⌕</b>
                   </button>
                   {chartSearchOpen && (
@@ -2097,7 +2140,7 @@ function App() {
                               setQuery("");
                             }}
                           >
-                            {s}
+                            {dn(s)}
                             <span>{prices[s]?.price?.toLocaleString() ?? "—"}</span>
                           </button>
                         ))}
@@ -2106,7 +2149,7 @@ function App() {
                   )}
                 </div>
               </div>
-              <b className="fs-only fs-keep">{symbol}</b>
+              <b className="fs-only fs-keep">{dn(symbol)}</b>
               <div className="price fs-keep">
                 {prices[symbol]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
                   "—"}
@@ -2531,7 +2574,7 @@ function App() {
                       key={s}
                       onClick={() => setSymbol(s)}
                     >
-                      <b>{s}</b>
+                      <b>{dn(s)}</b>
                       <i
                         className={
                           prices[s]?.change24h == null
@@ -2556,7 +2599,7 @@ function App() {
                   ))}
                 </div>
                 <div className="watch-detail">
-                  <b>{symbol || "Select market"}</b>
+                  <b>{symbol ? dn(symbol) : "Select market"}</b>
                   <strong>
                     {prices[symbol]?.price?.toLocaleString(undefined, {
                       maximumFractionDigits: 6,
@@ -2661,7 +2704,7 @@ function App() {
                                       }
                                     >
                                       <div>
-                                        <b>{l.symbol}</b>
+                                        <b>{dn(l.symbol)}</b>
                                         <strong>{l.price.toLocaleString()}</strong>
                                         <small>
                                           {l.mode === "NEAR" ? "Near · 0.1%" : "Touch / cross"} ·
@@ -2746,7 +2789,7 @@ function App() {
               <label>Market</label>
               <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
                 {symbols.map((s) => (
-                  <option>{s}</option>
+                  <option value={s}>{dn(s)}</option>
                 ))}
               </select>
               <label>Target price</label>
@@ -2947,7 +2990,7 @@ function App() {
                     <div className="history-item" key={h.id + "-" + h.time}>
                       <div>
                         <b>
-                          {h.symbol} · {h.price.toLocaleString()}
+                          {dn(h.symbol)} · {h.price.toLocaleString()}
                         </b>
                         <small>Triggered at {h.actual.toLocaleString()}</small>
                       </div>
