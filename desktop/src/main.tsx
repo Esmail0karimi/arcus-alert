@@ -1930,7 +1930,8 @@ function App() {
               <>
                 {line("arcus", status, stateOf(status))}
                 {ADAPTERS.map((ad) => {
-                  const text = exLive[ad.id] || exMsg[ad.id] || ad.label + " · connecting…";
+                  const warn = /error|blocked/i.test(exMsg[ad.id] || "") ? " · ⚠ " + exMsg[ad.id] : "";
+                  const text = exLive[ad.id] ? exLive[ad.id] + warn : exMsg[ad.id] || ad.label + " · connecting…";
                   return line(ad.id, text, exLive[ad.id] ? "ok" : stateOf(text));
                 })}
               </>
@@ -2306,6 +2307,9 @@ function App() {
                     ? "Click chart to place a horizontal line"
                     : "Select the horizontal-line tool to draw"}
                 </div>
+                {adapterOf(symbol) && /no candle|error|built from|fail|blocked|http/i.test(chartStatus) && (
+                  <div className="chart-note">{chartStatus}</div>
+                )}
                 <div
                   className={"chartbox " + (activeTool !== "cursor" ? "drawing-active" : "")}
                   ref={chartHost}

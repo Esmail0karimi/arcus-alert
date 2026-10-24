@@ -101,6 +101,7 @@ function socket(url: string, onOpen: (ws: WebSocket) => void, onMsg: (m: any) =>
 const HL = "https://api.hyperliquid.xyz/info";
 const HL_P = "HL:";
 const hlCoin: Record<string, string> = {}; // upper-case key -> exact coin name (e.g. kPEPE)
+let hlKnown = false;
 const hlChange: Record<string, number> = {}; // upper-case coin -> 24h % (also used as a proxy for Variational)
 let hlWsPost: ((payload: any) => Promise<any>) | null = null;
 const hlPostRest = async (body: any, signal?: AbortSignal) => {
@@ -145,6 +146,7 @@ const hyperliquid: Adapter = {
             });
         });
         known = rows.length;
+        hlKnown = known > 0;
         onSymbols(rows);
         if (list.length && Date.now() - lastWs > 20000) onPrices(list);
         onStatus("Hyperliquid · " + known + " markets (live)");
@@ -180,7 +182,9 @@ const hyperliquid: Adapter = {
         lastWs = Date.now();
         const list: Tick[] = [];
         for (const k of Object.keys(mids)) {
-          if (k.startsWith("@")) continue; // spot pairs
+          // spot pairs ("@107", "PURR/USDC") and prediction/outcome markets ("#114911") are not perpetuals
+          if (k.startsWith("@") || k.startsWith("#") || k.includes("/") || k.includes(":")) continue;
+          if (hlKnown && !hlCoin[k.toUpperCase()]) continue;
           const px = num(mids[k]);
           if (px > 0) list.push({ marketDisplayName: HL_P + k.toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000 });
         }
@@ -189,6 +193,13 @@ const hyperliquid: Adapter = {
     return () => { window.clearInterval(t); hlWsPost = null; stop(); };
   },
   candles: (symbol, tf, signal) => hlCandles(symbol.slice(HL_P.length), tf, signal),
+};
+/** Map another exchange's base name to a Hyperliquid coin (kPEPE, 1000PEPE, ...). */
+const hlMatch = (base: string): string | null => {
+  const b = base.toUpperCase();
+  const tries = [b, "K" + b, b.replace(/^1000/, "K"), b.replace(/^K(?=[A-Z])/, ""), b.replace(/^1M/, "K")];
+  for (const t of tries) if (hlCoin[t]) return t;
+  return null;
 };
 async function hlCandles(coinKey: string, tf: string, signal?: AbortSignal): Promise<QCandle[]> {
   {
@@ -267,7 +278,8 @@ const variational: Adapter = {
           const name = VR_P + String(l.ticker).toUpperCase();
           rows.push({ name, cat: "" });
           const px = num(l.mark_price);
-          const ch = hlChange[String(l.ticker).split("-")[0].toUpperCase()];
+          const hk = hlMatch(String(l.ticker).split("-")[0]);
+          const ch = hk ? hlChange[hk] : undefined;
           if (px > 0) list.push({ marketDisplayName: name, marketId: "VR", markPrice: px, timestamp: Date.now() / 1000, change24h: ch });
         }
         onSymbols(rows);
@@ -280,7 +292,11 @@ const variational: Adapter = {
     return () => window.clearInterval(t);
   },
   // Variational publishes no candles: use Hyperliquid's candles of the same coin as history (live bars come from Variational).
-  candles: (symbol, tf, signal) => hlCandles(symbol.slice(VR_P.length).split("-")[0], tf, signal),
+  candles: async (symbol, tf, signal) => {
+    const hk = hlMatch(symbol.slice(VR_P.length).split("-")[0]);
+    if (!hk) throw new Error("no Hyperliquid market with the same name to borrow history from");
+    return hlCandles(hk, tf, signal);
+  },
 };
 
 /* ---------------- QFEX ---------------- */

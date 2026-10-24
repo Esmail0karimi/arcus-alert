@@ -255,3 +255,4 @@ main.chart-full .fs-only{display:inline-block!important}
 .ex-line.off{opacity:.4;text-decoration:line-through}
 .ex-grid{grid-template-columns:auto!important;row-gap:0!important;line-height:12px;width:max-content}
 .ex-line{max-width:none!important;overflow:visible!important}
+.chart-note{position:fixed;left:70px;bottom:78px;z-index:6;max-width:60vw;padding:3px 9px;font-size:11px;color:#f2b84b;background:rgba(6,24,43,.85);border:1px solid #3a2c0d;border-radius:6px;pointer-events:none}
