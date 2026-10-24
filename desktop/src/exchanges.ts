@@ -294,7 +294,19 @@ const variational: Adapter = {
   // Variational publishes no candles: use Hyperliquid's candles of the same coin as history (live bars come from Variational).
   candles: async (symbol, tf, signal) => {
     const hk = hlMatch(symbol.slice(VR_P.length).split("-")[0]);
-    if (!hk) throw new Error("no Hyperliquid market with the same name to borrow history from");
+    if (!hk) {
+      const base = symbol.slice(VR_P.length).split("-")[0];
+      try {
+        const rows = await binanceCandles(base, tf, signal);
+        if (rows.length) {
+          candleNote[symbol] = "Variational: history from Binance " + base + "USDT futures (Variational publishes no candles), live bars from Variational";
+          return rows;
+        }
+      } catch (e2: any) {
+        if (e2?.name === "AbortError") throw e2;
+      }
+      throw new Error("no Hyperliquid or Binance market with the same name to borrow history from");
+    }
     const rows = await hlCandles(hk, tf, signal);
     candleNote[symbol] = "Variational: history from Hyperliquid " + hk + " (Variational publishes no candles), live bars from Variational";
     return rows;
@@ -329,6 +341,15 @@ const xyzFor = async (base: string) => {
   for (const t of [base, ...(XYZ_ALIAS[base] || [])]) if (xyzMap[t]) return xyzMap[t];
   return null;
 };
+/* Binance USDⓈ-M futures (public, CORS-enabled): gold/silver and some stock perps exist as <BASE>USDT. */
+async function binanceCandles(base: string, tf: string, signal?: AbortSignal): Promise<QCandle[]> {
+  const interval = SPAN[tf] ? tf : "15m";
+  const sym = base.toUpperCase() + "USDT";
+  const r = await fetch("https://fapi.binance.com/fapi/v1/klines?symbol=" + sym + "&interval=" + interval + "&limit=1500", { signal });
+  if (!r.ok) throw new Error("Binance " + sym + " HTTP " + r.status);
+  const rows = await r.json();
+  return cleanCandles((Array.isArray(rows) ? rows : []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
+}
 const qfex: Adapter = {
   id: "qfex", label: "QFEX", prefix: QFEX_PREFIX, defaultCat: "Stocks", ownHistory: true,
   start: (p, s, st) => startQfexFeed(p as any, s, st),
@@ -338,6 +359,15 @@ const qfex: Adapter = {
     } catch (err: any) {
       if (err?.name === "AbortError") throw err;
       const base = symbol.slice(QFEX_PREFIX.length).split("-")[0].toUpperCase();
+      try {
+        const rows = await binanceCandles(base, tf, signal);
+        if (rows.length) {
+          candleNote[symbol] = "QFEX: history from Binance " + base + "USDT futures (QFEX candle API is blocked for web pages), live bars from QFEX";
+          return rows;
+        }
+      } catch (e2: any) {
+        if (e2?.name === "AbortError") throw e2;
+      }
       const k = await xyzFor(base);
       if (!k) throw new Error((err?.message || "QFEX candles unavailable") + " · and no Hyperliquid (xyz) market named " + base);
       const rows = await hlCandles(k, tf, signal);
