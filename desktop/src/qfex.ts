@@ -65,7 +65,7 @@ export async function fetchQfexCandles(symbol: string, tf: string, signal?: Abor
   throw new Error(lastErr);
 }
 
-type Tick = { marketDisplayName: string; marketId: string; markPrice: number; timestamp: number };
+type Tick = { marketDisplayName: string; marketId: string; markPrice: number; timestamp: number; change24h?: number };
 
 /** Starts the QFEX price feed. Returns a stop function. `onCategory` receives the symbol -> kind hint. */
 export function startQfexFeed(
@@ -76,13 +76,14 @@ export function startQfexFeed(
   let stopped = false, ws: WebSocket | null = null, retry = 1000, retryTimer: number | undefined;
   let lastWs = 0;
   const seen = new Set<string>();
+  const dayOpen: Record<string, number> = {};
   const emit = (symbol: string, price: number, time: number) => {
     if (!symbol || !Number.isFinite(price) || price <= 0) return;
     if (!seen.has(symbol)) {
       seen.add(symbol);
       onSymbols([{ name: QFEX_PREFIX + symbol.toUpperCase(), cat: "" }]);
     }
-    onPrices([{ marketDisplayName: QFEX_PREFIX + symbol.toUpperCase(), marketId: "QFEX", markPrice: price, timestamp: Number.isFinite(time) ? time : Date.now() / 1000 }]);
+    onPrices([{ marketDisplayName: QFEX_PREFIX + symbol.toUpperCase(), marketId: "QFEX", markPrice: price, timestamp: Number.isFinite(time) ? time : Date.now() / 1000, change24h: dayOpen[symbol.toUpperCase()] > 0 ? (price / dayOpen[symbol.toUpperCase()] - 1) * 100 : undefined }]);
   };
   const getJson = async (path: string) => {
     // Plain GET without extra headers or cache options (those trigger a CORS preflight, and "no-cache" made the
@@ -148,6 +149,11 @@ export function startQfexFeed(
     if (!m || typeof m !== "object") return;
     if (Array.isArray(m)) return m.forEach(handle);
     if (m.contents) return handle(m.contents);
+    if (m.type === "candle" && m.symbol && /1DAY/i.test(String(m.resolution || ""))) {
+      const o = Number(m.open);
+      if (o > 0) dayOpen[String(m.symbol).toUpperCase()] = o; // change since the daily open
+      return;
+    }
     if (m.type === "mark_price" && m.symbol) {
       lastWs = Date.now();
       emit(String(m.symbol), Number(m.price), toSec(m.time));
@@ -161,6 +167,7 @@ export function startQfexFeed(
       ws.onopen = () => {
         retry = 1000;
         ws?.send(JSON.stringify({ type: "subscribe", channels: ["mark_price"], symbols: ["*"] }));
+        ws?.send(JSON.stringify({ type: "subscribe", channels: ["candle"], symbols: ["*"], intervals: ["1DAY"] }));
       };
       ws.onmessage = (e) => { try { handle(JSON.parse(String(e.data))); } catch {} };
       ws.onclose = () => { if (!stopped) { retryTimer = window.setTimeout(connect, retry); retry = Math.min(retry * 2, 30000); } };

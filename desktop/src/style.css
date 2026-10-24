@@ -247,3 +247,11 @@ main.chart-full .fs-only{display:inline-block!important}
 .exchange-row{flex-wrap:nowrap;white-space:nowrap}.ex-btn{font-size:11px;padding:1px 8px}.exchange-row small.ex-err{display:none}.connection{min-width:0}
 .connection{overflow:visible!important}.exchange-row{width:max-content;max-width:none}
 .exchange-row{gap:4px}.ex-btn{padding:1px 6px;gap:4px}.header-actions{position:relative;z-index:2}
+
+.ex-grid{display:grid!important;grid-template-columns:auto auto;grid-auto-flow:row;column-gap:14px;row-gap:1px;align-items:center;font-size:10.5px;overflow:visible!important}
+.ex-line{display:flex;align-items:center;gap:5px;background:none;border:0;padding:0;margin:0;color:#9fb2c8;font-size:10.5px;cursor:pointer;white-space:nowrap;text-align:left;max-width:300px;overflow:hidden;text-overflow:ellipsis}
+.ex-line i{width:7px;height:7px;border-radius:50%;background:#e0a21b;flex:none}
+.ex-line.ok i{background:#00c9a7}.ex-line.err i{background:#f06470}.ex-line.err{color:#f08a93}
+.ex-line.off{opacity:.4;text-decoration:line-through}
+.ex-grid{grid-template-columns:auto!important;row-gap:0!important;line-height:12px;width:max-content}
+.ex-line{max-width:none!important;overflow:visible!important}

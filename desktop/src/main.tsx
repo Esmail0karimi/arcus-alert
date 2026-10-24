@@ -92,6 +92,7 @@ function App() {
     [prices, setPrices] = useState<Record<string, Price>>({}),
     [status, setStatus] = useState("Connecting to Arcus…"),
     [exMsg, setExMsg] = useState<Record<string, string>>({}),
+    [exLive, setExLive] = useState<Record<string, string>>({}),
     [symbol, setSymbol] = useState(""),
     [query, setQuery] = useState(""),
     [tf, setTf] = useState("15m"),
@@ -949,10 +950,31 @@ function App() {
     };
     connect();
     // EXPERIMENT: extra exchanges (symbols are prefixed, e.g. "QFEX:", "HL:", "LT:", "VR:")
+    const exSeen: Record<string, Record<string, number>> = {};
+    const liveTimer = window.setInterval(() => {
+      const now = Date.now();
+      const next: Record<string, string> = {};
+      for (const ad of ADAPTERS) {
+        const seen = exSeen[ad.id] || {};
+        let n = 0,
+          last = 0;
+        for (const k of Object.keys(seen)) {
+          if (seen[k] > now - 15000) n++;
+          if (seen[k] > last) last = seen[k];
+        }
+        if (n) next[ad.id] = "Live · " + n + " " + ad.label + " prices · " + new Date(last).toLocaleTimeString();
+      }
+      setExLive((v) => (JSON.stringify(v) === JSON.stringify(next) ? v : next));
+    }, 1000);
     const stops = ADAPTERS.map((ad) =>
       startAdapter(
         ad,
-        applyPrices,
+        (items) => {
+          const t = Date.now(),
+            seen = (exSeen[ad.id] ||= {});
+          for (const it of items) seen[it.marketDisplayName] = t;
+          applyPrices(items);
+        },
         (rows) => {
           for (const { name: n, cat } of rows) {
             const base = n.slice(ad.prefix.length).replace(/-(USD|PERP|SWAP)$/, "");
@@ -976,6 +998,7 @@ function App() {
     );
     return () => {
       stops.forEach((s) => s());
+      window.clearInterval(liveTimer);
       stopped = true;
       if (flushTimer !== undefined) window.clearTimeout(flushTimer);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
@@ -1890,33 +1913,29 @@ function App() {
             <small>ALERT</small>
           </div>
         </div>
-        <div className="connection">
-          <i /> {status}
-          <div className="exchange-row">
-            {(() => {
-              const stateOf = (msg: string, ok: RegExp) => (ok.test(msg) ? "ok" : /error|blocked/i.test(msg) ? "err" : "wait");
-              const btn = (id: string, label: string, st: string, msg: string) => (
-                <button
-                  key={id}
-                  className={"ex-btn " + (isOn(id) ? "on " : "off ") + st}
-                  title={msg + (isOn(id) ? " · click to hide this exchange" : " · click to show this exchange")}
-                  onClick={() => setExOn((v) => ({ ...v, [id]: v[id] === false }))}
-                >
-                  <i /> {label}{st === "err" ? " ✕" : ""}
-                </button>
-              );
-              const errs = ADAPTERS.filter((ad) => stateOf(exMsg[ad.id] || "", /markets/) === "err");
-              return (
-                <>
-                  {btn("arcus", "Arcus", /^Live/.test(status) ? "ok" : /error|disconnect|interrupt/i.test(status) ? "err" : "wait", status)}
-                  {ADAPTERS.map((ad) => btn(ad.id, ad.label, stateOf(exMsg[ad.id] || "", /markets/), exMsg[ad.id] || "connecting…"))}
-                  {errs.map((ad) => (
-                    <small key={ad.id} className="ex-err">{exMsg[ad.id]}</small>
-                  ))}
-                </>
-              );
-            })()}
-          </div>
+        <div className="connection ex-grid">
+          {(() => {
+            const line = (id: string, text: string, st: string) => (
+              <button
+                key={id}
+                className={"ex-line " + (isOn(id) ? "on " : "off ") + st}
+                title={isOn(id) ? "Click to hide this exchange" : "Click to show this exchange"}
+                onClick={() => setExOn((v) => ({ ...v, [id]: v[id] === false }))}
+              >
+                <i /> {text}
+              </button>
+            );
+            const stateOf = (msg: string) => (/^Live/.test(msg) ? "ok" : /error|blocked|disconnect|interrupt/i.test(msg) ? "err" : "wait");
+            return (
+              <>
+                {line("arcus", status, stateOf(status))}
+                {ADAPTERS.map((ad) => {
+                  const text = exLive[ad.id] || exMsg[ad.id] || ad.label + " · connecting…";
+                  return line(ad.id, text, exLive[ad.id] ? "ok" : stateOf(text));
+                })}
+              </>
+            );
+          })()}
         </div>
         <div className="header-actions">
           {!window.arcusDesktop?.isDesktop && (

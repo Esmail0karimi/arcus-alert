@@ -101,10 +101,21 @@ function socket(url: string, onOpen: (ws: WebSocket) => void, onMsg: (m: any) =>
 const HL = "https://api.hyperliquid.xyz/info";
 const HL_P = "HL:";
 const hlCoin: Record<string, string> = {}; // upper-case key -> exact coin name (e.g. kPEPE)
-const hlPost = async (body: any, signal?: AbortSignal) => {
+const hlChange: Record<string, number> = {}; // upper-case coin -> 24h % (also used as a proxy for Variational)
+let hlWsPost: ((payload: any) => Promise<any>) | null = null;
+const hlPostRest = async (body: any, signal?: AbortSignal) => {
   const r = await fetch(HL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   if (!r.ok) throw new Error("Hyperliquid HTTP " + r.status);
   return r.json();
+};
+/** Info request: over the already-open WebSocket first (works where the REST host is blocked), REST second. */
+const hlPost = async (body: any, signal?: AbortSignal) => {
+  if (hlWsPost) {
+    try {
+      return await hlWsPost(body);
+    } catch {}
+  }
+  return hlPostRest(body, signal);
 };
 const hyperliquid: Adapter = {
   id: "hl", label: "Hyperliquid", prefix: HL_P, defaultCat: "Crypto",
@@ -121,6 +132,7 @@ const hyperliquid: Adapter = {
           const px = num(ctxs[i]?.markPx);
           const prev = num(ctxs[i]?.prevDayPx);
           hlCoin[String(u.name).toUpperCase()] = String(u.name);
+          if (px > 0 && prev > 0) hlChange[String(u.name).toUpperCase()] = ((px - prev) / prev) * 100;
           rows.push({
             name: HL_P + String(u.name).toUpperCase(),
             cat: "",
@@ -140,9 +152,29 @@ const hyperliquid: Adapter = {
     };
     void poll();
     const t = window.setInterval(poll, 30000);
+    let wsNow: WebSocket | null = null, reqId = 1;
+    const pending: Record<number, (v: any) => void> = {};
+    hlWsPost = (payload: any) =>
+      new Promise((resolve, reject) => {
+        if (!wsNow || wsNow.readyState !== 1) return reject(new Error("socket not open"));
+        const id = reqId++;
+        const timer = window.setTimeout(() => { delete pending[id]; reject(new Error("timeout")); }, 12000);
+        pending[id] = (v) => { window.clearTimeout(timer); resolve(v); };
+        wsNow.send(JSON.stringify({ method: "post", id, request: { type: "info", payload } }));
+      });
     const stop = socket("wss://api.hyperliquid.xyz/ws",
-      (ws) => ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids" } })),
+      (ws) => {
+        wsNow = ws;
+        ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids" } }));
+        window.setTimeout(poll, 300);
+      },
       (m) => {
+        if (m?.channel === "post" && m?.data?.id != null) {
+          const pl = m.data.response?.payload;
+          pending[m.data.id]?.(pl && pl.data !== undefined ? pl.data : pl);
+          delete pending[m.data.id];
+          return;
+        }
         const mids = m?.channel === "allMids" ? m?.data?.mids : null;
         if (!mids) return;
         lastWs = Date.now();
@@ -154,15 +186,18 @@ const hyperliquid: Adapter = {
         }
         if (list.length) onPrices(list);
       });
-    return () => { window.clearInterval(t); stop(); };
+    return () => { window.clearInterval(t); hlWsPost = null; stop(); };
   },
-  async candles(symbol, tf, signal) {
+  candles: (symbol, tf, signal) => hlCandles(symbol.slice(HL_P.length), tf, signal),
+};
+async function hlCandles(coinKey: string, tf: string, signal?: AbortSignal): Promise<QCandle[]> {
+  {
     const interval = SPAN[tf] ? tf : "15m";
     const end = Date.now();
-    const rows = await hlPost({ type: "candleSnapshot", req: { coin: hlCoin[symbol.slice(HL_P.length)] || symbol.slice(HL_P.length), interval, startTime: end - SPAN[interval] * 1000 * 1500, endTime: end } }, signal);
+    const rows = await hlPost({ type: "candleSnapshot", req: { coin: hlCoin[coinKey.toUpperCase()] || coinKey, interval, startTime: end - SPAN[interval] * 1000 * 1500, endTime: end } }, signal);
     return cleanCandles((Array.isArray(rows) ? rows : []).map((c: any) => ({ time: Math.floor(num(c.t) / 1000), open: num(c.o), high: num(c.h), low: num(c.l), close: num(c.c), volume: num(c.v) })));
-  },
-};
+  }
+}
 
 /* ---------------- Lighter ---------------- */
 const LT = "https://mainnet.zklighter.elliot.ai";
@@ -219,9 +254,12 @@ const VR_P = "VR:";
 const variational: Adapter = {
   id: "vr", label: "Variational", prefix: VR_P, defaultCat: "Crypto", ownHistory: true,
   start(onPrices, onSymbols, onStatus) {
+    let nextAt = 0;
     const poll = async () => {
+      if (Date.now() < nextAt) return;
       try {
         const r = await fetch("https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats");
+        if (r.status === 429) { nextAt = Date.now() + 10000; return; }
         if (!r.ok) throw new Error("Variational HTTP " + r.status);
         const body = await r.json();
         const list: Tick[] = [], rows: SymRow[] = [];
@@ -229,17 +267,20 @@ const variational: Adapter = {
           const name = VR_P + String(l.ticker).toUpperCase();
           rows.push({ name, cat: "" });
           const px = num(l.mark_price);
-          if (px > 0) list.push({ marketDisplayName: name, marketId: "VR", markPrice: px, timestamp: Date.now() / 1000 });
+          const ch = hlChange[String(l.ticker).split("-")[0].toUpperCase()];
+          if (px > 0) list.push({ marketDisplayName: name, marketId: "VR", markPrice: px, timestamp: Date.now() / 1000, change24h: ch });
         }
         onSymbols(rows);
         onPrices(list);
-        onStatus("Variational · " + rows.length + " markets (live, no history)");
+        onStatus("Variational · " + rows.length + " markets");
       } catch (e: any) { onStatus(netErr("Variational", e)); }
     };
     void poll();
-    const t = window.setInterval(poll, 15000);
+    const t = window.setInterval(poll, 2000);
     return () => window.clearInterval(t);
   },
+  // Variational publishes no candles: use Hyperliquid's candles of the same coin as history (live bars come from Variational).
+  candles: (symbol, tf, signal) => hlCandles(symbol.slice(VR_P.length).split("-")[0], tf, signal),
 };
 
 /* ---------------- QFEX ---------------- */
@@ -263,7 +304,7 @@ export function startAdapter(ad: Adapter, onPrices: (t: Tick[]) => void, onSymbo
         for (const t of items) {
           recordSample(t.marketDisplayName, t.markPrice);
           const c = ownChange24h(t.marketDisplayName, t.markPrice);
-          if (c != null) t.change24h = c;
+          if (c != null && t.change24h == null) t.change24h = c;
         }
         onPrices(items);
       }
