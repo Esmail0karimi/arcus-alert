@@ -244,3 +244,6 @@ main.chart-full .fs-only{display:inline-block!important}
 .ex-btn.ok i{background:#00c9a7}.ex-btn.err i{background:#f06470}
 .ex-btn.on{color:#e8f4ff;border-color:#00c9a7}.ex-btn.off{opacity:.45}
 .ex-err{color:#f06470;font-size:11px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exchange-row{flex-wrap:nowrap;white-space:nowrap}.ex-btn{font-size:11px;padding:1px 8px}.exchange-row small.ex-err{display:none}.connection{min-width:0}
+.connection{overflow:visible!important}.exchange-row{width:max-content;max-width:none}
+.exchange-row{gap:4px}.ex-btn{padding:1px 6px;gap:4px}.header-actions{position:relative;z-index:2}

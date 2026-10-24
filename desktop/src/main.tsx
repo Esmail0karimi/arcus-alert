@@ -8,7 +8,7 @@ import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
-import { isQfexSymbol, fetchQfexCandles, startQfexFeed } from "./qfex";
+import { ADAPTERS, adapterOf, displayName } from "./exchanges";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -30,6 +30,7 @@ type ChartDrawing = {
   color?: string;
   width?: number;
 };
+const STOCKY = /^(AAPL|MSFT|NVDA|TSLA|AMZN|GOOGL|META|NFLX|AMD|COIN|PLTR|MSTR|HOOD|SPY|QQQ)$/;
 const DRAWINGS = "arcus-alert-chart-drawings-v1",
   DRAWING_STYLE = "arcus-alert-drawing-style-v1";
 declare global {
@@ -90,7 +91,7 @@ function App() {
   const [tab, setTab] = useState("Market"),
     [prices, setPrices] = useState<Record<string, Price>>({}),
     [status, setStatus] = useState("Connecting to Arcus…"),
-    [qfexMsg, setQfexMsg] = useState("QFEX: connecting…"),
+    [exMsg, setExMsg] = useState<Record<string, string>>({}),
     [symbol, setSymbol] = useState(""),
     [query, setQuery] = useState(""),
     [tf, setTf] = useState("15m"),
@@ -360,24 +361,32 @@ function App() {
     setQrTitle("All alerts · Text export");
   };
   // Exchanges: each one is a toggle; only symbols of enabled exchanges are listed.
-  const [exOn, setExOn] = useState<{ arcus: boolean; qfex: boolean }>(() => {
+  const [exOn, setExOn] = useState<Record<string, boolean>>(() => {
     try {
       const v = JSON.parse(localStorage.getItem("arcus.exchanges") || "");
-      return { arcus: v.arcus !== false, qfex: v.qfex !== false };
+      return v && typeof v === "object" ? v : {};
     } catch {
-      return { arcus: true, qfex: true };
+      return {};
     }
   });
+  const isOn = (id: string) => exOn[id] !== false;
   useEffect(() => {
     try {
       localStorage.setItem("arcus.exchanges", JSON.stringify(exOn));
     } catch {}
   }, [exOn]);
-  const dn = (s: string) => (isQfexSymbol(s) ? s.slice(5) + (exOn.arcus ? " ·Q" : "") : s);
+  const manyOn = [isOn("arcus"), ...ADAPTERS.map((a) => isOn(a.id))].filter(Boolean).length > 1;
+  const dn = (s: string) => {
+    const a = adapterOf(s);
+    return a ? displayName(s) + (manyOn ? " ·" + a.prefix[0] : "") : s;
+  };
   const symbols = useMemo(
     () =>
       Object.keys(prices)
-        .filter((s) => (isQfexSymbol(s) ? exOn.qfex : exOn.arcus))
+        .filter((s) => {
+          const a = adapterOf(s);
+          return a ? exOn[a.id] !== false : exOn.arcus !== false;
+        })
         .sort(),
     [prices, exOn],
   );
@@ -938,21 +947,33 @@ function App() {
       }
     };
     connect();
-    // EXPERIMENT: QFEX feed (symbols are prefixed "QFEX:")
-    const stopQfex = startQfexFeed(
-      applyPrices,
-      (rows) => {
-        for (const { name: n, cat } of rows) {
-          const base = n.replace(/^QFEX:/, "").replace(/-USD$/, "");
-          const fromApi = /commod|metal|energy/i.test(cat) ? "Commodities" : /equit|stock/i.test(cat) ? "Stocks" : null;
-          marketCategories.current[n] =
-            fromApi || (classifySymbol(base) === "Commodities" ? "Commodities" : "Stocks");
-        }
-      },
-      (m) => setQfexMsg(m),
+    // EXPERIMENT: extra exchanges (symbols are prefixed, e.g. "QFEX:", "HL:", "LT:", "VR:")
+    const stops = ADAPTERS.map((ad) =>
+      ad.start(
+        applyPrices,
+        (rows) => {
+          for (const { name: n, cat } of rows) {
+            const base = n.slice(ad.prefix.length).replace(/-(USD|PERP|SWAP)$/, "");
+            const fromApi = /commod|metal|energy/i.test(cat)
+              ? "Commodities"
+              : /equit|stock/i.test(cat)
+                ? "Stocks"
+                : null;
+            const guess = classifySymbol(base);
+            marketCategories.current[n] =
+              fromApi ||
+              (guess === "Commodities"
+                ? "Commodities"
+                : ad.defaultCat === "Stocks" || STOCKY.test(base)
+                  ? "Stocks"
+                  : "Crypto");
+          }
+        },
+        (msg) => setExMsg((v) => (v[ad.id] === msg ? v : { ...v, [ad.id]: msg })),
+      ),
     );
     return () => {
-      stopQfex();
+      stops.forEach((s) => s());
       stopped = true;
       if (flushTimer !== undefined) window.clearTimeout(flushTimer);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
@@ -1161,7 +1182,8 @@ function App() {
       requestTf = tf;
     setChartStatus("Loading " + requestSymbol + " · " + requestTf + " candles…");
     if (series.current) series.current.setData([]);
-    const isQ = isQfexSymbol(requestSymbol);
+    const ex = adapterOf(requestSymbol);
+    const isQ = !!ex;
     const load = async () => {
       try {
         const readyAt = Date.now() + 2500;
@@ -1194,13 +1216,26 @@ function App() {
         const cacheKey = requestSymbol + "|" + requestTf;
         const cached = CANDLE_CACHE.get(cacheKey);
         if (cached && Date.now() - cached.at < 30000) candles = cached.candles;
-        if (isQ && !candles.length) {
+        if (ex && !candles.length) {
           try {
-            candles = await fetchQfexCandles(requestSymbol, requestTf, controller.signal);
-            CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
+            candles = ex.candles ? await ex.candles(requestSymbol, requestTf, controller.signal) : [];
+            if (candles.length) CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
           } catch (err: any) {
             if (err?.name === "AbortError" || cancelled) return;
-            lastError = err?.message || "QFEX candle request failed";
+            lastError = err?.message || ex.label + " candle request failed";
+          }
+          if (!candles.length) {
+            // No history available (or blocked): start the chart from the live price and build candles from ticks.
+            const until = Date.now() + 4000;
+            while (!cancelled && !pricesRef.current[requestSymbol]?.price && Date.now() < until)
+              await new Promise((r) => setTimeout(r, 100));
+            const px = pricesRef.current[requestSymbol]?.price;
+            if (px) {
+              const sp = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 } as Record<string, number>)[requestTf] || 900;
+              const t0 = Math.floor(Date.now() / 1000 / sp) * sp;
+              candles = [{ time: t0, open: px, high: px, low: px, close: px, volume: 0 }];
+              setChartStatus(ex.label + ": no candle history (" + lastError + ") · building live candles");
+            }
           }
         }
         // Phase 1: a small request (250 candles) so the chart appears quickly; the full history follows.
@@ -1850,22 +1885,25 @@ function App() {
           <i /> {status}
           <div className="exchange-row">
             {(() => {
-              const arcusState = /^Live/.test(status) ? "ok" : /error|disconnect|interrupt/i.test(status) ? "err" : "wait";
-              const qfexState = /markets/.test(qfexMsg) ? "ok" : /error|blocked/i.test(qfexMsg) ? "err" : "wait";
-              const btn = (key: "arcus" | "qfex", label: string, st: string, msg: string) => (
+              const stateOf = (msg: string, ok: RegExp) => (ok.test(msg) ? "ok" : /error|blocked/i.test(msg) ? "err" : "wait");
+              const btn = (id: string, label: string, st: string, msg: string) => (
                 <button
-                  className={"ex-btn " + (exOn[key] ? "on " : "off ") + st}
-                  title={msg + (exOn[key] ? " · click to hide this exchange" : " · click to show this exchange")}
-                  onClick={() => setExOn((v) => ({ ...v, [key]: !v[key] }))}
+                  key={id}
+                  className={"ex-btn " + (isOn(id) ? "on " : "off ") + st}
+                  title={msg + (isOn(id) ? " · click to hide this exchange" : " · click to show this exchange")}
+                  onClick={() => setExOn((v) => ({ ...v, [id]: v[id] === false }))}
                 >
-                  <i /> {label} · {st === "ok" ? "Live" : st === "err" ? "Error" : "…"}
+                  <i /> {label}{st === "err" ? " ✕" : ""}
                 </button>
               );
+              const errs = ADAPTERS.filter((ad) => stateOf(exMsg[ad.id] || "", /markets/) === "err");
               return (
                 <>
-                  {btn("arcus", "Arcus", arcusState, status)}
-                  {btn("qfex", "QFEX", qfexState, qfexMsg)}
-                  {qfexState === "err" && <small className="ex-err">{qfexMsg}</small>}
+                  {btn("arcus", "Arcus", /^Live/.test(status) ? "ok" : /error|disconnect|interrupt/i.test(status) ? "err" : "wait", status)}
+                  {ADAPTERS.map((ad) => btn(ad.id, ad.label, stateOf(exMsg[ad.id] || "", /markets/), exMsg[ad.id] || "connecting…"))}
+                  {errs.map((ad) => (
+                    <small key={ad.id} className="ex-err">{exMsg[ad.id]}</small>
+                  ))}
                 </>
               );
             })()}

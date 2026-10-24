@@ -75,8 +75,13 @@ export function startQfexFeed(
 ): () => void {
   let stopped = false, ws: WebSocket | null = null, retry = 1000, retryTimer: number | undefined;
   let lastWs = 0;
+  const seen = new Set<string>();
   const emit = (symbol: string, price: number, time: number) => {
     if (!symbol || !Number.isFinite(price) || price <= 0) return;
+    if (!seen.has(symbol)) {
+      seen.add(symbol);
+      onSymbols([{ name: QFEX_PREFIX + symbol.toUpperCase(), cat: "" }]);
+    }
     onPrices([{ marketDisplayName: QFEX_PREFIX + symbol.toUpperCase(), marketId: "QFEX", markPrice: price, timestamp: Number.isFinite(time) ? time : Date.now() / 1000 }]);
   };
   const getJson = async (path: string) => {
@@ -131,6 +136,11 @@ export function startQfexFeed(
       if (items.length && (stale || !lastWs)) onPrices(items);
       onStatus("QFEX · " + rows.length + " markets" + (stale ? " (REST)" : " (live)"));
     } catch (e: any) {
+      // REST can be answered with an anti-bot challenge (HTTP 202); the WebSocket still works then.
+      if (Date.now() - lastWs < 20000) {
+        onStatus("QFEX · " + seen.size + " markets (live, WebSocket)");
+        return;
+      }
       onStatus(e instanceof TypeError ? "QFEX blocked by the browser (CORS/network)" : "QFEX error: " + (e?.message || ""));
     }
   };
@@ -141,6 +151,7 @@ export function startQfexFeed(
     if (m.type === "mark_price" && m.symbol) {
       lastWs = Date.now();
       emit(String(m.symbol), Number(m.price), toSec(m.time));
+      if (seen.size && !(seen.size % 5)) onStatus("QFEX · " + seen.size + " markets (live, WebSocket)");
     }
   };
   const connect = () => {
@@ -160,11 +171,15 @@ export function startQfexFeed(
     }
   };
   void poll();
+  const wsOk = window.setInterval(() => {
+    if (Date.now() - lastWs < 20000 && seen.size) onStatus("QFEX · " + seen.size + " markets (live, WebSocket)");
+  }, 5000);
   const pollTimer = window.setInterval(poll, 30000);
   connect();
   return () => {
     stopped = true;
     window.clearInterval(pollTimer);
+    window.clearInterval(wsOk);
     if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     if (ws) { ws.onclose = null; ws.onmessage = null; ws.onerror = null; ws.close(); }
   };
