@@ -62,3 +62,24 @@ export const classifySymbol = (
   if (STOCKS.has(x)) return "Stocks";
   return "Crypto";
 };
+
+/* ---- sub-groups used by the Market tab ---- */
+const METALS = new Set("XAU XAG XPT XPD GOLD SILVER PLATINUM PALLADIUM COPPER GLD SLV IAU PPLT PALL CPER GDX GDXJ".split(" "));
+const ENERGY = new Set("WTI BRENT OIL CRUDE NGAS NATGAS GAS USO UNG BRENTOIL CL".split(" "));
+const ETFS = new Set(
+  "SPY QQQ DIA IWM VOO VTI IVV VEA VWO EEM EFA TLT HYG LQD XLE XLF XLK XLV XLY XLP XLI XLU ARKK SMH SOXL TQQQ SQQQ SPXL UPRO IBIT FBTC ETHA GBTC BITO US500 US100 US30 SPX NDX DJI NAS100 XYZ100 JP225 UK100 DE40 EU50 HK50".split(
+    " ",
+  ),
+);
+const FOREX = new Set("EUR GBP JPY CHF AUD CAD NZD CNH CNY KRW MXN TRY BRL INR DXY".split(" "));
+export type SubGroup = "Stocks" | "ETFs & Indices" | "Forex" | "Metals" | "Energy" | "Agriculture & other" | "Crypto";
+/** Which sub-group a symbol belongs to inside its main category. */
+export const subGroup = (symbol: string, cat: Category): SubGroup => {
+  const raw = String(symbol || "").toUpperCase();
+  const afterColon = raw.includes(":") ? raw.split(":").pop()! : raw;
+  const x = afterColon.replace(/[^A-Z0-9]/g, "").replace(/(USDT|USDC|USD|PERP|SWAP)$/, "");
+  if (cat === "Commodities") return METALS.has(x) ? "Metals" : ENERGY.has(x) ? "Energy" : "Agriculture & other";
+  if (cat === "Stocks") return ETFS.has(x) ? "ETFs & Indices" : FOREX.has(x) ? "Forex" : "Stocks";
+  return "Crypto";
+};
+export const categoryLabel = (c: Category) => (c === "Stocks" ? "RWA" : c);

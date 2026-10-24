@@ -118,42 +118,64 @@ const hlPost = async (body: any, signal?: AbortSignal) => {
   }
   return hlPostRest(body, signal);
 };
+const hlAt: Record<string, string> = {}; // "@107" -> "HYPE/USDC"
+let hlDexes: string[] = [];
+const hlComm = /GOLD|SILVER|XAU|XAG|OIL|BRENT|WTI|COPPER|PLATINUM|PALLADIUM|GAS|WHEAT|CORN|COFFEE|SUGAR/i;
 const hyperliquid: Adapter = {
   id: "hl", label: "Hyperliquid", prefix: HL_P, defaultCat: "Crypto",
   start(onPrices, onSymbols, onStatus) {
     let lastWs = 0, known = 0;
-    const out = (coin: string, px: number) =>
-      onPrices([{ marketDisplayName: HL_P + coin.toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000 }]);
+    const tick = (name: string, px: number, ch?: number): Tick => ({ marketDisplayName: HL_P + name.toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000, change24h: ch });
+    const catOf = (name: string) => (name.includes(":") ? (hlComm.test(name) ? "commodity" : "equity") : "");
     const poll = async () => {
       try {
-        const [meta, ctxs] = await hlPost({ type: "metaAndAssetCtxs" });
-        const list: Tick[] = [], rows: SymRow[] = [];
-        (meta.universe || []).forEach((u: any, i: number) => {
-          if (u.isDelisted) return;
-          const px = num(ctxs[i]?.markPx);
-          const prev = num(ctxs[i]?.prevDayPx);
-          hlCoin[String(u.name).toUpperCase()] = String(u.name);
-          if (px > 0 && prev > 0) hlChange[String(u.name).toUpperCase()] = ((px - prev) / prev) * 100;
-          rows.push({
-            name: HL_P + String(u.name).toUpperCase(),
-            cat: "",
-            change: px > 0 && prev > 0 ? ((px - prev) / prev) * 100 : undefined,
-          });
-          if (px > 0)
-            list.push({
-              marketDisplayName: HL_P + String(u.name).toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000,
-              change24h: prev > 0 ? (px / prev - 1) * 100 : undefined,
+        const rows: SymRow[] = [], list: Tick[] = [];
+        // perpetuals of the main dex + HIP-3 dexes (stocks / commodities such as "xyz:AAPL")
+        if (!hlDexes.length) {
+          try {
+            const d = await hlPost({ type: "perpDexs" });
+            hlDexes = (Array.isArray(d) ? d : []).filter(Boolean).map((x: any) => String(x.name)).filter(Boolean);
+          } catch {}
+        }
+        for (const dex of ["", ...hlDexes]) {
+          try {
+            const [meta, ctxs] = await hlPost(dex ? { type: "metaAndAssetCtxs", dex } : { type: "metaAndAssetCtxs" });
+            (meta.universe || []).forEach((u: any, i: number) => {
+              if (u.isDelisted) return;
+              const name = String(u.name), key = name.toUpperCase();
+              const px = num(ctxs[i]?.markPx), prev = num(ctxs[i]?.prevDayPx);
+              hlCoin[key] = name;
+              const ch = px > 0 && prev > 0 ? ((px - prev) / prev) * 100 : undefined;
+              if (ch != null && !dex) hlChange[key] = ch;
+              rows.push({ name: HL_P + key, cat: catOf(name) });
+              if (px > 0) list.push(tick(name, px, ch));
             });
-        });
+          } catch {}
+        }
+        // spot pairs: "@107" -> "HYPE/USDC"
+        try {
+          const [sm, sctx] = await hlPost({ type: "spotMetaAndAssetCtxs" });
+          const tokens: any[] = sm?.tokens || [];
+          (sm?.universe || []).forEach((u: any, i: number) => {
+            const base = tokens[u.tokens?.[0]]?.name, quote = tokens[u.tokens?.[1]]?.name;
+            const disp = base && quote ? base + "/" + quote : String(u.name);
+            const key = disp.toUpperCase();
+            hlAt[String(u.name)] = disp;
+            hlCoin[key] = String(u.name);
+            const px = num(sctx?.[i]?.markPx ?? sctx?.[i]?.midPx), prev = num(sctx?.[i]?.prevDayPx);
+            rows.push({ name: HL_P + key, cat: "" });
+            if (px > 0) list.push(tick(disp, px, prev > 0 ? ((px - prev) / prev) * 100 : undefined));
+          });
+        } catch {}
         known = rows.length;
         hlKnown = known > 0;
         onSymbols(rows);
         if (list.length && Date.now() - lastWs > 20000) onPrices(list);
-        onStatus("Hyperliquid · " + known + " markets (live)");
+        onStatus(known ? "Hyperliquid · " + known + " markets (live)" : "Hyperliquid error: no markets returned");
       } catch (e: any) { onStatus(netErr("Hyperliquid", e)); }
     };
     void poll();
-    const t = window.setInterval(poll, 30000);
+    const t = window.setInterval(poll, 20000);
     let wsNow: WebSocket | null = null, reqId = 1;
     const pending: Record<number, (v: any) => void> = {};
     hlWsPost = (payload: any) =>
@@ -164,11 +186,14 @@ const hyperliquid: Adapter = {
         pending[id] = (v) => { window.clearTimeout(timer); resolve(v); };
         wsNow.send(JSON.stringify({ method: "post", id, request: { type: "info", payload } }));
       });
+    const subDex = (ws: WebSocket) => {
+      for (const dex of hlDexes) ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids", dex } }));
+    };
     const stop = socket("wss://api.hyperliquid.xyz/ws",
       (ws) => {
         wsNow = ws;
         ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids" } }));
-        window.setTimeout(poll, 300);
+        window.setTimeout(() => { void poll().then(() => wsNow && subDex(wsNow)); }, 300);
       },
       (m) => {
         if (m?.channel === "post" && m?.data?.id != null) {
@@ -182,11 +207,12 @@ const hyperliquid: Adapter = {
         lastWs = Date.now();
         const list: Tick[] = [];
         for (const k of Object.keys(mids)) {
-          // spot pairs ("@107", "PURR/USDC") and prediction/outcome markets ("#114911") are not perpetuals
-          if (k.startsWith("@") || k.startsWith("#") || k.includes("/") || k.includes(":")) continue;
-          if (hlKnown && !hlCoin[k.toUpperCase()]) continue;
+          if (k.startsWith("#")) continue; // outcome markets have no public names
+          const name = k.startsWith("@") ? hlAt[k] : k;
+          if (!name) continue;
+          if (hlKnown && !hlCoin[name.toUpperCase()]) continue;
           const px = num(mids[k]);
-          if (px > 0) list.push({ marketDisplayName: HL_P + k.toUpperCase(), marketId: "HL", markPrice: px, timestamp: Date.now() / 1000 });
+          if (px > 0) list.push(tick(name, px));
         }
         if (list.length) onPrices(list);
       });

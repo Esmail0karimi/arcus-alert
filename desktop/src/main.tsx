@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
-import { categoryFromMarket, classifySymbol, type Category } from "./category";
+import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
@@ -1910,6 +1910,27 @@ function App() {
     setShowAuth(true);
   };
   const filtered = symbols.filter((s) => s.toLowerCase().includes(query.toLowerCase()));
+  // Market tab: Crypto / RWA / Commodities (+ sub-groups)
+  const [marketCat, setMarketCat] = useState<string>(() => {
+    try {
+      return localStorage.getItem("arcus.marketCat") || "All";
+    } catch {
+      return "All";
+    }
+  });
+  const catOfSymbol = (s: string): Category => classifySymbol(s, marketCategories.current);
+  const marketGroups = (() => {
+    const counts: Record<string, number> = { Crypto: 0, Stocks: 0, Commodities: 0 };
+    const sections: Record<string, string[]> = {};
+    for (const s of filtered) {
+      const c = catOfSymbol(s);
+      counts[c] = (counts[c] || 0) + 1;
+      if (marketCat !== "All" && marketCat !== c) continue;
+      const g = c === "Crypto" ? "Crypto" : subGroup(s, c);
+      (sections[g] ||= []).push(s);
+    }
+    return { counts, sections };
+  })();
   watchNavRef.current =
     watchGroup === "Favorites" ? filtered.filter((s) => favorites.includes(s)) : filtered;
   return (
@@ -2079,8 +2100,40 @@ function App() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <div className="marketlist">
-              {filtered.map((s) => (
+            <div className="market-cats">
+              {[
+                ["All", "All", filtered.length],
+                ["Crypto", "Crypto", marketGroups.counts.Crypto],
+                ["Stocks", "RWA", marketGroups.counts.Stocks],
+                ["Commodities", "Commodities", marketGroups.counts.Commodities],
+              ].map(([id, label, n]) => (
+                <button
+                  key={String(id)}
+                  className={marketCat === id ? "active" : ""}
+                  onClick={() => {
+                    setMarketCat(String(id));
+                    try {
+                      localStorage.setItem("arcus.marketCat", String(id));
+                    } catch {}
+                  }}
+                >
+                  {label} <small>{n}</small>
+                </button>
+              ))}
+            </div>
+            {["Crypto", "Stocks", "ETFs & Indices", "Forex", "Metals", "Energy", "Agriculture & other"]
+              .filter((g) => marketGroups.sections[g]?.length)
+              .map((g) => {
+                const list = marketGroups.sections[g];
+                return (
+                  <section key={g} className="market-section">
+                    {(marketCat !== "All" || g !== "Crypto") && marketCat !== "Crypto" && (
+                      <h3 className="market-sub">
+                        {g} <small>{list.length}</small>
+                      </h3>
+                    )}
+                    <div className="marketlist">
+              {list.map((s) => (
                 <div
                   className="marketrow"
                   key={s}
@@ -2121,7 +2174,10 @@ function App() {
                   </strong>
                 </div>
               ))}
-            </div>
+                    </div>
+                  </section>
+                );
+              })}
           </>
         )}
         {tab === "Watchlist" && (
