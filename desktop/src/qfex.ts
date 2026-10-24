@@ -70,7 +70,7 @@ type Tick = { marketDisplayName: string; marketId: string; markPrice: number; ti
 /** Starts the QFEX price feed. Returns a stop function. `onCategory` receives the symbol -> kind hint. */
 export function startQfexFeed(
   onPrices: (items: Tick[]) => void,
-  onSymbols: (names: string[]) => void,
+  onSymbols: (rows: { name: string; cat: string }[]) => void,
   onStatus: (msg: string) => void,
 ): () => void {
   let stopped = false, ws: WebSocket | null = null, retry = 1000, retryTimer: number | undefined;
@@ -79,16 +79,43 @@ export function startQfexFeed(
     if (!symbol || !Number.isFinite(price) || price <= 0) return;
     onPrices([{ marketDisplayName: QFEX_PREFIX + symbol.toUpperCase(), marketId: "QFEX", markPrice: price, timestamp: Number.isFinite(time) ? time : Date.now() / 1000 }]);
   };
+  const getJson = async (path: string) => {
+    const r = await fetch(REST + path, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const text = await r.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("QFEX " + path + " HTTP " + r.status + " non-JSON: " + text.slice(0, 50).replace(/\s+/g, " "));
+    }
+  };
   const poll = async () => {
     try {
-      const r = await fetch(REST + "/md/contracts", { headers: { Accept: "application/json" }, cache: "no-store" });
-      if (!r.ok) { onStatus("QFEX contracts HTTP " + r.status); return; }
-      const body = await r.json();
-      const rows: any[] = Array.isArray(body?.data) ? body.data : [];
-      onSymbols(rows.map((c) => QFEX_PREFIX + String(c.ticker_id).toUpperCase()));
+      let rows: { sym: string; price: number; cat: string }[] = [];
+      let err = "";
+      try {
+        const body = await getJson("/refdata");
+        rows = (Array.isArray(body?.data) ? body.data : []).map((c: any) => ({
+          sym: String(c.symbol),
+          price: Number(c.underlier_price),
+          cat: String(c.product_category || ""),
+        }));
+      } catch (e: any) {
+        if (e instanceof TypeError) throw e;
+        err = e?.message || "";
+      }
+      if (!rows.length) {
+        const body = await getJson("/md/contracts");
+        rows = (Array.isArray(body?.data) ? body.data : []).map((c: any) => ({
+          sym: String(c.ticker_id),
+          price: Number(c.last_price ?? c.index_price),
+          cat: String(c.product_type || ""),
+        }));
+        if (!rows.length && err) throw new Error(err);
+      }
+      onSymbols(rows.map((c) => ({ name: QFEX_PREFIX + c.sym.toUpperCase(), cat: c.cat })));
       const stale = Date.now() - lastWs > 20000; // WebSocket silent: use the REST prices
       const items = rows
-        .map((c) => ({ marketDisplayName: QFEX_PREFIX + String(c.ticker_id).toUpperCase(), marketId: "QFEX", markPrice: Number(c.last_price ?? c.index_price), timestamp: Date.now() / 1000 }))
+        .map((c) => ({ marketDisplayName: QFEX_PREFIX + c.sym.toUpperCase(), marketId: "QFEX", markPrice: c.price, timestamp: Date.now() / 1000 }))
         .filter((c) => Number.isFinite(c.markPrice) && c.markPrice > 0);
       if (items.length && (stale || !lastWs)) onPrices(items);
       onStatus("QFEX · " + rows.length + " markets" + (stale ? " (REST)" : " (live)"));

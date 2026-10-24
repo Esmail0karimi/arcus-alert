@@ -920,10 +920,12 @@ function App() {
     // EXPERIMENT: QFEX feed (symbols are prefixed "QFEX:")
     const stopQfex = startQfexFeed(
       applyPrices,
-      (names) => {
-        for (const n of names) {
+      (rows) => {
+        for (const { name: n, cat } of rows) {
           const base = n.replace(/^QFEX:/, "").replace(/-USD$/, "");
-          marketCategories.current[n] = classifySymbol(base) === "Commodities" ? "Commodities" : "Stocks";
+          const fromApi = /commod|metal|energy/i.test(cat) ? "Commodities" : /equit|stock/i.test(cat) ? "Stocks" : null;
+          marketCategories.current[n] =
+            fromApi || (classifySymbol(base) === "Commodities" ? "Commodities" : "Stocks");
         }
       },
       (m) => setQfexMsg(m),
