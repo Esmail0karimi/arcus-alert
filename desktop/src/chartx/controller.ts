@@ -3,18 +3,40 @@
  * lightweight-charts chart. Everything is optional, default off, and costs nothing while off.
  * It never replaces the main candlestick series, so alerts and horizontal lines are untouched.
  */
-import { LineSeries } from "lightweight-charts";
+import { HistogramSeries, LineSeries } from "lightweight-charts";
 import "./chartx.css";
 import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
 import { NotesLayer } from "./notes";
 import { undoManager } from "../undo";
+import { Built, Kind, NEED, P, Shape, TOOLS, applyDrag, build, newPosition, pickDistance } from "./drawings";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
   DRAW_KEY = "arcus.chartx.drawings.v1";
-type P = { time: number; price: number };
-type Shape = { id: string; a: P; b: P; color: string };
-type Prefs = { sma7: boolean; rsi: boolean };
+type Prefs = {
+  sma: { on: boolean; period: number; color: string; width: number };
+  rsi: { on: boolean; period: number; color: string; h: number };
+  vol: { on: boolean };
+};
+type Theme = { bg: string; text: string; vOn: boolean; vGrid: string; hOn: boolean; hGrid: string; up: string; down: string };
+const THEME_KEY = "arcus.chartx.theme.v1";
+const DEF_THEME: Theme = { bg: "#000000", text: "#91a7c3", vOn: true, vGrid: "#101820", hOn: true, hGrid: "#101820", up: "#00c9a7", down: "#f06470" };
+const DEF_PREFS: Prefs = {
+  sma: { on: false, period: 7, color: "#f2b84b", width: 2 },
+  rsi: { on: false, period: 14, color: "#b388ff", h: 1 },
+  vol: { on: false },
+};
+const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645" };
+const migrate = (raw: any[]): Shape[] =>
+  raw
+    .map((x: any) =>
+      x && x.kind && Array.isArray(x.pts)
+        ? { width: 1.5, ...x }
+        : x && x.a && x.b
+          ? { id: x.id, kind: "trend" as Kind, pts: [x.a, x.b], color: x.color || "#4aa3ff", width: 1.5 }
+          : null,
+    )
+    .filter(Boolean) as Shape[];
 
 const load = <T>(key: string, fallback: T): T => {
   try {
@@ -44,20 +66,29 @@ const svgEl = (tag: string, attrs: Record<string, string | number>) => {
   for (const k in attrs) el.setAttribute(k, String(attrs[k]));
   return el;
 };
+const stop = (el: HTMLElement) =>
+  ["pointerdown", "pointerup", "click", "dblclick", "wheel", "contextmenu"].forEach((ev) =>
+    el.addEventListener(ev, (e) => e.stopPropagation()),
+  );
+
+type Draft = { kind: Kind; pts: P[]; cur: P };
+type Drag = { id: string; i: number; orig: Shape; start: P; before: Shape[]; moved: boolean };
 
 export class ChartX {
   private candles: Candle[] = [];
   private symbol = "";
   private prefs: Prefs;
+  private theme: Theme;
   private shapes: Shape[] = [];
-  private draft: { a: P; b: P } | null = null;
-  private drawing = false;
+  private draft: Draft | null = null;
+  private tool: Kind | null = null;
+  private drag: Drag | null = null;
   private notes!: NotesLayer;
-  private railBtns: HTMLElement[] = [];
-  private railLine = h("button", "cx-rail-part", "╱");
+  private toolBtns = new Map<Kind, HTMLButtonElement>();
   private railText = h("button", "cx-rail-part", "T");
   private smaS: any = null;
   private rsiS: any = null;
+  private volS: any = null;
   private destroyed = false;
   private refreshTimer: number | undefined;
   private raf = 0;
@@ -71,76 +102,127 @@ export class ChartX {
   private catcher = h("div", "cx-catcher");
   private smaBtn = h("button", "cx-btn", "SMA 7");
   private rsiBtn = h("button", "cx-btn", "RSI");
+  private volBtn = h("button", "cx-btn", "Vol");
   private selected: string | null = null;
   private pop = h("div", "line-actions cx-pop");
   private popColor = h("input");
+  private popWidth = h("select");
   private moreBtn = h("button", "cx-btn cx-more", "ƒx");
   private tools = h("div", "cx-tools");
+  private panel = h("div", "cx-panel");
+  private built = new Map<string, Built>();
 
   constructor(
     private chart: any,
     private candle: any,
     private host: HTMLElement,
   ) {
-    this.prefs = load<Prefs>(PREFS_KEY, { sma7: false, rsi: false });
-    if (getComputedStyle(host).position === "static")
-      host.style.position = "relative";
+    const raw = load<any>(PREFS_KEY, {});
+    this.prefs = {
+      sma: { ...DEF_PREFS.sma, ...(raw.sma || {}), on: raw.sma ? !!raw.sma.on : !!raw.sma7 },
+      rsi: { ...DEF_PREFS.rsi, ...(typeof raw.rsi === "object" ? raw.rsi : { on: !!raw.rsi }) },
+      vol: { ...DEF_PREFS.vol, ...(raw.vol || {}) },
+    };
+    this.theme = load<Theme>(THEME_KEY, { ...DEF_THEME });
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
     this.buildUi();
-    this.notes = new NotesLayer(
-      chart,
-      candle,
-      host,
-      () => this.candles,
-      () => this.select(null),
-    );
-    this.notes.onPlacing = (on) =>
-      this.railText.classList.toggle("selected", on);
+    this.applyTheme();
+    this.notes = new NotesLayer(chart, candle, host, () => this.candles, () => this.select(null));
+    this.notes.onPlacing = (on) => this.railText.classList.toggle("selected", on);
     this.syncIndicators();
     const onMove = (p: any) => this.updateLegend(p);
     this.chart.subscribeCrosshairMove(onMove);
     this.cleanups.push(() => this.chart.unsubscribeCrosshairMove(onMove));
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        this.setDrawing(false);
+        this.setTool(null);
         this.notes.setPlacing(false);
         this.select(null);
-      } else if (
-        (e.key === "Delete" || e.key === "Backspace") &&
-        this.selected
-      ) {
+        this.panel.style.display = "none";
+      } else if ((e.key === "Delete" || e.key === "Backspace") && this.selected) {
         const t = e.target as HTMLElement | null;
-        if (
-          t &&
-          /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) &&
-          (t as HTMLInputElement).type !== "color"
-        )
-          return;
+        if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && (t as HTMLInputElement).type !== "color") return;
         e.preventDefault();
         this.deleteSelected();
       }
     };
+    /* pointer: pick / drag shapes (capture phase so the chart does not pan while dragging a shape) */
     let down: { x: number; y: number } | null = null;
-    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+    const ui = (e: Event) => !!(e.target as HTMLElement)?.closest?.(".cx-bar,.cx-pop,.cx-panel,.line-actions");
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 || ui(e)) return;
+      down = { x: e.clientX, y: e.clientY };
+      if (!this.panel.contains(e.target as Node)) this.panel.style.display = "none";
+      if (this.tool) return;
+      const r = this.host.getBoundingClientRect();
+      const lx = e.clientX - r.left, ly = e.clientY - r.top;
+      let i = -2, id: string | null = null;
+      const cur = this.shapes.find((x) => x.id === this.selected);
+      const b = cur && this.built.get(cur.id);
+      if (cur && b) {
+        const k = b.handles.findIndex((q) => Math.hypot(q.x - lx, q.y - ly) <= 10);
+        if (k >= 0) (i = k), (id = cur.id);
+      }
+      if (!id) {
+        const hit = this.hitTest(lx, ly);
+        if (hit) (id = hit), (i = -1);
+      }
+      const p = this.pt(e);
+      if (!id || !p) return;
+      const sh = this.shapes.find((x) => x.id === id)!;
+      if (this.selected !== id) this.select(id);
+      this.drag = { id, i, orig: JSON.parse(JSON.stringify(sh)), start: p, before: this.cloneShapes(), moved: false };
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    };
+    const onDragMove = (e: PointerEvent) => {
+      const d = this.drag;
+      if (!d) return;
+      const p = this.pt(e);
+      if (!p) return;
+      if (!d.moved && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 3) return;
+      d.moved = true;
+      const k = this.shapes.findIndex((x) => x.id === d.id);
+      if (k < 0) return;
+      this.shapes[k] = applyDrag(d.orig, d.i, p, d.start);
+      this.lastSig = "";
+    };
     const onUp = (e: PointerEvent) => {
-      const d = down;
+      const d = this.drag;
+      this.drag = null;
+      const dn = down;
       down = null;
-      if (
-        !d ||
-        this.drawing ||
-        Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5
-      )
+      if (d) {
+        if (d.moved) {
+          this.record(d.before);
+          this.persistShapes();
+        }
+        this.lastSig = "";
         return;
-      if ((e.target as HTMLElement)?.closest?.(".cx-bar,.cx-pop,.line-actions"))
-        return;
+      }
+      if (!dn || this.tool || Math.hypot(e.clientX - dn.x, e.clientY - dn.y) > 5 || ui(e)) return;
       const r = this.host.getBoundingClientRect();
       const hit = this.hitTest(e.clientX - r.left, e.clientY - r.top);
       if (hit || this.selected) this.select(hit);
     };
+    const onCtx = (e: MouseEvent) => {
+      if (ui(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = this.host.getBoundingClientRect();
+      this.openThemePanel(e.clientX - r.left, e.clientY - r.top);
+    };
     this.host.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointermove", onDragMove);
     this.host.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointerup", onUp);
+    this.host.addEventListener("contextmenu", onCtx, true);
     this.cleanups.push(() => {
       this.host.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointermove", onDragMove);
       this.host.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointerup", onUp);
+      this.host.removeEventListener("contextmenu", onCtx, true);
     });
     window.addEventListener("keydown", onKey);
     this.cleanups.push(() => window.removeEventListener("keydown", onKey));
@@ -153,11 +235,12 @@ export class ChartX {
     this.candles = candles.map((c) => ({ ...c }));
     if (symbol !== this.symbol) {
       this.symbol = symbol;
-      const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
-      this.shapes = Array.isArray(all[symbol]) ? all[symbol] : [];
+      const all = load<Record<string, any[]>>(DRAW_KEY, {});
+      this.shapes = Array.isArray(all[symbol]) ? migrate(all[symbol]) : [];
       this.notes.setSymbol(symbol);
       undoManager.drop("cx");
       this.draft = null;
+      this.selected = null;
     }
     this.fill(true);
     this.updateLegend(null);
@@ -170,7 +253,7 @@ export class ChartX {
     if (bar.time === last.time) this.candles[n - 1] = { ...last, ...bar };
     else if (bar.time > last.time) this.candles.push({ ...bar });
     else return;
-    if (this.refreshTimer || (!this.smaS && !this.rsiS)) {
+    if (this.refreshTimer || (!this.smaS && !this.rsiS && !this.volS)) {
       if (!this.refreshTimer) this.updateLegend(null);
       return;
     }
@@ -191,50 +274,52 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [
-      this.legend,
-      this.bar,
-      this.svg,
-      this.catcher,
-      this.pop,
-      this.railLine,
-      this.railText,
-    ].forEach((el) => el.remove());
+    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.railText, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
   private buildUi() {
-    const toggle = (btn: HTMLButtonElement, key: keyof Prefs) => {
-      btn.classList.toggle("on", this.prefs[key]);
+    const toggle = (btn: HTMLButtonElement, get: () => boolean, set: (v: boolean) => void) => {
+      btn.classList.toggle("on", get());
       btn.onclick = () => {
-        this.prefs[key] = !this.prefs[key];
-        btn.classList.toggle("on", this.prefs[key]);
+        set(!get());
+        btn.classList.toggle("on", get());
         save(PREFS_KEY, this.prefs);
         this.syncIndicators();
         this.fill(true);
       };
     };
-    toggle(this.smaBtn, "sma7");
-    toggle(this.rsiBtn, "rsi");
-    this.tools.append(this.smaBtn, this.rsiBtn);
-    const rail = this.host
-      .closest(".chart-workspace")
-      ?.querySelector(".drawing-rail") as HTMLElement | null;
-    this.railLine.title = "Trend line: click two points (Esc cancels)";
-    this.railLine.onclick = () => {
-      this.notes?.setPlacing(false);
-      this.setDrawing(!this.drawing);
+    toggle(this.smaBtn, () => this.prefs.sma.on, (v) => (this.prefs.sma.on = v));
+    toggle(this.rsiBtn, () => this.prefs.rsi.on, (v) => (this.prefs.rsi.on = v));
+    toggle(this.volBtn, () => this.prefs.vol.on, (v) => (this.prefs.vol.on = v));
+    const gear = (which: "sma" | "rsi" | "vol") => {
+      const g = h("button", "cx-btn cx-gear", "⚙");
+      g.title = "Settings";
+      g.onclick = () => this.openIndicatorPanel(which);
+      return g;
     };
+    this.labels();
+    this.tools.append(this.smaBtn, gear("sma"), this.rsiBtn, gear("rsi"), this.volBtn);
+    const rail = this.host.closest(".chart-workspace")?.querySelector(".drawing-rail") as HTMLElement | null;
+    for (const t of TOOLS) {
+      const b = h("button", "cx-rail-part", t.icon);
+      b.title = t.title + " (Esc cancels)";
+      b.style.fontSize = t.icon.length > 1 ? "12px" : "";
+      b.onclick = () => {
+        this.notes?.setPlacing(false);
+        this.setTool(this.tool === t.kind ? null : t.kind);
+      };
+      this.toolBtns.set(t.kind, b);
+      rail?.append(b);
+    }
     this.railText.title = "Text: click a spot on the chart and type";
     this.railText.onclick = () => {
-      this.setDrawing(false);
+      this.setTool(null);
       this.notes.setPlacing(!this.notes.isBusy());
     };
-    if (rail) rail.append(this.railLine, this.railText);
-    this.moreBtn.title = "Indicators and trend lines";
-    const open = load<{ open: boolean }>("arcus.chartx.bar.v1", {
-      open: false,
-    }).open;
+    rail?.append(this.railText);
+    this.moreBtn.title = "Indicators (right-click the chart for theme)";
+    const open = load<{ open: boolean }>("arcus.chartx.bar.v1", { open: false }).open;
     const sync = (o: boolean) => {
       this.tools.style.display = o ? "flex" : "none";
       this.moreBtn.classList.toggle("on", o);
@@ -246,11 +331,9 @@ export class ChartX {
       save("arcus.chartx.bar.v1", { open: o });
     };
     this.bar.append(this.moreBtn, this.tools);
-    ["pointerdown", "wheel", "dblclick"].forEach((ev) =>
-      this.bar.addEventListener(ev, (e) => e.stopPropagation()),
-    );
+    ["pointerdown", "wheel", "dblclick"].forEach((ev) => this.bar.addEventListener(ev, (e) => e.stopPropagation()));
     this.popColor.type = "color";
-    this.popColor.title = "Line colour";
+    this.popColor.title = "Colour";
     this.popColor.onchange = () => {
       if (this.colorBefore) this.record(this.colorBefore);
       this.colorBefore = null;
@@ -263,15 +346,150 @@ export class ChartX {
       this.persistShapes();
       this.lastSig = "";
     };
+    for (const w of [1, 1.5, 2, 3, 4]) this.popWidth.append(new Option(w + "px", String(w)));
+    this.popWidth.title = "Line width";
+    this.popWidth.onchange = () => {
+      const sh = this.shapes.find((x) => x.id === this.selected);
+      if (!sh) return;
+      const before = this.cloneShapes();
+      sh.width = Number(this.popWidth.value);
+      this.record(before);
+      this.persistShapes();
+      this.lastSig = "";
+    };
     const del = h("button", "danger", "🗑");
-    del.title = "Delete line (Del)";
+    del.title = "Delete (Del)";
     del.onclick = () => this.deleteSelected();
-    this.pop.append(this.popColor, del);
+    this.pop.append(this.popColor, this.popWidth, del);
     this.pop.style.display = "none";
-    ["pointerdown", "pointerup", "click"].forEach((ev) =>
-      this.pop.addEventListener(ev, (e) => e.stopPropagation()),
+    stop(this.pop);
+    this.panel.style.display = "none";
+    stop(this.panel);
+    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop, this.panel);
+  }
+  private labels() {
+    this.smaBtn.textContent = "SMA " + this.prefs.sma.period;
+    this.rsiBtn.textContent = "RSI " + this.prefs.rsi.period;
+  }
+
+  /* small form helpers for the floating panels */
+  private row(label: string, input: HTMLElement) {
+    const r = h("label", "cx-row");
+    r.append(h("span", "", label), input);
+    return r;
+  }
+  private colorIn(value: string, on: (v: string) => void) {
+    const i = h("input");
+    i.type = "color";
+    i.value = value;
+    i.oninput = () => on(i.value);
+    return i;
+  }
+  private numIn(value: number, min: number, max: number, step: number, on: (v: number) => void) {
+    const i = h("input");
+    i.type = "number";
+    i.min = String(min);
+    i.max = String(max);
+    i.step = String(step);
+    i.value = String(value);
+    i.onchange = () => {
+      const v = Math.min(max, Math.max(min, Number(i.value) || value));
+      i.value = String(v);
+      on(v);
+    };
+    return i;
+  }
+  private checkIn(value: boolean, on: (v: boolean) => void) {
+    const i = h("input");
+    i.type = "checkbox";
+    i.checked = value;
+    i.onchange = () => on(i.checked);
+    return i;
+  }
+  private showPanel(title: string, rows: HTMLElement[], x: number, y: number, foot?: HTMLElement) {
+    const p = this.panel;
+    p.replaceChildren();
+    const head = h("div", "cx-phead");
+    const close = h("button", "cx-x", "✕");
+    close.onclick = () => (p.style.display = "none");
+    head.append(h("b", "", title), close);
+    p.append(head, ...rows);
+    if (foot) p.append(foot);
+    p.style.display = "block";
+    const W = 230, H = p.offsetHeight || 260;
+    p.style.left = Math.max(4, Math.min(x, this.host.clientWidth - W - 4)) + "px";
+    p.style.top = Math.max(4, Math.min(y, this.host.clientHeight - H - 4)) + "px";
+  }
+
+  private openThemePanel(x: number, y: number) {
+    const T = this.theme;
+    const set = <K extends keyof Theme>(k: K) => (v: Theme[K]) => {
+      T[k] = v;
+      save(THEME_KEY, T);
+      this.applyTheme();
+    };
+    const reset = h("button", "cx-btn cx-reset", "Reset to default");
+    reset.onclick = () => {
+      Object.assign(T, DEF_THEME);
+      save(THEME_KEY, T);
+      this.applyTheme();
+      this.openThemePanel(x, y);
+    };
+    this.showPanel(
+      "Chart appearance",
+      [
+        this.row("Background", this.colorIn(T.bg, set("bg"))),
+        this.row("Text / axis", this.colorIn(T.text, set("text"))),
+        this.row("Vertical grid", this.colorIn(T.vGrid, set("vGrid"))),
+        this.row("Show vertical grid", this.checkIn(T.vOn, set("vOn"))),
+        this.row("Horizontal grid", this.colorIn(T.hGrid, set("hGrid"))),
+        this.row("Show horizontal grid", this.checkIn(T.hOn, set("hOn"))),
+        this.row("Candle up", this.colorIn(T.up, set("up"))),
+        this.row("Candle down", this.colorIn(T.down, set("down"))),
+      ],
+      x,
+      y,
+      reset,
     );
-    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop);
+  }
+  private openIndicatorPanel(which: "sma" | "rsi" | "vol") {
+    const P = this.prefs;
+    const commit = (full = true) => {
+      save(PREFS_KEY, P);
+      this.labels();
+      this.syncIndicators();
+      if (full) this.fill(true);
+    };
+    const y = 56, x = Math.max(4, this.host.clientWidth - 300);
+    if (which === "sma")
+      this.showPanel("SMA settings", [
+        this.row("Period", this.numIn(P.sma.period, 2, 500, 1, (v) => ((P.sma.period = v), commit()))),
+        this.row("Colour", this.colorIn(P.sma.color, (v) => ((P.sma.color = v), commit(false)))),
+        this.row("Width", this.numIn(P.sma.width, 1, 5, 1, (v) => ((P.sma.width = v), commit(false)))),
+      ], x, y);
+    else if (which === "rsi")
+      this.showPanel("RSI settings", [
+        this.row("Period", this.numIn(P.rsi.period, 2, 200, 1, (v) => ((P.rsi.period = v), commit()))),
+        this.row("Colour", this.colorIn(P.rsi.color, (v) => ((P.rsi.color = v), commit(false)))),
+        this.row("Pane height", this.numIn(P.rsi.h, 0.3, 3, 0.1, (v) => ((P.rsi.h = v), commit(false)))),
+        h("div", "cx-hint", "You can also drag the line between the chart and RSI."),
+      ], x, y);
+    else
+      this.showPanel("Volume", [h("div", "cx-hint", "Volume bars sit at the bottom of the main chart and take their colours from the candle colours (right-click the chart).")], x, y);
+  }
+
+  private applyTheme() {
+    const T = this.theme;
+    try {
+      this.chart.applyOptions({
+        layout: { background: { color: T.bg }, textColor: T.text },
+        grid: { vertLines: { color: T.vGrid, visible: T.vOn }, horzLines: { color: T.hGrid, visible: T.hOn } },
+      });
+      this.candle.applyOptions({
+        upColor: T.up, downColor: T.down, borderUpColor: T.up, borderDownColor: T.down, wickUpColor: T.up, wickDownColor: T.down,
+      });
+    } catch {}
+    this.fill(true);
   }
 
   private cloneShapes(): Shape[] {
@@ -309,42 +527,34 @@ export class ChartX {
         this.chart.removeSeries(s);
       } catch {}
     };
-    if (!this.prefs.sma7 && this.smaS) {
-      kill(this.smaS);
-      this.smaS = null;
-    }
-    if (!this.prefs.rsi && this.rsiS) {
-      kill(this.rsiS);
-      this.rsiS = null;
-    }
-    if (this.prefs.sma7 && !this.smaS)
+    const P = this.prefs;
+    if (!P.sma.on && this.smaS) (kill(this.smaS), (this.smaS = null));
+    if (!P.rsi.on && this.rsiS) (kill(this.rsiS), (this.rsiS = null));
+    if (!P.vol.on && this.volS) (kill(this.volS), (this.volS = null));
+    if (P.sma.on && !this.smaS)
       this.smaS = this.chart.addSeries(LineSeries, {
-        color: "#f2b84b",
-        lineWidth: 2,
-        lastValueVisible: false,
-        priceLineVisible: false,
-        crosshairMarkerVisible: false,
+        color: P.sma.color, lineWidth: P.sma.width, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
       });
-    if (this.prefs.rsi && !this.rsiS) {
-      this.rsiS = this.chart.addSeries(
-        LineSeries,
-        { color: "#b388ff", lineWidth: 2, priceLineVisible: false },
-        1,
-      );
+    else if (this.smaS) this.smaS.applyOptions({ color: P.sma.color, lineWidth: P.sma.width });
+    if (P.rsi.on && !this.rsiS) {
+      this.rsiS = this.chart.addSeries(LineSeries, { color: P.rsi.color, lineWidth: 2, priceLineVisible: false }, 1);
       for (const price of [70, 30])
-        this.rsiS.createPriceLine({
-          price,
-          color: "#556a85",
-          lineWidth: 1,
-          lineStyle: 2,
-          axisLabelVisible: false,
-        });
+        this.rsiS.createPriceLine({ price, color: "#556a85", lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+    } else if (this.rsiS) this.rsiS.applyOptions({ color: P.rsi.color });
+    if (P.vol.on && !this.volS) {
+      this.volS = this.chart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" }, priceScaleId: "cx-vol", lastValueVisible: false, priceLineVisible: false,
+      });
+      this.volS.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     }
+    try {
+      this.candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: P.vol.on ? 0.22 : 0.08 } });
+    } catch {}
     try {
       const panes = this.chart.panes();
       if (panes.length > 1) {
         panes[0].setStretchFactor(3);
-        panes[1].setStretchFactor(1);
+        panes[1].setStretchFactor(3 * P.rsi.h * 0.33 + 0.0001);
       }
     } catch {}
   }
@@ -352,15 +562,20 @@ export class ChartX {
   /** full=true: setData; otherwise only push the last point (cheap, used for live ticks). */
   private fill(full: boolean) {
     if (this.destroyed || !this.candles.length) return;
-    const put = (s: any, d: Pt[]) => {
+    const put = (s: any, d: any[]) => {
       if (!s || !d.length) return;
       if (full) s.setData(d);
       else s.update(d[d.length - 1]);
     };
     try {
-      const tail = full ? this.candles : this.candles.slice(-200);
-      put(this.smaS, sma(tail, 7));
-      put(this.rsiS, rsi(tail, 14)); // 200 bars is plenty for Wilder smoothing to converge
+      const P = this.prefs;
+      const tail = full ? this.candles : this.candles.slice(-Math.max(200, P.sma.period * 8, P.rsi.period * 12));
+      put(this.smaS, sma(tail, P.sma.period));
+      put(this.rsiS, rsi(tail, P.rsi.period));
+      if (this.volS) {
+        const vt = full ? this.candles : this.candles.slice(-2);
+        put(this.volS, vt.map((c) => ({ time: c.time, value: c.volume || 0, color: (c.close >= c.open ? this.theme.up : this.theme.down) + "88" })));
+      }
     } catch {}
   }
 
@@ -399,53 +614,49 @@ export class ChartX {
       (x.volume ? ` <b>Vol</b> <i>${fmtVol(x.volume)}</i>` : "");
   }
 
-  /* ---------- trend lines ---------- */
-  private setDrawing(on: boolean) {
-    this.drawing = on;
+  /* ---------- drawing tools ---------- */
+  private setTool(k: Kind | null) {
+    this.tool = k;
     this.draft = null;
-    this.catcher.classList.toggle("on", on);
-    this.railLine.classList.toggle("selected", on);
+    this.catcher.classList.toggle("on", !!k);
+    for (const [kind, b] of this.toolBtns) b.classList.toggle("selected", kind === k);
     this.lastSig = "";
   }
 
+  private pt(e: { clientX: number; clientY: number }): P | null {
+    const r = this.host.getBoundingClientRect();
+    const logical = this.chart.timeScale().coordinateToLogical(e.clientX - r.left);
+    const price = this.candle.coordinateToPrice(e.clientY - r.top);
+    if (logical == null || price == null || !this.candles.length) return null;
+    return { time: indexToTime(this.candles, barSpan(this.candles), Number(logical)), price: Number(price) };
+  }
+
   private hookDrawing() {
-    const pt = (e: PointerEvent): P | null => {
-      const r = this.host.getBoundingClientRect();
-      const logical = this.chart
-        .timeScale()
-        .coordinateToLogical(e.clientX - r.left);
-      const price = this.candle.coordinateToPrice(e.clientY - r.top);
-      if (logical == null || price == null || !this.candles.length) return null;
-      return {
-        time: indexToTime(this.candles, barSpan(this.candles), Number(logical)),
-        price: Number(price),
-      };
-    };
     this.catcher.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       e.preventDefault();
-      const p = pt(e);
-      if (!p || !this.drawing) return;
-      if (!this.draft) this.draft = { a: p, b: p };
-      else {
+      const p = this.pt(e);
+      const kind = this.tool;
+      if (!p || !kind) return;
+      const pts = [...(this.draft?.pts || []), p];
+      const need = NEED[kind];
+      if (kind === "long" || kind === "short" || pts.length >= need) {
         const before = this.cloneShapes();
-        this.shapes.push({
-          id: Date.now().toString(36),
-          a: this.draft.a,
-          b: p,
-          color: "#4aa3ff",
-        });
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+        const final = kind === "long" || kind === "short" ? newPosition(kind, p, barSpan(this.candles)) : pts;
+        this.shapes.push({ id, kind, pts: final, color: DEF_COLOR[kind], width: kind === "trend" ? 1.5 : 2 });
         this.record(before);
         this.persistShapes();
-        this.setDrawing(false);
-      }
+        this.setTool(null);
+        this.select(id);
+      } else this.draft = { kind, pts, cur: p };
       this.lastSig = "";
     });
     this.catcher.addEventListener("pointermove", (e) => {
       if (!this.draft) return;
-      const p = pt(e);
+      const p = this.pt(e);
       if (p) {
-        this.draft.b = p;
+        this.draft.cur = p;
         this.lastSig = "";
       }
     });
@@ -455,7 +666,11 @@ export class ChartX {
     if (id) this.notes?.deselect();
     this.selected = id;
     const sh = this.shapes.find((x) => x.id === id);
-    if (sh) this.popColor.value = sh.color;
+    if (sh) {
+      this.popColor.value = sh.color;
+      this.popWidth.value = String(sh.width);
+      if (this.popWidth.value !== String(sh.width)) this.popWidth.value = "2";
+    }
     this.lastSig = "";
   }
   private deleteSelected() {
@@ -467,22 +682,15 @@ export class ChartX {
     this.persistShapes();
     this.lastSig = "";
   }
-  /** Nearest trend line within 9px of the point (generous so lines are easy to pick). */
+  /** Nearest shape within 9px of the point (generous so lines are easy to pick); newest wins ties. */
   private hitTest(px: number, py: number): string | null {
     let best: string | null = null,
       bestD = 9;
     for (const s of this.shapes) {
-      const A = this.xy(s.a),
-        B = this.xy(s.b);
-      if (!A || !B) continue;
-      const dx = B.x - A.x,
-        dy = B.y - A.y,
-        len2 = dx * dx + dy * dy;
-      const t = len2
-        ? Math.max(0, Math.min(1, ((px - A.x) * dx + (py - A.y) * dy) / len2))
-        : 0;
-      const d = Math.hypot(px - (A.x + t * dx), py - (A.y + t * dy));
-      if (d < bestD) {
+      const b = this.built.get(s.id);
+      if (!b) continue;
+      const d = pickDistance(b, px, py);
+      if (d <= bestD) {
         bestD = d;
         best = s.id;
       }
@@ -491,22 +699,19 @@ export class ChartX {
   }
 
   private xy(p: P) {
-    const x = this.chart
-      .timeScale()
-      .logicalToCoordinate(
-        timeToIndex(this.candles, barSpan(this.candles), p.time),
-      );
+    const x = this.chart.timeScale().logicalToCoordinate(timeToIndex(this.candles, barSpan(this.candles), p.time));
     const y = this.candle.priceToCoordinate(p.price);
     return x == null || y == null ? null : { x: Number(x), y: Number(y) };
   }
 
-  /** Redraw only when something that affects the lines changed (no work while idle). */
+  /** Redraw only when something that affects the shapes changed (no work while idle). */
   private loop = () => {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(this.loop);
     this.notes.tick();
     if (!this.shapes.length && !this.draft) {
       if (this.svg.firstChild) this.svg.replaceChildren();
+      this.built.clear();
       this.pop.style.display = "none";
       return;
     }
@@ -519,52 +724,35 @@ export class ChartX {
       this.host.clientWidth,
       this.host.clientHeight,
       this.shapes.length,
-      this.draft?.b.time,
-      this.draft?.b.price,
+      this.draft?.cur.time,
+      this.draft?.cur.price,
     ].join("|");
     if (sig === this.lastSig) return;
     this.lastSig = sig;
     this.svg.replaceChildren();
-    this.svg.setAttribute("width", String(this.host.clientWidth));
-    this.svg.setAttribute("height", String(this.host.clientHeight));
-    const list = this.draft
-      ? [...this.shapes, { id: "d", color: "#4aa3ff", ...this.draft }]
-      : this.shapes;
+    const w = this.host.clientWidth, hh = this.host.clientHeight;
+    this.svg.setAttribute("width", String(w));
+    this.svg.setAttribute("height", String(hh));
     this.pop.style.display = "none";
-    for (const s of list) {
-      const A = this.xy(s.a),
-        B = this.xy(s.b);
-      if (!A || !B) continue;
-      this.svg.append(
-        svgEl("line", {
-          x1: A.x,
-          y1: A.y,
-          x2: B.x,
-          y2: B.y,
-          stroke: s.color,
-          "stroke-width": s.id === this.selected ? 3 : 1.5,
-          "stroke-dasharray": s.id === "d" ? "5 4" : "",
-        }),
-        svgEl("circle", {
-          cx: A.x,
-          cy: A.y,
-          r: s.id === this.selected ? 5 : 3,
-          fill: s.color,
-        }),
-        svgEl("circle", {
-          cx: B.x,
-          cy: B.y,
-          r: s.id === this.selected ? 5 : 3,
-          fill: s.color,
-        }),
-      );
+    this.built.clear();
+    const draw = (s: Shape, selected: boolean, draft: boolean) => {
+      const b = build(s, { xy: (p) => this.xy(p), w, h: hh, selected, draft });
+      if (!b) return null;
+      b.els.forEach((el) => this.svg.append(el));
+      return b;
+    };
+    for (const s of this.shapes) {
+      const b = draw(s, s.id === this.selected, false);
+      if (!b) continue;
+      this.built.set(s.id, b);
       if (s.id === this.selected) {
         this.pop.style.display = "flex";
-        this.pop.style.top = Math.max(4, (A.y + B.y) / 2 - 36) + "px";
+        this.pop.style.top = Math.max(4, b.mid.y - 36) + "px";
       }
     }
+    if (this.draft)
+      draw({ id: "d", kind: this.draft.kind, pts: [...this.draft.pts, this.draft.cur], color: DEF_COLOR[this.draft.kind], width: 1.5 }, false, true);
   };
 }
 
-export const attachChartX = (chart: any, candle: any, host: HTMLElement) =>
-  new ChartX(chart, candle, host);
+export const attachChartX = (chart: any, candle: any, host: HTMLElement) => new ChartX(chart, candle, host);
