@@ -8,7 +8,7 @@ import { categoryFromMarket, classifySymbol, type Category } from "./category";
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
-import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles } from "./exchanges";
+import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote } from "./exchanges";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -1245,6 +1245,7 @@ function App() {
           try {
             candles = ex.candles ? await ex.candles(requestSymbol, requestTf, controller.signal) : [];
             if (candles.length) CANDLE_CACHE.set(cacheKey, { at: Date.now(), candles });
+            if (candles.length && candleNote[requestSymbol]) setChartStatus(candleNote[requestSymbol]);
           } catch (err: any) {
             if (err?.name === "AbortError" || cancelled) return;
             lastError = err?.message || ex.label + " candle request failed";
@@ -1482,7 +1483,8 @@ function App() {
             .setVisibleLogicalRange({ from: candles.length - 250, to: candles.length + 3 });
         else activeChart.timeScale().fitContent();
         setChartStatus(
-          requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket",
+          requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket" +
+            (candleNote[requestSymbol] ? " · " + candleNote[requestSymbol] : ""),
         );
       } catch (e: any) {
         if (!cancelled && e?.name !== "AbortError") {

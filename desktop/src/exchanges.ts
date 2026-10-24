@@ -295,15 +295,56 @@ const variational: Adapter = {
   candles: async (symbol, tf, signal) => {
     const hk = hlMatch(symbol.slice(VR_P.length).split("-")[0]);
     if (!hk) throw new Error("no Hyperliquid market with the same name to borrow history from");
-    return hlCandles(hk, tf, signal);
+    const rows = await hlCandles(hk, tf, signal);
+    candleNote[symbol] = "Variational: history from Hyperliquid " + hk + " (Variational publishes no candles), live bars from Variational";
+    return rows;
   },
 };
 
 /* ---------------- QFEX ---------------- */
+/* QFEX's own candle API sits behind an anti-bot challenge a web page cannot pass. Stocks/commodities are also traded
+   on Hyperliquid's HIP-3 "xyz" dex, so its candles of the same asset are used as history (live bars stay QFEX). */
+export const candleNote: Record<string, string> = {};
+let xyzMap: Record<string, string> | null = null, xyzLoading: Promise<void> | null = null;
+const XYZ_ALIAS: Record<string, string[]> = { XAU: ["GOLD", "XAU"], XAG: ["SILVER", "XAG"], XPT: ["PLATINUM"], XPD: ["PALLADIUM"], WTI: ["CL", "OIL", "WTI"], BRENT: ["BRENTOIL", "BRENT"], NG: ["NATGAS", "NG"] };
+const loadXyz = () =>
+  (xyzLoading ||= (async () => {
+    try {
+      const meta = await hlPost({ type: "meta", dex: "xyz" });
+      const map: Record<string, string> = {};
+      for (const u of meta?.universe || []) {
+        const name = String(u.name);
+        const base = (name.includes(":") ? name.split(":")[1] : name).toUpperCase();
+        map[base] = name;
+        hlCoin[name.toUpperCase()] = name;
+      }
+      xyzMap = map;
+    } catch {
+      xyzLoading = null; // retry next time
+    }
+  })());
+const xyzFor = async (base: string) => {
+  await loadXyz();
+  if (!xyzMap) return null;
+  for (const t of [base, ...(XYZ_ALIAS[base] || [])]) if (xyzMap[t]) return xyzMap[t];
+  return null;
+};
 const qfex: Adapter = {
   id: "qfex", label: "QFEX", prefix: QFEX_PREFIX, defaultCat: "Stocks", ownHistory: true,
   start: (p, s, st) => startQfexFeed(p as any, s, st),
-  candles: fetchQfexCandles,
+  candles: async (symbol, tf, signal) => {
+    try {
+      return await fetchQfexCandles(symbol, tf, signal);
+    } catch (err: any) {
+      if (err?.name === "AbortError") throw err;
+      const base = symbol.slice(QFEX_PREFIX.length).split("-")[0].toUpperCase();
+      const k = await xyzFor(base);
+      if (!k) throw new Error((err?.message || "QFEX candles unavailable") + " · and no Hyperliquid (xyz) market named " + base);
+      const rows = await hlCandles(k, tf, signal);
+      candleNote[symbol] = "QFEX: history from Hyperliquid " + k + " (QFEX candle API is blocked for web pages), live bars from QFEX";
+      return rows;
+    }
+  },
 };
 
 export const ADAPTERS: Adapter[] = [qfex, hyperliquid, lighter, variational];
