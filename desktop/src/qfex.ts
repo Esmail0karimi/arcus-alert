@@ -42,7 +42,7 @@ export async function fetchQfexCandles(symbol: string, tf: string, signal?: Abor
       const r = await fetch(
         REST + "/candles/" + encodeURIComponent(raw(symbol)) + "?resolution=" + encodeURIComponent(res) +
           "&fromISO=" + encodeURIComponent(from) + "&toISO=" + encodeURIComponent(to),
-        { headers: { Accept: "application/json" }, signal },
+        { signal },
       );
       if (!r.ok) { lastErr = "QFEX HTTP " + r.status; continue; }
       const body = await r.json();
@@ -80,7 +80,13 @@ export function startQfexFeed(
     onPrices([{ marketDisplayName: QFEX_PREFIX + symbol.toUpperCase(), marketId: "QFEX", markPrice: price, timestamp: Number.isFinite(time) ? time : Date.now() / 1000 }]);
   };
   const getJson = async (path: string) => {
-    const r = await fetch(REST + path, { headers: { Accept: "application/json" }, cache: "no-store" });
+    // Plain GET without extra headers or cache options (those trigger a CORS preflight, and "no-cache" made the
+    // server answer 202 with an empty body).
+    let r = await fetch(REST + path);
+    if (r.status === 202) {
+      await new Promise((res) => setTimeout(res, 1500));
+      r = await fetch(REST + path);
+    }
     const text = await r.text();
     try {
       return JSON.parse(text);
