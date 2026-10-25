@@ -6,6 +6,8 @@ import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-chart
 import { attachChartX, type ChartX } from "./chartx/controller";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
+import { AssetInfo } from "./assetinfo";
+import { Guide } from "./guide";
 import "./style.css";
 import { auth, db } from "./firebase";
 import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote, candleSrc, getCandles, externalCandles } from "./exchanges";
@@ -38,7 +40,7 @@ declare global {
     arcusDesktop: any;
   }
 }
-const TABS = ["Market", "Watchlist", "Chart", "Alerts", "Create"];
+const TABS = ["Market", "Watchlist", "Chart", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -88,6 +90,7 @@ function App() {
     [editLineColor, setEditLineColor] = useState("#39c9c2"),
     [editLineWidth, setEditLineWidth] = useState(2),
     [favName, setFavName] = useState(() => localStorage.getItem("arcus.favName") || "Favorites"),
+    [infoSym, setInfoSym] = useState<string | null>(null),
     [listMenu, setListMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [watchGroup, setWatchGroup] = useState("Favorites");
   const [tab, setTab] = useState("Market"),
@@ -2049,6 +2052,22 @@ function App() {
   watchNavRef.current = panelItems;
   return (
     <div className="app">
+      {infoSym && (
+        <AssetInfo
+          symbol={infoSym}
+          shown={dn(infoSym)}
+          category={categoryLabel(catOfSymbol(infoSym))}
+          price={prices[infoSym]?.price}
+          change={prices[infoSym]?.change24h}
+          exchange={adapterOf(infoSym)?.label || "Arcus"}
+          onClose={() => setInfoSym(null)}
+          onChart={() => {
+            setSymbol(infoSym);
+            setTab("Chart");
+            setInfoSym(null);
+          }}
+        />
+      )}
       {listMenu && (
         <>
           <div className="wl-menu-bg" onClick={() => setListMenu(null)} />
@@ -2289,7 +2308,10 @@ function App() {
                     setTab("Chart");
                   }}
                 >
-                  <b>{dn(s)}</b>
+                  <b>
+                    {dn(s)}
+                    <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
+                  </b>
                   <button
                     className="market-favorite"
                     aria-label="Add to a watchlist"
@@ -2329,6 +2351,7 @@ function App() {
               })}
           </>
         )}
+        {tab === "Guide" && <Guide />}
         {tab === "Watchlist" && (
           <>
             <div className="heading">
@@ -2351,7 +2374,10 @@ function App() {
                     setTab("Chart");
                   }}
                 >
-                  <b>{dn(s)}</b>
+                  <b>
+                    {dn(s)}
+                    <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
+                  </b>
                   <button
                     className="market-favorite"
                     aria-label="Remove"
@@ -2406,6 +2432,9 @@ function App() {
                   }}
                 >
                   {symbol && inAnyList(symbol) ? "★" : "☆"}
+                </button>
+                <button className="chart-star" title="What is this market?" onClick={() => symbol && setInfoSym(symbol)}>
+                  ⓘ
                 </button>
                 <div className="chart-symbol-picker">
                   <button
@@ -3314,7 +3343,7 @@ function App() {
       <nav>
         {TABS.map((t, i) => (
           <button className={tab === t ? "active" : ""} onClick={() => setTab(t)} key={t}>
-            <span>{["▦", "☆", "⌁", "♧", "＋"][i]}</span>
+            <span>{["▦", "☆", "⌁", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
