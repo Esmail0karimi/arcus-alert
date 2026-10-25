@@ -15,7 +15,7 @@ export const DASH: Record<LineStyle, string> = { solid: "", dashed: "7 5", dotte
 export const defLevels = (kind: Kind): Level[] =>
   (kind === "fibext" ? FIB_EXT : FIB_RET).map((v) => ({ v, on: true, color: FIB_COL[String(v)] || "#9aa7b8" }));
 export type XY = { x: number; y: number };
-export type Env = { xy: (p: P) => XY | null; w: number; h: number; selected: boolean; draft?: boolean };
+export type Env = { xy: (p: P) => XY | null; w: number; h: number; selected: boolean; draft?: boolean; hover?: boolean };
 export type Built = { els: SVGElement[]; segs: [number, number, number, number][]; polys: XY[][]; handles: XY[]; mid: XY };
 
 export const NEED: Record<Kind, number> = { trend: 2, vline: 1, hray: 1, channel: 3, fibret: 2, fibext: 3, rect: 2, long: 1, short: 1 };
@@ -165,11 +165,10 @@ export function build(s: Shape, env: Env): Built | null {
       const E = A, S = B, T = C;
       const x1 = S.x;
       const G = s.pc || "#089981", R = s.sc || "#f23645";
-      const rp = rectEl(E.x, E.y, x1, T.y, G, G, 1), rl = rectEl(E.x, E.y, x1, S.y, R, R, 1);
+      const rp = rectEl(E.x, E.y, x1, T.y, G, "none", 0), rl = rectEl(E.x, E.y, x1, S.y, R, "none", 0);
       rp.setAttribute("fill-opacity", String(s.fillOp ?? 0.22));
       rl.setAttribute("fill-opacity", String(s.fillOp ?? 0.22));
       out.els.push(rp, rl);
-      if (env.selected) { rp.setAttribute("stroke-width", "2"); rl.setAttribute("stroke-width", "2"); }
       out.els.push(seg(E.x, E.y, x1, E.y, "#d5e2f3", s.width ? Math.min(s.width, 2) : 1.2, dash));
       out.polys.push([E, { x: x1, y: E.y }, { x: x1, y: T.y }, { x: E.x, y: T.y }], [E, { x: x1, y: E.y }, { x: x1, y: S.y }, { x: E.x, y: S.y }]);
       out.segs.push([E.x, E.y, x1, E.y]);
@@ -177,7 +176,7 @@ export function build(s: Shape, env: Env): Built | null {
       const acct = s.acct ?? 1000, riskAmt = (acct * (s.riskP ?? 1)) / 100;
       const qty = risk ? riskAmt / risk : 0;
       const cx = (E.x + x1) / 2;
-      if (s.labels !== false) {
+      if (s.labels !== false && (env.hover || env.selected)) {
         const tp = pct(pts[0].price, pts[2].price), sp = pct(pts[0].price, pts[1].price);
         const sg = (v: number) => (v >= 0 ? "+" : "") + v.toFixed(2);
         const tl = "Target: " + fmtPrice(pts[2].price) + " (" + sg(tp) + "%)  " + (qty ? "+" + (qty * reward).toFixed(2) : "");

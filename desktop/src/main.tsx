@@ -2252,13 +2252,15 @@ function App() {
                   <b>{dn(s)}</b>
                   <button
                     className="market-favorite"
-                    aria-label={favorites.includes(s) ? "Remove favorite" : "Add favorite"}
+                    aria-label="Add to a watchlist"
+                    title="Add to a watchlist"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleFav(s);
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setListMenu({ sym: s, x: r.left - 120, y: r.bottom + 4 });
                     }}
                   >
-                    {favorites.includes(s) ? "★" : "☆"}
+                    {inAnyList(s) ? "★" : "☆"}
                   </button>
                   <small
                     className={

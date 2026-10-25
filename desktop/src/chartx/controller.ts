@@ -114,6 +114,8 @@ export class ChartX {
   private scaleBox = h("div", "cx-scale");
   private logOn = false;
   private built = new Map<string, Built>();
+  private hoverId: string | null = null;
+  private shareBtn = h("button", "cx-btn", "⤴ Share");
 
   constructor(
     private chart: any,
@@ -220,6 +222,20 @@ export class ChartX {
     this.host.addEventListener("pointerup", onUp, true);
     window.addEventListener("pointerup", onUp);
     this.host.addEventListener("contextmenu", onCtx, true);
+    const onHover = (e: PointerEvent) => {
+      if (this.drag || this.tool || e.buttons) return;
+      const r = this.host.getBoundingClientRect();
+      const id = ui(e) ? null : this.hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (id !== this.hoverId) {
+        this.hoverId = id;
+        this.lastSig = "";
+      }
+    };
+    this.host.addEventListener("pointermove", onHover, true);
+    const onLeave = () => {
+      if (this.hoverId) (this.hoverId = null), (this.lastSig = "");
+    };
+    this.host.addEventListener("pointerleave", onLeave);
     const onDbl = (e: MouseEvent) => {
       if (ui(e) || this.tool) return;
       const r = this.host.getBoundingClientRect();
@@ -233,6 +249,8 @@ export class ChartX {
     this.host.addEventListener("dblclick", onDbl, true);
     this.cleanups.push(() => {
       this.host.removeEventListener("dblclick", onDbl, true);
+      this.host.removeEventListener("pointermove", onHover, true);
+      this.host.removeEventListener("pointerleave", onLeave);
       this.host.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("pointermove", onDragMove);
       this.host.removeEventListener("pointerup", onUp, true);
@@ -289,7 +307,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -345,7 +363,9 @@ export class ChartX {
       sync(o);
       save("arcus.chartx.bar.v1", { open: o });
     };
-    this.bar.append(this.moreBtn, this.tools);
+    this.shareBtn.title = "Share this analysis (image or code)";
+    this.shareBtn.onclick = () => this.openSharePanel();
+    this.bar.append(this.shareBtn, this.moreBtn, this.tools);
     ["pointerdown", "wheel", "dblclick"].forEach((ev) => this.bar.addEventListener(ev, (e) => e.stopPropagation()));
     this.popColor.type = "color";
     this.popColor.title = "Colour";
@@ -558,8 +578,8 @@ export class ChartX {
     if (isPos) {
       rows.push(col("Target colour", sh.pc || "#089981", (s2, v) => (s2.pc = v)));
       rows.push(col("Stop colour", sh.sc || "#f23645", (s2, v) => (s2.sc = v)));
-      rows.push(num("Fill opacity", sh.fillOp ?? 0.22, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
-      rows.push(chk("Show labels", sh.labels !== false, (s2, v) => (s2.labels = v)));
+      rows.push(num("Background opacity", sh.fillOp ?? 0.22, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
+      rows.push(chk("Labels on hover", sh.labels !== false, (s2, v) => (s2.labels = v)));
       rows.push(num("Account size", sh.acct ?? 1000, 1, 1e9, 100, (s2, v) => (s2.acct = v)));
       rows.push(num("Risk %", sh.riskP ?? 1, 0.01, 100, 0.25, (s2, v) => (s2.riskP = v)));
     }
@@ -595,6 +615,109 @@ export class ChartX {
     }
     const names: Record<Kind, string> = { trend: "Trend line", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position" };
     this.showPanel(names[k] + " settings", rows, at.x, at.y, undefined, () => this.record(snap));
+  }
+
+  /** PNG of the chart including drawings, with a small caption. */
+  private async snapshot(): Promise<Blob | null> {
+    const shot: HTMLCanvasElement = this.chart.takeScreenshot();
+    const k = shot.width / Math.max(1, this.host.clientWidth);
+    const out = document.createElement("canvas");
+    const cap = 26 * k;
+    out.width = shot.width;
+    out.height = shot.height + cap;
+    const g = out.getContext("2d")!;
+    g.fillStyle = this.theme.bg;
+    g.fillRect(0, 0, out.width, out.height);
+    g.drawImage(shot, 0, cap);
+    try {
+      const xml = new XMLSerializer().serializeToString(this.svg);
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
+      await new Promise<void>((ok, bad) => {
+        img.onload = () => ok();
+        img.onerror = () => bad();
+        img.src = url;
+      });
+      g.drawImage(img, 0, cap, this.host.clientWidth * k, this.host.clientHeight * k);
+      URL.revokeObjectURL(url);
+    } catch {}
+    g.fillStyle = "#d5e2f3";
+    g.font = "bold " + 13 * k + "px system-ui,sans-serif";
+    g.fillText(this.symbolLabel() + "  ·  " + new Date().toLocaleString() + "  ·  Arcus Alert", 10 * k, 18 * k);
+    return new Promise((ok) => out.toBlob((b) => ok(b), "image/png"));
+  }
+  private symbolLabel() {
+    return this.symbol.replace(/^[A-Z]+:/, "");
+  }
+  private code(): string {
+    const data = { v: 1, symbol: this.symbol, shapes: this.shapes };
+    return "ARCUS1:" + btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  }
+  private importCode(txt: string): string {
+    try {
+      const m = /ARCUS1:([A-Za-z0-9+/=]+)/.exec(txt);
+      if (!m) return "Code not recognised";
+      const data = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+      const list = migrate(Array.isArray(data.shapes) ? data.shapes : []);
+      if (!list.length) return "No drawings in this code";
+      const before = this.cloneShapes();
+      for (const s of list) this.shapes.push({ ...s, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) });
+      this.record(before);
+      this.persistShapes();
+      this.lastSig = "";
+      return "Imported " + list.length + " drawing(s)" + (data.symbol && data.symbol !== this.symbol ? " (from " + data.symbol + ")" : "");
+    } catch {
+      return "Code is damaged";
+    }
+  }
+  private openSharePanel() {
+    const msg = h("div", "cx-hint", "");
+    const say = (t: string) => (msg.textContent = t);
+    const btn = (label: string, fn: () => unknown) => {
+      const b = h("button", "cx-btn cx-wide", label);
+      b.onclick = () => Promise.resolve(fn()).catch(() => say("Failed"));
+      return b;
+    };
+    const name = () => "arcus-" + this.symbolLabel().replace(/[^\w-]+/g, "_") + ".png";
+    const rows = [
+      btn("⬇ Download image (PNG)", async () => {
+        const b = await this.snapshot();
+        if (!b) return say("Image failed");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(b);
+        a.download = name();
+        a.click();
+        say("Saved " + name());
+      }),
+      btn("📋 Copy image", async () => {
+        const b = await this.snapshot();
+        if (!b) return say("Image failed");
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
+        say("Image copied: paste it in Telegram, X, etc.");
+      }),
+      btn("📤 Share…", async () => {
+        const b = await this.snapshot();
+        if (!b) return say("Image failed");
+        const f = new File([b], name(), { type: "image/png" });
+        const nav: any = navigator;
+        if (nav.canShare && nav.canShare({ files: [f] })) await nav.share({ files: [f], title: this.symbolLabel() + " analysis" });
+        else say("Sharing is not supported here: use Download or Copy");
+      }),
+      btn("🔗 Copy analysis code", async () => {
+        await navigator.clipboard.writeText(this.code());
+        say("Code copied. A friend can paste it with Import.");
+      }),
+      btn("📥 Import analysis code", async () => {
+        let txt = "";
+        try {
+          txt = await navigator.clipboard.readText();
+        } catch {}
+        if (!/ARCUS1:/.test(txt)) txt = window.prompt("Paste the analysis code") || "";
+        if (txt) say(this.importCode(txt));
+      }),
+      msg,
+    ];
+    this.showPanel("Share analysis", rows, Math.max(4, this.host.clientWidth - 300), 50);
   }
 
   private openIndicatorPanel(which: "sma" | "rsi" | "vol") {
@@ -881,7 +1004,7 @@ export class ChartX {
     this.pop.style.display = "none";
     this.built.clear();
     const draw = (s: Shape, selected: boolean, draft: boolean) => {
-      const b = build(s, { xy: (p) => this.xy(p), w, h: hh, selected, draft });
+      const b = build(s, { xy: (p) => this.xy(p), w, h: hh, selected, draft, hover: s.id === this.hoverId });
       if (!b) return null;
       b.els.forEach((el) => this.svg.append(el));
       return b;
