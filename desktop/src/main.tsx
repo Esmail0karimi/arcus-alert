@@ -391,16 +391,30 @@ function App() {
     const a = adapterOf(s);
     return a ? displayName(s) + (manyOn ? " ·" + a.prefix[0] : "") : s;
   };
-  const symbols = useMemo(
-    () =>
-      Object.keys(prices)
-        .filter((s) => {
-          const a = adapterOf(s);
-          return a ? exOn[a.id] !== false : exOn.arcus !== false;
-        })
-        .sort(),
-    [prices, exOn],
-  );
+  const [mergeDup, setMergeDup] = useState<boolean>(() => localStorage.getItem("arcus.mergeDup") !== "0");
+  const symEnabled = (s: string) => {
+    const a = adapterOf(s);
+    return a ? exOn[a.id] !== false : exOn.arcus !== false;
+  };
+  const symbols = useMemo(() => {
+    const on = Object.keys(prices).filter((s) => {
+      const a = adapterOf(s);
+      return a ? exOn[a.id] !== false : exOn.arcus !== false;
+    });
+    if (!mergeDup) return on.sort();
+    // Same asset on several exchanges: keep one, the exchange with the best chart/data (own candles and 24h change first).
+    const rank: Record<string, number> = { arcus: 5, hyperliquid: 4, lighter: 3, qfex: 2, variational: 1 };
+    const keyOf = (s: string) =>
+      displayName(s).toUpperCase().replace(/^[A-Z0-9]+:/, "").replace(/-(USD[CT]?|PERP|SWAP)(-.*)?$/, "").replace(/^1000(?=[A-Z])/, "");
+    const score = (s: string) => (rank[adapterOf(s)?.id || "arcus"] || 0) + (prices[s]?.change24h != null ? 0.5 : 0);
+    const best = new Map<string, string>();
+    for (const s of on) {
+      const k = keyOf(s),
+        cur = best.get(k);
+      if (!cur || score(s) > score(cur)) best.set(k, s);
+    }
+    return Array.from(best.values()).sort();
+  }, [prices, exOn, mergeDup]);
   useEffect(
     () =>
       onAuthStateChanged(auth, (next) => {
@@ -2030,7 +2044,7 @@ function App() {
       </button>
     </div>
   );
-  const wlTabItems = groupItems(curGroup);
+  const wlTabItems = groupItems(curGroup).filter(symEnabled);
   const panelItems = query.trim() ? filtered : wlTabItems;
   watchNavRef.current = panelItems;
   return (
@@ -2222,6 +2236,17 @@ function App() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            <label className="ex-merge" title="Show one market per asset: the exchange with the best chart and data">
+                  <input
+                    type="checkbox"
+                    checked={mergeDup}
+                    onChange={(e) => {
+                      setMergeDup(e.target.checked);
+                      localStorage.setItem("arcus.mergeDup", e.target.checked ? "1" : "0");
+                    }}
+                  />{" "}
+                  One market per asset
+                </label>
             <div className="market-cats">
               {[
                 ["All", "All", filtered.length],
