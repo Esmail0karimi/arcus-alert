@@ -104,6 +104,15 @@ function App() {
         return {};
       }
     }),
+    [listOrder, setListOrder] = useState<string[]>(() => {
+      try {
+        const v = JSON.parse(localStorage.getItem("arcus.listOrder.v1") || "[]");
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    }),
+    [tabsOpen, setTabsOpen] = useState(false),
     [flagMenu, setFlagMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [flagFilter, setFlagFilter] = useState(""),
     [infoSym, setInfoSym] = useState<string | null>(null),
@@ -596,6 +605,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DRAWING_STYLE, JSON.stringify({ color: lineColor, width: lineWidth }));
   }, [lineColor, lineWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.listOrder.v1", JSON.stringify(listOrder));
+    } catch {}
+  }, [listOrder]);
   useEffect(() => {
     try {
       localStorage.setItem("arcus.flagNames.v1", JSON.stringify(flagNames));
@@ -2105,15 +2119,47 @@ function App() {
         })
       : (g === "Favorites" ? toggleFav(sym) : toggleInList(g.slice(3), sym));
   const inAnyList = (sym: string) => favorites.includes(sym) || wlists.some((l) => l.items.includes(sym));
+  const allGroups = ["Favorites", ...wlists.map((l) => "wl:" + l.id), ...flagGroups];
+  const orderedGroups = [...allGroups].sort((x, y) => {
+    const ix = listOrder.indexOf(x),
+      iy = listOrder.indexOf(y);
+    return (ix < 0 ? 1e6 + allGroups.indexOf(x) : ix) - (iy < 0 ? 1e6 + allGroups.indexOf(y) : iy);
+  });
+  const moveGroup = (g: string, dir: -1 | 1) => {
+    const arr = [...orderedGroups],
+      i = arr.indexOf(g),
+      j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    setListOrder(arr);
+  };
+  const tabLabel = (g: string, full = false) => (
+    <>
+      {g.startsWith("flag:") && <i className="tab-dot" style={{ background: g.slice(5) }} />}
+      <span className={full ? "" : "tab-name"}>{groupName(g)}</span>
+      {g.startsWith("flag:") && <em className="tab-n">{flagged(g.slice(5)).length}</em>}
+    </>
+  );
   const listTabs = (
-    <div className="watch-tabs wl-tabs">
-      {["Favorites", ...wlists.map((l) => "wl:" + l.id), ...flagGroups].map((g) => (
-        <button key={g} className={curGroup === g ? "active" : ""} onClick={() => setWatchGroup(g)}>
-          {g.startsWith("flag:") && <i className="tab-dot" style={{ background: g.slice(5) }} />}
-          {groupName(g)}
-          {g.startsWith("flag:") && <em className="tab-n">{flagged(g.slice(5)).length}</em>}
-        </button>
-      ))}
+    <div className="wl-tabs-wrap">
+      <div className="watch-tabs wl-tabs">
+        {orderedGroups.map((g) => (
+          <button
+            key={g}
+            ref={(el) => {
+              if (el && curGroup === g) el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+            }}
+            className={curGroup === g ? "active" : ""}
+            title={groupName(g)}
+            onClick={() => setWatchGroup(g)}
+          >
+            {tabLabel(g)}
+          </button>
+        ))}
+      </div>
+      <button className={"wl-more" + (tabsOpen ? " on" : "")} title="All watchlists (reorder)" onClick={() => setTabsOpen((v) => !v)}>
+        ▾
+      </button>
       <button
         className="wl-add"
         title="New watchlist"
@@ -2124,6 +2170,29 @@ function App() {
       >
         ＋
       </button>
+      {tabsOpen && (
+        <div className="wl-drop">
+          {orderedGroups.map((g, i) => (
+            <div key={g} className={"wl-drop-row" + (curGroup === g ? " active" : "")}>
+              <button
+                className="wl-drop-name"
+                onClick={() => {
+                  setWatchGroup(g);
+                  setTabsOpen(false);
+                }}
+              >
+                {tabLabel(g, true)}
+              </button>
+              <button title="Move up (shown earlier)" disabled={i === 0} onClick={() => moveGroup(g, -1)}>
+                ▲
+              </button>
+              <button title="Move down" disabled={i === orderedGroups.length - 1} onClick={() => moveGroup(g, 1)}>
+                ▼
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
   const listTools = (
@@ -2545,6 +2614,12 @@ function App() {
         )}
         {tab === "Chart" && (
           <>
+            <div
+              style={{ ["--watch-w" as any]: watchW + "px" }}
+              className={
+                "chart-workspace cw2" + (railOpen ? "" : " rail-closed") + (watchOpen ? "" : " watch-closed")
+              }
+            >
             <div className="chartbar">
               <div className="chart-symbol-area">
                 <small>CHART</small>
@@ -2624,12 +2699,7 @@ function App() {
                   <option key={x}>{x}</option>
                 ))}
               </select>
-              <button className="secondary" onClick={resetChart} title="Reset chart view (Alt+R)">
-                Reset
-              </button>
-              <button className="secondary" onClick={() => addAlert(prices[symbol]?.price)}>
-                ＋ Alert
-              </button>
+              <span className="ind-slot fs-keep" />
               <button
                 className="secondary drawer-toggle fs-keep"
                 title="Full screen chart (Esc to exit). Type a timeframe like 15 and press Enter."
@@ -2637,28 +2707,21 @@ function App() {
               >
                 {chartFull ? "✕ Exit" : "⛶ Full"}
               </button>
-              <button
-                className={"secondary drawer-toggle fs-keep" + (railOpen ? " on" : "")}
-                title="Show / hide drawing tools"
-                onClick={() => setRailOpen((v) => !v)}
-              >
-                ✎ Tools
-              </button>
-              <button
-                className={"secondary drawer-toggle" + (watchOpen ? " on" : "")}
-                title="Show / hide the watchlist"
-                onClick={() => setWatchOpen((v) => !v)}
-              >
-                ☰ Watchlist
-              </button>
+              {!railOpen && (
+                <button className="secondary reopen" title="Show drawing tools" onClick={() => setRailOpen(true)}>
+                  ✎
+                </button>
+              )}
+              {!watchOpen && (
+                <button className="secondary reopen" title="Show the watchlist" onClick={() => setWatchOpen(true)}>
+                  ☰
+                </button>
+              )}
             </div>
-            <div
-              style={{ ["--watch-w" as any]: watchW + "px" }}
-              className={
-                "chart-workspace" + (railOpen ? "" : " rail-closed") + (watchOpen ? "" : " watch-closed")
-              }
-            >
               <aside className="drawing-rail">
+                <button className="rail-hide" title="Hide the drawing tools" onClick={() => setRailOpen(false)}>
+                  «
+                </button>
                 <button
                   className={activeTool === "hline" ? "selected" : ""}
                   title="Horizontal line"
@@ -3013,8 +3076,17 @@ function App() {
                   }}
                 />
                 <div className="watch-head">
+                  <button className="wh-btn" title="Hide the watchlist" onClick={() => setWatchOpen(false)}>
+                    »
+                  </button>
                   <b>Watchlist</b>
-                  <span>{symbols.length} markets</span>
+                  <span className="wh-n">{symbols.length}</span>
+                  <button className="wh-btn" title="Reset chart view (Alt+R)" onClick={resetChart}>
+                    ⟲ Reset
+                  </button>
+                  <button className="wh-btn" title="Share this analysis (image or code)" onClick={() => chartX.current?.openShare()}>
+                    ⤴ Share
+                  </button>
                 </div>
                 <input
                   placeholder="Search symbol…"
@@ -3035,7 +3107,7 @@ function App() {
                       onClick={() => setSymbol(s)}
                     >
                       <b>
-                        {dn(s)}
+                        <span className="sym">{dn(s)}</span>
                         <u
                           className="wl-pick"
                           title={(groupItems(curGroup).includes(s) ? "Remove from " : "Add to ") + groupName(curGroup)}

@@ -119,6 +119,10 @@ export class ChartX {
   private built = new Map<string, Built>();
   private hoverId: string | null = null;
   private shareBtn = h("button", "cx-btn", "⤴ Share");
+  private indWrap = h("div", "cx-ind");
+  private indBtn = h("button", "cx-ind-btn", "Indicators ▾");
+  private indMenu = h("div", "cx-ind-menu");
+  private indOpen: "sma" | "rsi" | "vol" | null = null;
 
   constructor(
     private chart: any,
@@ -310,32 +314,12 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.countEl, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
   private buildUi() {
-    const toggle = (btn: HTMLButtonElement, get: () => boolean, set: (v: boolean) => void) => {
-      btn.classList.toggle("on", get());
-      btn.onclick = () => {
-        set(!get());
-        btn.classList.toggle("on", get());
-        save(PREFS_KEY, this.prefs);
-        this.syncIndicators();
-        this.fill(true);
-      };
-    };
-    toggle(this.smaBtn, () => this.prefs.sma.on, (v) => (this.prefs.sma.on = v));
-    toggle(this.rsiBtn, () => this.prefs.rsi.on, (v) => (this.prefs.rsi.on = v));
-    toggle(this.volBtn, () => this.prefs.vol.on, (v) => (this.prefs.vol.on = v));
-    const gear = (which: "sma" | "rsi" | "vol") => {
-      const g = h("button", "cx-btn cx-gear", "⚙");
-      g.title = "Settings";
-      g.onclick = () => this.openIndicatorPanel(which);
-      return g;
-    };
     this.labels();
-    this.tools.append(this.smaBtn, gear("sma"), this.rsiBtn, gear("rsi"), this.volBtn);
     const rail = this.host.closest(".chart-workspace")?.querySelector(".drawing-rail") as HTMLElement | null;
     for (const t of TOOLS) {
       const b = h("button", "cx-rail-part", t.icon);
@@ -354,22 +338,7 @@ export class ChartX {
       this.notes.setPlacing(!this.notes.isBusy());
     };
     rail?.append(this.railText);
-    this.moreBtn.title = "Indicators (right-click the chart for theme)";
-    const open = load<{ open: boolean }>("arcus.chartx.bar.v1", { open: false }).open;
-    const sync = (o: boolean) => {
-      this.tools.style.display = o ? "flex" : "none";
-      this.moreBtn.classList.toggle("on", o);
-    };
-    sync(open);
-    this.moreBtn.onclick = () => {
-      const o = this.tools.style.display === "none";
-      sync(o);
-      save("arcus.chartx.bar.v1", { open: o });
-    };
-    this.shareBtn.title = "Share this analysis (image or code)";
-    this.shareBtn.onclick = () => this.openSharePanel();
-    this.bar.append(this.shareBtn, this.moreBtn, this.tools);
-    ["pointerdown", "wheel", "dblclick"].forEach((ev) => this.bar.addEventListener(ev, (e) => e.stopPropagation()));
+    this.buildIndMenu();
     this.popColor.type = "color";
     this.popColor.title = "Colour";
     this.popColor.onchange = () => {
@@ -406,7 +375,7 @@ export class ChartX {
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.bar, this.catcher, this.pop, this.panel, this.scaleBox);
+    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox);
     this.buildScale();
   }
   private labels() {
@@ -723,30 +692,86 @@ export class ChartX {
     this.showPanel("Share analysis", rows, Math.max(4, this.host.clientWidth - 300), 50);
   }
 
-  private openIndicatorPanel(which: "sma" | "rsi" | "vol") {
+  /** Indicators dropdown (lives in the chart header, next to the timeframe). Click a row to open its settings. */
+  private buildIndMenu() {
+    this.indBtn.title = "Indicators: SMA, RSI, Volume";
+    this.indBtn.onclick = () => {
+      const o = this.indMenu.style.display === "none";
+      this.indMenu.style.display = o ? "block" : "none";
+      this.indBtn.classList.toggle("on", o);
+      if (o) this.renderInd();
+    };
+    this.indMenu.style.display = "none";
+    stop(this.indMenu);
+    this.indWrap.append(this.indBtn, this.indMenu);
+    const slot = this.host.closest(".chart-workspace")?.querySelector(".ind-slot");
+    (slot || this.host).append(this.indWrap);
+    const away = (e: PointerEvent) => {
+      if (this.indMenu.style.display !== "none" && !this.indWrap.contains(e.target as Node)) {
+        this.indMenu.style.display = "none";
+        this.indBtn.classList.remove("on");
+      }
+    };
+    document.addEventListener("pointerdown", away, true);
+    this.cleanups.push(() => document.removeEventListener("pointerdown", away, true));
+    this.updateIndLabel();
+  }
+  private updateIndLabel() {
+    const n = [this.prefs.sma.on, this.prefs.rsi.on, this.prefs.vol.on].filter(Boolean).length;
+    this.indBtn.textContent = "Indicators" + (n ? " (" + n + ")" : "") + " ▾";
+  }
+  private renderInd() {
     const P = this.prefs;
     const commit = (full = true) => {
       save(PREFS_KEY, P);
       this.labels();
       this.syncIndicators();
       if (full) this.fill(true);
+      this.updateIndLabel();
     };
-    const y = 56, x = Math.max(4, this.host.clientWidth - 300);
-    if (which === "sma")
-      this.showPanel("SMA settings", [
-        this.row("Period", this.numIn(P.sma.period, 2, 500, 1, (v) => ((P.sma.period = v), commit()))),
-        this.row("Colour", this.colorIn(P.sma.color, (v) => ((P.sma.color = v), commit(false)))),
-        this.row("Width", this.numIn(P.sma.width, 1, 5, 1, (v) => ((P.sma.width = v), commit(false)))),
-      ], x, y);
-    else if (which === "rsi")
-      this.showPanel("RSI settings", [
-        this.row("Period", this.numIn(P.rsi.period, 2, 200, 1, (v) => ((P.rsi.period = v), commit()))),
-        this.row("Colour", this.colorIn(P.rsi.color, (v) => ((P.rsi.color = v), commit(false)))),
-        this.row("Pane height", this.numIn(P.rsi.h, 0.3, 3, 0.1, (v) => ((P.rsi.h = v), commit(false)))),
-        h("div", "cx-hint", "You can also drag the line between the chart and RSI."),
-      ], x, y);
-    else
-      this.showPanel("Volume", [h("div", "cx-hint", "Volume bars sit at the bottom of the main chart and take their colours from the candle colours (right-click the chart).")], x, y);
+    this.indMenu.replaceChildren();
+    const defs: ["sma" | "rsi" | "vol", string][] = [["sma", "SMA (moving average)"], ["rsi", "RSI"], ["vol", "Volume"]];
+    for (const [k, label] of defs) {
+      const row = h("div", "cx-ind-row" + (this.indOpen === k ? " open" : ""));
+      const cb = this.checkIn(P[k].on, (v) => {
+        P[k].on = v;
+        commit();
+        this.renderInd();
+      });
+      const name = h("button", "cx-ind-name", label + (k === "sma" ? " · " + P.sma.period : k === "rsi" ? " · " + P.rsi.period : ""));
+      name.title = "Click for settings";
+      name.onclick = () => {
+        this.indOpen = this.indOpen === k ? null : k;
+        if (this.indOpen && !P[k].on) {
+          P[k].on = true;
+          commit();
+        }
+        this.renderInd();
+      };
+      row.append(cb, name, h("span", "cx-ind-caret", this.indOpen === k ? "▴" : "▾"));
+      this.indMenu.append(row);
+      if (this.indOpen === k) {
+        const box = h("div", "cx-ind-set");
+        if (k === "sma")
+          box.append(
+            this.row("Period", this.numIn(P.sma.period, 2, 500, 1, (v) => ((P.sma.period = v), commit(), (name.textContent = label + " · " + v)))),
+            this.row("Colour", this.colorIn(P.sma.color, (v) => ((P.sma.color = v), commit(false)))),
+            this.row("Width", this.numIn(P.sma.width, 1, 5, 1, (v) => ((P.sma.width = v), commit(false)))),
+          );
+        else if (k === "rsi")
+          box.append(
+            this.row("Period", this.numIn(P.rsi.period, 2, 200, 1, (v) => ((P.rsi.period = v), commit(), (name.textContent = label + " · " + v)))),
+            this.row("Colour", this.colorIn(P.rsi.color, (v) => ((P.rsi.color = v), commit(false)))),
+            this.row("Pane height", this.numIn(P.rsi.h, 0.3, 3, 0.1, (v) => ((P.rsi.h = v), commit(false)))),
+            h("div", "cx-hint", "You can also drag the line between the chart and RSI."),
+          );
+        else box.append(h("div", "cx-hint", "Volume bars sit at the bottom of the main chart and use the candle colours (right-click the chart to change them)."));
+        this.indMenu.append(box);
+      }
+    }
+  }
+  openShare() {
+    this.openSharePanel();
   }
 
   private applyTheme() {
