@@ -371,6 +371,48 @@ const jget = async (url: string, signal?: AbortSignal) => {
 const BYBIT_IV: Record<string, string> = { "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "2h": "120", "4h": "240", "1d": "D", "1w": "W" };
 const OKX_IV: Record<string, string> = { "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H", "4h": "4H", "1d": "1D", "1w": "1W" };
 const CB_IV: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 };
+/* Stocks, indices, FX and commodities: Yahoo Finance's public chart API (what most free chart sites use). */
+const YF_MAP: Record<string, string> = {
+  XAU: "GC=F", GOLD: "GC=F", XAG: "SI=F", SILVER: "SI=F", XPT: "PL=F", XPD: "PA=F", XCU: "HG=F", COPPER: "HG=F",
+  WTI: "CL=F", CL: "CL=F", USOIL: "CL=F", OIL: "CL=F", BRENT: "BZ=F", UKOIL: "BZ=F", NG: "NG=F", GAS: "NG=F",
+  SPX: "^GSPC", SP500: "^GSPC", US500: "^GSPC", NDX: "^NDX", NAS100: "^NDX", US100: "^NDX", DJI: "^DJI", US30: "^DJI", RUT: "^RUT",
+  DAX: "^GDAXI", GER40: "^GDAXI", FTSE: "^FTSE", UK100: "^FTSE", NIKKEI: "^N225", JP225: "^N225", HSI: "^HSI", VIX: "^VIX", DXY: "DX-Y.NYB",
+  EUR: "EURUSD=X", GBP: "GBPUSD=X", AUD: "AUDUSD=X", NZD: "NZDUSD=X", JPY: "JPY=X", CHF: "CHF=X", CAD: "CAD=X", CNH: "CNH=X", CNY: "CNY=X", TRY: "TRY=X", MXN: "MXN=X", KRW: "KRW=X", INR: "INR=X",
+};
+const yfSym = (b: string) => YF_MAP[b] || (/^[A-Z0-9]+$/.test(b) && b.length === 6 && /USD$|^USD/.test(b) ? b + "=X" : b.replace(/\./g, "-"));
+const aggregate = (rows: QCandle[], step: number) => {
+  const out: QCandle[] = [];
+  for (const c of rows) {
+    const t = Math.floor(c.time / step) * step,
+      l = out[out.length - 1];
+    if (l && l.time === t) {
+      l.high = Math.max(l.high, c.high);
+      l.low = Math.min(l.low, c.low);
+      l.close = c.close;
+      l.volume += c.volume;
+    } else out.push({ ...c, time: t });
+  }
+  return out;
+};
+async function yahooCandles(base: string, tf: string, signal: AbortSignal | undefined, proxy: boolean): Promise<QCandle[]> {
+  const plan: Record<string, [string, string, number]> = {
+    "1m": ["1m", "7d", 1], "3m": ["1m", "7d", 3], "5m": ["5m", "60d", 1], "15m": ["15m", "60d", 1], "30m": ["30m", "60d", 1],
+    "1h": ["60m", "730d", 1], "2h": ["60m", "730d", 2], "4h": ["60m", "730d", 4], "1d": ["1d", "5y", 1], "1w": ["1wk", "10y", 1],
+  };
+  const p = plan[tf];
+  if (!p) throw new Error("timeframe");
+  const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(yfSym(base)) + "?interval=" + p[0] + "&range=" + p[1] + "&includePrePost=false";
+  const j = await jget(proxy ? "https://api.allorigins.win/raw?url=" + encodeURIComponent(url) : url, signal);
+  const r = j?.chart?.result?.[0];
+  const ts: number[] = r?.timestamp || [],
+    q = r?.indicators?.quote?.[0] || {};
+  const rows: QCandle[] = [];
+  ts.forEach((t, i) => {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    if ([o, h, l, c].every((v) => typeof v === "number" && Number.isFinite(v))) rows.push({ time: t, open: o, high: h, low: l, close: c, volume: num(q.volume?.[i] || 0) });
+  });
+  return cleanCandles(p[2] > 1 ? aggregate(rows, SPAN[tf]) : rows);
+}
 type Src = { name: string; fn: (base: string, tf: string, signal?: AbortSignal) => Promise<QCandle[]> };
 const SOURCES: Src[] = [
   { name: "Binance", fn: (base, tf, signal) => binanceCandles(base, tf, signal) },
@@ -431,6 +473,16 @@ const SOURCES: Src[] = [
       return cleanCandles((j?.result?.list || []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
     },
   },
+  {
+    name: "BingX",
+    fn: async (base, tf, signal) => {
+      if (!SPAN[tf]) throw new Error("timeframe");
+      const j = await jget("https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=" + base + "-USDT&interval=" + tf + "&limit=1000", signal);
+      return cleanCandles((j?.data || []).map((k: any) => ({ time: Math.floor(num(k.time) / 1000), open: num(k.open), high: num(k.high), low: num(k.low), close: num(k.close), volume: num(k.volume) })));
+    },
+  },
+  { name: "Yahoo", fn: (base, tf, signal) => yahooCandles(base, tf, signal, false) },
+  { name: "Yahoo (proxy)", fn: (base, tf, signal) => yahooCandles(base, tf, signal, true) },
 ];
 const baseOf = (ad: Adapter, symbol: string) => symbol.slice(ad.prefix.length).split("-")[0].toUpperCase();
 const baseVariants = (b: string) => {
@@ -441,7 +493,7 @@ export const candleSrc: Record<string, string> = {};
 const deadUntil: Record<string, number> = {};
 const netFails: Record<string, number> = {};
 /** Ask every public exchange at the same time (priority order decides the winner), so one slow or blocked host cannot stall or disable the rest. */
-export async function externalCandles(base: string, tf: string, signal?: AbortSignal): Promise<{ rows: QCandle[]; source: string }> {
+export async function externalCandles(base: string, tf: string, signal?: AbortSignal, tradfi = false): Promise<{ rows: QCandle[]; source: string }> {
   const run = async (src: Src): Promise<{ rows: QCandle[]; source: string } | null> => {
     if ((deadUntil[src.name] || 0) > Date.now()) return null;
     for (const v of baseVariants(base)) {
@@ -468,7 +520,10 @@ export async function externalCandles(base: string, tf: string, signal?: AbortSi
     }
     return null;
   };
-  const jobs = SOURCES.map((src) => run(src));
+  // stocks / indices / FX / commodities: sources that carry them go first
+  const TRADFI = ["Yahoo", "BingX", "Hyperliquid", "Gate", "Yahoo (proxy)"];
+  const order = tradfi ? [...TRADFI.map((n) => SOURCES.find((x) => x.name === n)!).filter(Boolean), ...SOURCES.filter((x) => !TRADFI.includes(x.name))] : SOURCES;
+  const jobs = order.map((src) => run(src));
   for (const j of jobs) {
     const r = await j;
     if (signal?.aborted) throw new DOMException("aborted", "AbortError");
@@ -492,7 +547,7 @@ export async function getCandles(ad: Adapter, symbol: string, tf: string, signal
     }
   } else errs.push(ad.label + " has no candle history");
   const base = baseOf(ad, symbol);
-  const ext = await externalCandles(base, tf, signal);
+  const ext = await externalCandles(base, tf, signal, ad.defaultCat === "Stocks");
   if (ext.rows.length) {
     candleSrc[symbol] = ext.source;
     candleNote[symbol] = ad.label + " has no usable candle API here: history from " + ext.source + ", live bars from " + ad.label;

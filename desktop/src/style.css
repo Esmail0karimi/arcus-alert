@@ -294,3 +294,9 @@ main.chart-full .fs-only{display:inline-block!important}
 .guide-card h2{display:flex;align-items:center;gap:10px;font-size:16px;margin:0}.guide-card h2 span{background:#00c9b5;color:#03131d;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
 .guide-card img{width:100%;border-radius:10px;border:1px solid #24364e;display:block}
 .guide-card ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}.guide-card li{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.55;color:#c9d8ea}.guide-card li b{flex:0 0 20px;height:20px;border-radius:50%;background:#e8446a;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.guide-card img{cursor:zoom-in}
+.guide-zoom{position:fixed;inset:0;z-index:500;background:#000d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px}
+.guide-zoom-box{max-width:100%;max-height:calc(100vh - 60px);overflow:auto;border-radius:10px;border:1px solid #2b4964;background:#000}
+.guide-zoom-box img{display:block;width:min(96vw,1700px);height:auto;cursor:zoom-in}.guide-zoom-box img.full{width:1920px;max-width:none;cursor:zoom-out}
+.guide-zoom-x{position:absolute;right:14px;top:10px;background:#12263f;border:1px solid #2b4964;color:#fff;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer}
+.guide-zoom small{color:#9eb2ca}

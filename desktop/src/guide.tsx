@@ -1,5 +1,5 @@
 /* Visual how-to: screenshots with numbered markers + short steps, English and Persian. */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import g1 from "./guide/g1.jpg";
 import g2 from "./guide/g2.jpg";
 import g3 from "./guide/g3.jpg";
@@ -42,7 +42,14 @@ const ITEMS: Item[] = [
 ];
 
 export function Guide() {
-  const [lang, setLang] = useState<"en" | "fa">(() => (localStorage.getItem("arcus.guideLang") === "en" ? "en" : navigator.language.startsWith("fa") || localStorage.getItem("arcus.guideLang") === "fa" ? "fa" : "en"));
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setZoom(null);
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  const [lang, setLang] = useState<"en" | "fa">((): "en" | "fa" => (localStorage.getItem("arcus.guideLang") === "en" ? "en" : navigator.language.startsWith("fa") || localStorage.getItem("arcus.guideLang") === "fa" ? "fa" : "en"));
   const pick = (l: "en" | "fa") => {
     setLang(l);
     try {
@@ -51,6 +58,21 @@ export function Guide() {
   };
   return (
     <div className="guide">
+      {zoom && (
+        <div className="guide-zoom" onClick={() => setZoom(null)}>
+          <button className="guide-zoom-x" aria-label="Close">✕</button>
+          <div className="guide-zoom-box" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={zoom.src}
+              alt={zoom.alt}
+              className={full ? "full" : ""}
+              onClick={() => setFull((v) => !v)}
+              title={full ? "Click to fit the screen" : "Click for actual size"}
+            />
+          </div>
+          <small>{lang === "fa" ? "کلیک روی تصویر: اندازه واقعی / متناسب با صفحه · Esc: بستن" : "Click the picture: actual size / fit · Esc: close"}</small>
+        </div>
+      )}
       <div className="heading">
         <div>
           <small>{lang === "fa" ? "آموزش تصویری" : "VISUAL GUIDE"}</small>
@@ -64,14 +86,14 @@ export function Guide() {
       </div>
       <div className="guide-grid" dir={lang === "fa" ? "rtl" : "ltr"}>
         {ITEMS.map((it, i) => {
-          const [title, steps] = it[lang];
+          const [title, steps] = it[lang as "en" | "fa"];
           return (
             <section className="guide-card" key={i}>
               <h2>
                 <span>{i + 1}</span>
                 {title}
               </h2>
-              <img src={it.img} alt={title} loading="lazy" />
+              <img src={it.img} alt={title} loading="lazy" title="Click to enlarge" onClick={() => { setFull(false); setZoom({ src: it.img, alt: title }); }} />
               <ol>
                 {steps.map((t, k) => (
                   <li key={k}>
