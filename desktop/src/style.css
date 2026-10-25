@@ -304,3 +304,7 @@ main.chart-full .fs-only{display:inline-block!important}
 .flag-bar{display:flex;align-items:center;gap:6px;font-size:11px;color:#8aa0bb;padding:4px 2px;flex-wrap:wrap}.flag-bar button{background:#0b1a2e;border:1px solid #24364e;color:#b8c9dc;border-radius:99px;padding:1px 9px;font-size:10px;min-height:0;cursor:pointer}.flag-bar button.on{border-color:#00c9b5;color:#fff}
 .flag-bar .dot{width:16px;height:16px;padding:0;border:2px solid transparent}.flag-bar .dot.on{border-color:#fff}
 .flag-pick{display:flex;gap:7px;flex-wrap:wrap;padding:4px 0}.flag-pick button{width:24px;height:24px;border-radius:50%;border:2px solid transparent;padding:0;margin:0}.flag-pick button.on{border-color:#fff}
+.tab-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.tab-n{font-style:normal;font-size:9px;color:#7f97b2;margin-left:4px}
+.info-stats{border-top:1px solid #1d3b54;margin-top:10px;padding-top:6px}.info-stats h4{margin:8px 0 4px;font-size:12px;color:#00dcd2;letter-spacing:.5px}
+.info-grid,.info-trend{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}.info-grid div,.info-trend div{background:#0b1a2e;border:1px solid #1d3b54;border-radius:8px;padding:6px 9px;display:flex;flex-direction:column;gap:2px}.info-grid span,.info-trend span{font-size:10px;color:#7f97b2}.info-grid b,.info-trend b{font-size:13px}
+.info-note2{display:block;color:#5f758f;font-size:10px;margin-top:6px}

@@ -97,6 +97,13 @@ function App() {
         return {};
       }
     }),
+    [flagNames, setFlagNames] = useState<Record<string, string>>(() => {
+      try {
+        return JSON.parse(localStorage.getItem("arcus.flagNames.v1") || "{}") || {};
+      } catch {
+        return {};
+      }
+    }),
     [flagMenu, setFlagMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [flagFilter, setFlagFilter] = useState(""),
     [infoSym, setInfoSym] = useState<string | null>(null),
@@ -589,6 +596,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DRAWING_STYLE, JSON.stringify({ color: lineColor, width: lineWidth }));
   }, [lineColor, lineWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.flagNames.v1", JSON.stringify(flagNames));
+    } catch {}
+  }, [flagNames]);
   useEffect(() => {
     try {
       localStorage.setItem("arcus.flags.v1", JSON.stringify(flags));
@@ -1570,6 +1582,10 @@ function App() {
     };
   }, [tab, symbol, tf]);
 
+  useEffect(() => {
+    const sec = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 } as Record<string, number>)[tf] || 0;
+    chartX.current?.setSpan(sec);
+  }, [tab, tf, symbol]);
   const addAlert = (p?: number) => {
     const value = Number(p ?? target);
     if (!symbol || !Number.isFinite(value) || value <= 0) return;
@@ -2034,11 +2050,18 @@ function App() {
     }
     return { counts, sections };
   })();
-  const curGroup = watchGroup.startsWith("wl:") && wlists.some((l) => "wl:" + l.id === watchGroup) ? watchGroup : "Favorites";
+  const FLAG_NAMES: Record<string, string> = { "#f23645": "Red", "#ff9800": "Orange", "#f2c94c": "Yellow", "#089981": "Green", "#4aa3ff": "Blue", "#b388ff": "Purple", "#ff6fae": "Pink" };
+  const flagged = (c: string) => Object.keys(flags).filter((k) => flags[k] === c);
+  const flagGroups = Object.keys(FLAG_NAMES).filter((c) => flagged(c).length).map((c) => "flag:" + c);
+  const curGroup =
+    (watchGroup.startsWith("wl:") && wlists.some((l) => "wl:" + l.id === watchGroup)) || flagGroups.includes(watchGroup)
+      ? watchGroup
+      : "Favorites";
+  const flagColorOf = (g: string) => (g.startsWith("flag:") ? g.slice(5) : "");
   const activeList = curGroup.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === curGroup) : undefined;
   const groupItems = (g: string): string[] =>
-    g === "Favorites" ? favorites : g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.items || [] : [];
-  const groupName = (g: string) => (g === "Favorites" ? favName : wlists.find((l) => "wl:" + l.id === g)?.name || "");
+    g === "Favorites" ? favorites : g.startsWith("flag:") ? flagged(g.slice(5)) : g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.items || [] : [];
+  const groupName = (g: string) => (g === "Favorites" ? favName : g.startsWith("flag:") ? flagNames[g.slice(5)] || FLAG_NAMES[g.slice(5)] + " flag" : wlists.find((l) => "wl:" + l.id === g)?.name || "");
   const addList = () => {
     const name = (window.prompt("Watchlist name", "My list") || "").trim();
     if (!name) return null;
@@ -2049,14 +2072,20 @@ function App() {
   const renameList = () => {
     const name = (window.prompt("Rename watchlist", groupName(curGroup)) || "").trim().slice(0, 24);
     if (!name) return;
-    if (activeList) setWlists((v) => v.map((l) => (l.id === activeList.id ? { ...l, name } : l)));
+    if (flagColorOf(curGroup)) setFlagNames((v) => ({ ...v, [flagColorOf(curGroup)]: name }));
+    else if (activeList) setWlists((v) => v.map((l) => (l.id === activeList.id ? { ...l, name } : l)));
     else {
       setFavName(name);
       localStorage.setItem("arcus.favName", name);
     }
   };
   const deleteList = () => {
-    if (activeList) {
+    const fc = flagColorOf(curGroup);
+    if (fc) {
+      if (!window.confirm("Remove the " + FLAG_NAMES[fc] + " flag from all " + flagged(fc).length + " markets?")) return;
+      setFlags((v) => Object.fromEntries(Object.entries(v).filter(([, c]) => c !== fc)));
+      setWatchGroup("Favorites");
+    } else if (activeList) {
       if (!window.confirm('Delete watchlist "' + activeList.name + '"?')) return;
       setWlists((v) => v.filter((l) => l.id !== activeList.id));
       setWatchGroup("Favorites");
@@ -2066,13 +2095,23 @@ function App() {
     setWlists((v) =>
       v.map((l) => (l.id === id ? { ...l, items: l.items.includes(sym) ? l.items.filter((x) => x !== sym) : [...l.items, sym] } : l)),
     );
-  const toggleIn = (g: string, sym: string) => (g === "Favorites" ? toggleFav(sym) : toggleInList(g.slice(3), sym));
+  const toggleIn = (g: string, sym: string) =>
+    g.startsWith("flag:")
+      ? setFlags((v) => {
+          const n = { ...v };
+          if (n[sym] === g.slice(5)) delete n[sym];
+          else n[sym] = g.slice(5);
+          return n;
+        })
+      : (g === "Favorites" ? toggleFav(sym) : toggleInList(g.slice(3), sym));
   const inAnyList = (sym: string) => favorites.includes(sym) || wlists.some((l) => l.items.includes(sym));
   const listTabs = (
     <div className="watch-tabs wl-tabs">
-      {["Favorites", ...wlists.map((l) => "wl:" + l.id)].map((g) => (
+      {["Favorites", ...wlists.map((l) => "wl:" + l.id), ...flagGroups].map((g) => (
         <button key={g} className={curGroup === g ? "active" : ""} onClick={() => setWatchGroup(g)}>
+          {g.startsWith("flag:") && <i className="tab-dot" style={{ background: g.slice(5) }} />}
           {groupName(g)}
+          {g.startsWith("flag:") && <em className="tab-n">{flagged(g.slice(5)).length}</em>}
         </button>
       ))}
       <button

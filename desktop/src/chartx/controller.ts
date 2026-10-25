@@ -96,6 +96,9 @@ export class ChartX {
   private cleanups: (() => void)[] = [];
 
   private legend = h("div", "cx-legend");
+  private countEl = h("div", "cx-count");
+  private span = 0;
+  private countTxt = "";
   private srcEl = h("div", "cx-src");
   private bar = h("div", "cx-bar");
   private svg = svgEl("svg", { class: "cx-svg" }) as SVGSVGElement;
@@ -307,7 +310,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -403,7 +406,7 @@ export class ChartX {
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop, this.panel, this.scaleBox);
+    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.bar, this.catcher, this.pop, this.panel, this.scaleBox);
     this.buildScale();
   }
   private labels() {
@@ -847,6 +850,44 @@ export class ChartX {
     } catch {}
   }
 
+  /** Seconds per candle (from the timeframe selector); 0 = guess from the data. */
+  setSpan(sec: number) {
+    this.span = sec;
+  }
+  /** Countdown to the close of the current candle, under the last-price label on the right scale. */
+  private tickCount() {
+    const c = this.candles;
+    const el = this.countEl;
+    if (!c.length) return void (el.style.display = "none");
+    const span = this.span || barSpan(c);
+    const last = c[c.length - 1];
+    const y = this.candle.priceToCoordinate(last.close);
+    let w = 0;
+    try {
+      w = this.chart.priceScale("right").width();
+    } catch {}
+    if (y == null || !w || !span) return void (el.style.display = "none");
+    const now = Date.now() / 1000;
+    let left = Math.floor(last.time / span) * span + span - now;
+    if (left < 0) left = 0;
+    const d = Math.floor(left / 86400),
+      hh = Math.floor((left % 86400) / 3600),
+      mm = Math.floor((left % 3600) / 60),
+      ss = Math.floor(left % 60);
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const txt = (d ? d + "d " : "") + (d || hh ? p2(hh) + ":" : "") + p2(mm) + ":" + p2(ss);
+    const col = last.close >= last.open ? this.theme.up : this.theme.down;
+    if (txt !== this.countTxt) {
+      this.countTxt = txt;
+      el.textContent = txt;
+    }
+    el.style.display = "block";
+    el.style.background = col;
+    el.style.width = w + "px";
+    el.style.left = this.host.clientWidth - w + "px";
+    el.style.top = Math.min(Number(y) + 11, this.host.clientHeight - 60) + "px";
+  }
+
   /** Small label at the top left telling where the candles come from. */
   setSource(text: string) {
     this.srcEl.textContent = text;
@@ -977,6 +1018,7 @@ export class ChartX {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(this.loop);
     this.notes.tick();
+    this.tickCount();
     if (!this.shapes.length && !this.draft) {
       if (this.svg.firstChild) this.svg.replaceChildren();
       this.built.clear();

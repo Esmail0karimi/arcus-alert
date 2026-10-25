@@ -689,3 +689,81 @@ export function startAdapter(ad: Adapter, onPrices: (t: Tick[]) => void, onSymbo
   };
   return ad.start(wrapped, onSymbols, onStatus);
 }
+
+/* ---- profile + trend for the "what is this market" window ---- */
+export type AssetStats = {
+  exchange?: string; country?: string; currency?: string; type?: string; name?: string; tz?: string;
+  hi52?: number; lo52?: number; price?: number; source: string;
+  d1?: number; d7?: number; d30?: number; trend?: string; sma20?: number; sma50?: number;
+};
+const TZ_COUNTRY: Record<string, string> = {
+  "America/New_York": "United States", "America/Chicago": "United States", "America/Los_Angeles": "United States", "America/Denver": "United States",
+  "America/Toronto": "Canada", "America/Vancouver": "Canada", "America/Sao_Paulo": "Brazil", "America/Mexico_City": "Mexico",
+  "Europe/London": "United Kingdom", "Europe/Berlin": "Germany", "Europe/Paris": "France", "Europe/Amsterdam": "Netherlands", "Europe/Zurich": "Switzerland",
+  "Europe/Madrid": "Spain", "Europe/Rome": "Italy", "Europe/Stockholm": "Sweden", "Europe/Oslo": "Norway", "Europe/Copenhagen": "Denmark", "Europe/Helsinki": "Finland",
+  "Europe/Istanbul": "Türkiye", "Europe/Moscow": "Russia", "Asia/Tokyo": "Japan", "Asia/Hong_Kong": "Hong Kong", "Asia/Shanghai": "China", "Asia/Seoul": "South Korea",
+  "Asia/Taipei": "Taiwan", "Asia/Singapore": "Singapore", "Asia/Kolkata": "India", "Asia/Dubai": "United Arab Emirates", "Asia/Riyadh": "Saudi Arabia", "Asia/Jerusalem": "Israel",
+  "Australia/Sydney": "Australia", "Pacific/Auckland": "New Zealand", "Africa/Johannesburg": "South Africa",
+};
+const pctOf = (a: number, b: number) => (b ? (a / b - 1) * 100 : undefined);
+const trendOf = (closes: number[]) => {
+  const avg = (n: number) => (closes.length >= n ? closes.slice(-n).reduce((x, y) => x + y, 0) / n : undefined);
+  const last = closes[closes.length - 1],
+    s20 = avg(20),
+    s50 = avg(50);
+  let trend = "Not enough history";
+  if (s20 && s50) trend = last > s20 && s20 > s50 ? "Uptrend" : last < s20 && s20 < s50 ? "Downtrend" : "Sideways / mixed";
+  else if (s20) trend = last > s20 ? "Above 20-day average" : "Below 20-day average";
+  return { s20, s50, trend };
+};
+export async function assetStats(base: string, crypto: boolean, signal?: AbortSignal): Promise<AssetStats | null> {
+  let meta: any = null,
+    rows: QCandle[] = [],
+    source = "";
+  if (!crypto) {
+    try {
+      const j = await yfGet("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(yfSym(base)) + "?interval=1d&range=1y&includePrePost=false", signal);
+      const r = j?.chart?.result?.[0];
+      if (r) {
+        meta = r.meta || {};
+        const q = r.indicators?.quote?.[0] || {};
+        (r.timestamp || []).forEach((t: number, i: number) => {
+          const c = q.close?.[i];
+          if (typeof c === "number") rows.push({ time: t, open: q.open?.[i] ?? c, high: q.high?.[i] ?? c, low: q.low?.[i] ?? c, close: c, volume: num(q.volume?.[i] || 0) });
+        });
+        source = "Yahoo Finance";
+      }
+    } catch (e: any) {
+      if (signal?.aborted) throw e;
+    }
+  }
+  if (rows.length < 3) {
+    const ext = await externalCandles(base, "1d", signal, !crypto);
+    rows = ext.rows;
+    source = ext.source;
+  }
+  if (rows.length < 3 && !meta) return null;
+  const closes = rows.map((c) => c.close),
+    last = closes[closes.length - 1];
+  const tr = closes.length ? trendOf(closes) : { s20: undefined, s50: undefined, trend: "" };
+  const hi = rows.length ? Math.max(...rows.slice(-365).map((c) => c.high)) : undefined,
+    lo = rows.length ? Math.min(...rows.slice(-365).map((c) => c.low)) : undefined;
+  return {
+    source,
+    exchange: meta?.fullExchangeName || meta?.exchangeName,
+    country: meta?.exchangeTimezoneName ? TZ_COUNTRY[meta.exchangeTimezoneName] || meta.exchangeTimezoneName : undefined,
+    tz: meta?.exchangeTimezoneName,
+    currency: meta?.currency,
+    type: meta?.instrumentType,
+    name: meta?.longName || meta?.shortName,
+    hi52: meta?.fiftyTwoWeekHigh ?? hi,
+    lo52: meta?.fiftyTwoWeekLow ?? lo,
+    price: meta?.regularMarketPrice ?? last,
+    d1: closes.length > 1 ? pctOf(last, closes[closes.length - 2]) : undefined,
+    d7: closes.length > 5 ? pctOf(last, closes[Math.max(0, closes.length - 6)]) : undefined,
+    d30: closes.length > 21 ? pctOf(last, closes[Math.max(0, closes.length - 22)]) : undefined,
+    sma20: tr.s20,
+    sma50: tr.s50,
+    trend: tr.trend,
+  };
+}

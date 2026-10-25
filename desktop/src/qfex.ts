@@ -74,11 +74,26 @@ export function startQfexFeed(
   onStatus: (msg: string) => void,
 ): () => void {
   let stopped = false, ws: WebSocket | null = null, retry = 1000, retryTimer: number | undefined;
-  let lastWs = 0;
+  let lastWs = 0, wsOpen = false, cacheAt = 0;
+  const CK = "arcus.qfex.last.v1";
+  const cache: Record<string, [number, number]> = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(CK) || "{}") || {};
+    } catch {
+      return {};
+    }
+  })();
   const seen = new Set<string>();
   const dayOpen: Record<string, number> = {};
   const emit = (symbol: string, price: number, time: number) => {
     if (!symbol || !Number.isFinite(price) || price <= 0) return;
+    cache[symbol.toUpperCase()] = [price, Math.floor(Date.now() / 1000)];
+    if (Date.now() - cacheAt > 15000) {
+      cacheAt = Date.now();
+      try {
+        localStorage.setItem(CK, JSON.stringify(cache));
+      } catch {}
+    }
     if (!seen.has(symbol)) {
       seen.add(symbol);
       onSymbols([{ name: QFEX_PREFIX + symbol.toUpperCase(), cat: "" }]);
@@ -142,7 +157,18 @@ export function startQfexFeed(
         onStatus("QFEX · " + seen.size + " markets (live, WebSocket)");
         return;
       }
-      onStatus(e instanceof TypeError ? "QFEX blocked by the browser (CORS/network)" : "QFEX error: " + (e?.message || ""));
+      if (wsOpen) {
+        // REST is behind an anti-bot challenge; the WebSocket is connected but silent (e.g. stock market closed)
+        onStatus("QFEX · WebSocket connected, waiting for prices (market closed?)");
+        return;
+      }
+      const known = seen.size || Object.keys(cache).length;
+      if (known && !(e instanceof TypeError)) {
+        // REST is behind an anti-bot challenge (HTTP 202) and the live feed is not connected right now: keep the last prices, keep retrying
+        onStatus("QFEX · " + known + " markets (last known prices, reconnecting live feed…)");
+        return;
+      }
+      onStatus(e instanceof TypeError ? "QFEX blocked by the browser (CORS/network)" : "QFEX: REST is protected (HTTP 202), waiting for the live WebSocket…");
     }
   };
   const handle = (m: any) => {
@@ -166,17 +192,27 @@ export function startQfexFeed(
       ws = new WebSocket(WS);
       ws.onopen = () => {
         retry = 1000;
+        wsOpen = true;
         ws?.send(JSON.stringify({ type: "subscribe", channels: ["mark_price"], symbols: ["*"] }));
         ws?.send(JSON.stringify({ type: "subscribe", channels: ["candle"], symbols: ["*"], intervals: ["1DAY"] }));
       };
       ws.onmessage = (e) => { try { handle(JSON.parse(String(e.data))); } catch {} };
-      ws.onclose = () => { if (!stopped) { retryTimer = window.setTimeout(connect, retry); retry = Math.min(retry * 2, 30000); } };
+      ws.onclose = () => { wsOpen = false; if (!stopped) { retryTimer = window.setTimeout(connect, retry); retry = Math.min(retry * 2, 30000); } };
       ws.onerror = () => {};
     } catch {
       retryTimer = window.setTimeout(connect, retry);
       retry = Math.min(retry * 2, 30000);
     }
   };
+  // Last known prices (shown until the live feed answers, so the list is not empty while the stock market is closed)
+  {
+    const old = Object.keys(cache);
+    if (old.length) {
+      onSymbols(old.map((k) => ({ name: QFEX_PREFIX + k, cat: "" })));
+      onPrices(old.map((k) => ({ marketDisplayName: QFEX_PREFIX + k, marketId: "QFEX", markPrice: cache[k][0], timestamp: cache[k][1] })));
+      onStatus("QFEX · " + old.length + " markets (last known prices, waiting for live)");
+    }
+  }
   void poll();
   const wsOk = window.setInterval(() => {
     if (Date.now() - lastWs < 20000 && seen.size) onStatus("QFEX · " + seen.size + " markets (live, WebSocket)");

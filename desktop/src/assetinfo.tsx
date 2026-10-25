@@ -1,5 +1,6 @@
 /* "What is this market?" window: description from Wikipedia (CORS-enabled) in many languages. */
 import React, { useEffect, useState } from "react";
+import { AssetStats, assetStats } from "./exchanges";
 
 export const LANGS: { code: string; name: string; rtl?: boolean }[] = [
   { code: "en", name: "English" }, { code: "fa", name: "فارسی", rtl: true }, { code: "ar", name: "العربية", rtl: true },
@@ -91,6 +92,7 @@ export function AssetInfo(p: {
     return LANGS.some((l) => l.code === nav) ? nav : "en";
   });
   const [base0, setBase0] = useState<Info | null | undefined>(undefined); // undefined = loading
+  const [stats, setStats] = useState<AssetStats | null | undefined>(undefined);
   const [view, setView] = useState<{ title: string; desc: string; extract: string; url: string; same: boolean } | null>(null);
   useEffect(() => {
     const ctl = new AbortController();
@@ -98,6 +100,14 @@ export function AssetInfo(p: {
     findAsset(base, ctl.signal)
       .then((v) => !ctl.signal.aborted && setBase0(v))
       .catch(() => !ctl.signal.aborted && setBase0(null));
+    return () => ctl.abort();
+  }, [base]);
+  useEffect(() => {
+    const ctl = new AbortController();
+    setStats(undefined);
+    assetStats(base, p.category === "Crypto", ctl.signal)
+      .then((v) => !ctl.signal.aborted && setStats(v))
+      .catch(() => !ctl.signal.aborted && setStats(null));
     return () => ctl.abort();
   }, [base]);
   useEffect(() => {
@@ -121,6 +131,10 @@ export function AssetInfo(p: {
       localStorage.setItem("arcus.infoLang", code);
     } catch {}
   };
+  const fa = lang === "fa";
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: n < 10 ? 4 : 2 });
+  const trendFa = (t: string | undefined, f: boolean) =>
+    !t ? "—" : !f ? t : t === "Uptrend" ? "صعودی" : t === "Downtrend" ? "نزولی" : t.startsWith("Sideways") ? "خنثی / مختلط" : t.startsWith("Above") ? "بالای میانگین ۲۰ روزه" : t.startsWith("Below") ? "زیر میانگین ۲۰ روزه" : "تاریخچه کافی نیست";
   const q = encodeURIComponent(base + " " + (p.category === "Crypto" ? "crypto" : "stock ticker"));
   const chg = p.change;
   return (
@@ -163,6 +177,45 @@ export function AssetInfo(p: {
               {!view.same && lang !== "en" && (
                 <small className="info-note">No article in this language: showing English. Use the translate button.</small>
               )}
+            </>
+          )}
+        </div>
+        <div className="info-stats">
+          {stats === undefined && <div className="info-load"><i /> Loading market profile and trend…</div>}
+          {stats === null && <small className="info-note">Profile and trend are not available for this market right now.</small>}
+          {stats && (
+            <>
+              <h4>{fa ? "پروفایل بازار" : "Market profile"}</h4>
+              <div className="info-grid">
+                {stats.name && <div><span>{fa ? "نام" : "Name"}</span><b>{stats.name}</b></div>}
+                {stats.exchange && <div><span>{fa ? "بورس" : "Listed on"}</span><b>{stats.exchange}</b></div>}
+                {stats.country && <div><span>{fa ? "کشور" : "Country"}</span><b>{stats.country}</b></div>}
+                {stats.type && <div><span>{fa ? "نوع" : "Type"}</span><b>{stats.type}</b></div>}
+                {stats.currency && <div><span>{fa ? "ارز" : "Currency"}</span><b>{stats.currency}</b></div>}
+                {stats.lo52 != null && stats.hi52 != null && (
+                  <div><span>{fa ? "بازه ۵۲ هفته" : "52-week range"}</span><b>{fmt(stats.lo52)} – {fmt(stats.hi52)}</b></div>
+                )}
+              </div>
+              <h4>{fa ? "روند" : "Trend"}</h4>
+              <div className="info-trend">
+                {([["d1", fa ? "روزانه" : "Daily"], ["d7", fa ? "هفتگی" : "Weekly"], ["d30", fa ? "ماهانه" : "Monthly"]] as const).map(([k, l]) => {
+                  const v = stats[k];
+                  return (
+                    <div key={k}>
+                      <span>{l}</span>
+                      <b className={v == null ? "" : v >= 0 ? "positive" : "negative"}>{v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%"}</b>
+                    </div>
+                  );
+                })}
+                <div>
+                  <span>{fa ? "وضعیت" : "Status"}</span>
+                  <b className={/^Up/.test(stats.trend || "") ? "positive" : /^Down/.test(stats.trend || "") ? "negative" : ""}>{trendFa(stats.trend, fa)}</b>
+                </div>
+              </div>
+              <small className="info-note2">
+                {fa ? "بر پایه‌ی کندل‌های روزانه و میانگین‌های ۲۰ و ۵۰ روزه · منبع: " : "From daily candles and the 20 / 50-day averages · source: "}
+                {stats.source || "—"}
+              </small>
             </>
           )}
         </div>
