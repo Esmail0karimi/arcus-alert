@@ -87,6 +87,8 @@ function App() {
     [editLinePrice, setEditLinePrice] = useState(""),
     [editLineColor, setEditLineColor] = useState("#39c9c2"),
     [editLineWidth, setEditLineWidth] = useState(2),
+    [favName, setFavName] = useState(() => localStorage.getItem("arcus.favName") || "Favorites"),
+    [listMenu, setListMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [watchGroup, setWatchGroup] = useState("Favorites");
   const [tab, setTab] = useState("Market"),
     [prices, setPrices] = useState<Record<string, Price>>({}),
@@ -1949,58 +1951,97 @@ function App() {
     }
     return { counts, sections };
   })();
-  const activeList = watchGroup.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === watchGroup) : undefined;
+  const curGroup = watchGroup.startsWith("wl:") && wlists.some((l) => "wl:" + l.id === watchGroup) ? watchGroup : "Favorites";
+  const activeList = curGroup.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === curGroup) : undefined;
   const groupItems = (g: string): string[] =>
     g === "Favorites" ? favorites : g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.items || [] : [];
+  const groupName = (g: string) => (g === "Favorites" ? favName : wlists.find((l) => "wl:" + l.id === g)?.name || "");
   const addList = () => {
     const name = (window.prompt("Watchlist name", "My list") || "").trim();
-    if (!name) return;
+    if (!name) return null;
     const id = Date.now().toString(36);
     setWlists((v) => [...v, { id, name: name.slice(0, 24), items: [] }]);
-    setWatchGroup("wl:" + id);
+    return id;
   };
   const renameList = () => {
-    if (!activeList) return;
-    const name = (window.prompt("Rename watchlist", activeList.name) || "").trim();
-    if (name) setWlists((v) => v.map((l) => (l.id === activeList.id ? { ...l, name: name.slice(0, 24) } : l)));
+    const name = (window.prompt("Rename watchlist", groupName(curGroup)) || "").trim().slice(0, 24);
+    if (!name) return;
+    if (activeList) setWlists((v) => v.map((l) => (l.id === activeList.id ? { ...l, name } : l)));
+    else {
+      setFavName(name);
+      localStorage.setItem("arcus.favName", name);
+    }
   };
   const deleteList = () => {
-    if (!activeList || !window.confirm('Delete watchlist "' + activeList.name + '"?')) return;
-    setWlists((v) => v.filter((l) => l.id !== activeList.id));
-    setWatchGroup("Favorites");
+    if (activeList) {
+      if (!window.confirm('Delete watchlist "' + activeList.name + '"?')) return;
+      setWlists((v) => v.filter((l) => l.id !== activeList.id));
+      setWatchGroup("Favorites");
+    } else if (favorites.length && window.confirm("Remove every symbol from " + favName + "?")) setFavorites([]);
   };
   const toggleInList = (id: string, sym: string) =>
     setWlists((v) =>
       v.map((l) => (l.id === id ? { ...l, items: l.items.includes(sym) ? l.items.filter((x) => x !== sym) : [...l.items, sym] } : l)),
     );
+  const toggleIn = (g: string, sym: string) => (g === "Favorites" ? toggleFav(sym) : toggleInList(g.slice(3), sym));
+  const inAnyList = (sym: string) => favorites.includes(sym) || wlists.some((l) => l.items.includes(sym));
   const listTabs = (
     <div className="watch-tabs wl-tabs">
-      {["Favorites", ...wlists.map((l) => "wl:" + l.id), "Market"].map((g) => (
-        <button key={g} className={watchGroup === g ? "active" : ""} onClick={() => setWatchGroup(g)}>
-          {g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.name : g}
+      {["Favorites", ...wlists.map((l) => "wl:" + l.id)].map((g) => (
+        <button key={g} className={curGroup === g ? "active" : ""} onClick={() => setWatchGroup(g)}>
+          {groupName(g)}
         </button>
       ))}
-      <button className="wl-add" title="New watchlist" onClick={addList}>
+      <button
+        className="wl-add"
+        title="New watchlist"
+        onClick={() => {
+          const id = addList();
+          if (id) setWatchGroup("wl:" + id);
+        }}
+      >
         ＋
       </button>
     </div>
   );
-  const listTools = activeList && (
+  const listTools = (
     <div className="wl-tools">
-      <span>{activeList.name}</span>
+      <span>{groupName(curGroup)}</span>
       <button title="Rename" onClick={renameList}>
         ✎
       </button>
-      <button title="Delete this list" onClick={deleteList}>
+      <button title={activeList ? "Delete this list" : "Clear this list"} onClick={deleteList}>
         🗑
       </button>
     </div>
   );
-  const wlTabItems = groupItems(watchGroup === "Market" ? "Favorites" : watchGroup);
-  watchNavRef.current =
-    watchGroup === "Market" ? filtered : filtered.filter((s) => groupItems(watchGroup).includes(s));
+  const wlTabItems = groupItems(curGroup);
+  const panelItems = query.trim() ? filtered : wlTabItems;
+  watchNavRef.current = panelItems;
   return (
     <div className="app">
+      {listMenu && (
+        <>
+          <div className="wl-menu-bg" onClick={() => setListMenu(null)} />
+          <div className="wl-menu" style={{ left: Math.min(listMenu.x, window.innerWidth - 230), top: listMenu.y }}>
+            <b>{dn(listMenu.sym)} → watchlist</b>
+            {["Favorites", ...wlists.map((l) => "wl:" + l.id)].map((g) => (
+              <label key={g}>
+                <input type="checkbox" checked={groupItems(g).includes(listMenu.sym)} onChange={() => toggleIn(g, listMenu.sym)} />
+                {groupName(g)}
+              </label>
+            ))}
+            <button
+              onClick={() => {
+                const id = addList();
+                if (id) toggleInList(id, listMenu.sym);
+              }}
+            >
+              ＋ New watchlist…
+            </button>
+          </div>
+        </>
+      )}
       <header>
         <div className="brand">
           <div className="mark">A</div>
@@ -2312,6 +2353,18 @@ function App() {
             <div className="chartbar">
               <div className="chart-symbol-area">
                 <small>CHART</small>
+                <div className="chart-symbol-row">
+                <button
+                  className={"chart-star" + (symbol && inAnyList(symbol) ? " on" : "")}
+                  title="Add to a watchlist"
+                  onClick={(e) => {
+                    if (!symbol) return;
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setListMenu(listMenu ? null : { sym: symbol, x: r.left, y: r.bottom + 6 });
+                  }}
+                >
+                  {symbol && inAnyList(symbol) ? "★" : "☆"}
+                </button>
                 <div className="chart-symbol-picker">
                   <button
                     className="chart-symbol-trigger"
@@ -2348,6 +2401,7 @@ function App() {
                       </div>
                     </div>
                   )}
+                </div>
                 </div>
               </div>
               <b className="fs-only fs-keep">{dn(symbol)}</b>
@@ -2760,7 +2814,10 @@ function App() {
                 {listTabs}
                 {listTools}
                 <div className="watch-items">
-                  {(watchGroup === "Market" ? filtered : filtered.filter((s) => groupItems(watchGroup).includes(s))).map((s) => (
+                  {!panelItems.length && (
+                    <div className="empty small">This list is empty. Type a symbol in the search box above and press ＋.</div>
+                  )}
+                  {panelItems.map((s) => (
                     <button
                       className={s === symbol ? "current" : ""}
                       key={s}
@@ -2768,19 +2825,16 @@ function App() {
                     >
                       <b>
                         {dn(s)}
-                        {wlists.length > 0 && watchGroup !== "Favorites" && (
-                          <u
-                            className="wl-pick"
-                            title={activeList ? "Add/remove in " + activeList.name : "Add to a list: open a custom list tab first"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const id = activeList?.id || wlists[wlists.length - 1].id;
-                              toggleInList(id, s);
-                            }}
-                          >
-                            {(activeList || wlists[wlists.length - 1]).items.includes(s) ? "✓" : "＋"}
-                          </u>
-                        )}
+                        <u
+                          className="wl-pick"
+                          title={(groupItems(curGroup).includes(s) ? "Remove from " : "Add to ") + groupName(curGroup)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleIn(curGroup, s);
+                          }}
+                        >
+                          {groupItems(curGroup).includes(s) ? "✓" : "＋"}
+                        </u>
                       </b>
                       <i
                         className={

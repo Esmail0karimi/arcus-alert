@@ -560,6 +560,8 @@ export class ChartX {
       rows.push(col("Stop colour", sh.sc || "#f23645", (s2, v) => (s2.sc = v)));
       rows.push(num("Fill opacity", sh.fillOp ?? 0.22, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
       rows.push(chk("Show labels", sh.labels !== false, (s2, v) => (s2.labels = v)));
+      rows.push(num("Account size", sh.acct ?? 1000, 1, 1e9, 100, (s2, v) => (s2.acct = v)));
+      rows.push(num("Risk %", sh.riskP ?? 1, 0.01, 100, 0.25, (s2, v) => (s2.riskP = v)));
     }
     if (isFib) {
       rows.push(chk("Trend line", sh.showTrend !== false, (s2, v) => (s2.showTrend = v)));

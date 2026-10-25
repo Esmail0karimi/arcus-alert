@@ -9,7 +9,7 @@ export type Shape = {
   id: string; kind: Kind; pts: P[]; color: string; width: number;
   style?: LineStyle; fill?: string; fillOp?: number; extL?: boolean; extR?: boolean;
   levels?: Level[]; bg?: boolean; showTrend?: boolean; showPrice?: boolean; showLvl?: boolean; mid?: boolean; rev?: boolean;
-  labels?: boolean; pc?: string; sc?: string;
+  labels?: boolean; pc?: string; sc?: string; acct?: number; riskP?: number;
 };
 export const DASH: Record<LineStyle, string> = { solid: "", dashed: "7 5", dotted: "1.5 4" };
 export const defLevels = (kind: Kind): Level[] =>
@@ -173,18 +173,26 @@ export function build(s: Shape, env: Env): Built | null {
       out.els.push(seg(E.x, E.y, x1, E.y, "#d5e2f3", s.width ? Math.min(s.width, 2) : 1.2, dash));
       out.polys.push([E, { x: x1, y: E.y }, { x: x1, y: T.y }, { x: E.x, y: T.y }], [E, { x: x1, y: E.y }, { x: x1, y: S.y }, { x: E.x, y: S.y }]);
       out.segs.push([E.x, E.y, x1, E.y]);
+      const risk = Math.abs(pts[0].price - pts[1].price), reward = Math.abs(pts[2].price - pts[0].price);
+      const acct = s.acct ?? 1000, riskAmt = (acct * (s.riskP ?? 1)) / 100;
+      const qty = risk ? riskAmt / risk : 0;
+      const cx = (E.x + x1) / 2;
       if (s.labels !== false) {
         const tp = pct(pts[0].price, pts[2].price), sp = pct(pts[0].price, pts[1].price);
-        const risk = Math.abs(pts[0].price - pts[1].price), reward = Math.abs(pts[2].price - pts[0].price);
-        const lx = Math.min(E.x, x1) + 6;
-        out.els.push(
-          text(lx, (E.y + T.y) / 2 + 4, "Target " + (tp >= 0 ? "+" : "") + tp.toFixed(2) + "%  " + fmtPrice(pts[2].price), G),
-          text(lx, (E.y + S.y) / 2 + 4, "Stop " + (sp >= 0 ? "+" : "") + sp.toFixed(2) + "%  " + fmtPrice(pts[1].price), R),
-          text(lx, E.y - 4, (s.kind === "long" ? "Long" : "Short") + " · R:R " + (risk ? (reward / risk).toFixed(2) : "–") + " · " + fmtPrice(pts[0].price), "#d5e2f3"),
-        );
+        const sg = (v: number) => (v >= 0 ? "+" : "") + v.toFixed(2);
+        const tl = "Target: " + fmtPrice(pts[2].price) + " (" + sg(tp) + "%)  " + (qty ? "+" + (qty * reward).toFixed(2) : "");
+        const sl = "Stop: " + fmtPrice(pts[1].price) + " (" + sg(sp) + "%)  " + (qty ? "-" + riskAmt.toFixed(2) : "");
+        const up = T.y < E.y;
+        out.els.push(text(cx, up ? T.y + 14 : T.y - 6, tl, G, "middle"), text(cx, S.y < E.y ? S.y + 14 : S.y - 6, sl, R, "middle"));
+        const lab = (s.kind === "long" ? "Long" : "Short") + " · R:R " + (risk ? (reward / risk).toFixed(2) : "–") + (qty ? " · Qty " + qty.toFixed(qty < 10 ? 3 : 1) : "");
+        const wpx = lab.length * 6.2 + 12;
+        const pill = rectEl(cx - wpx / 2, E.y - 9, cx + wpx / 2, E.y + 9, "#0b1a2c", "#d5e2f3", 1);
+        pill.setAttribute("rx", "4");
+        pill.setAttribute("fill-opacity", "0.9");
+        out.els.push(pill, text(cx, E.y + 4, lab, "#d5e2f3", "middle"));
       }
-      out.handles = [E, S, T];
-      out.mid = { x: (E.x + x1) / 2, y: E.y };
+      out.handles = [E, { x: cx, y: S.y }, { x: cx, y: T.y }, { x: x1, y: E.y }];
+      out.mid = { x: cx, y: E.y };
       break;
     }
   }
@@ -226,12 +234,11 @@ export function applyDrag(orig: Shape, i: number, p: P, start: P): Shape {
     if (i === 0) {
       const dt = p.time - orig.pts[0].time, dp = p.price - orig.pts[0].price;
       s.pts = s.pts.map((q) => ({ time: q.time + dt, price: q.price + dp }));
-    } else {
-      s.pts[i] = { time: Math.max(p.time, s.pts[0].time + 1), price: p.price };
-      const t = s.pts[i].time;
+    } else if (i === 3) {
+      const t = Math.max(p.time, s.pts[0].time + 1);
       s.pts[1].time = t;
       s.pts[2].time = t;
-    }
+    } else s.pts[i] = { time: s.pts[i].time, price: p.price };
     return s;
   }
   s.pts[i] = { time: p.time, price: p.price };

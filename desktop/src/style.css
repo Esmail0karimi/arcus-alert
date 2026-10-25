@@ -267,3 +267,8 @@ main.chart-full .fs-only{display:inline-block!important}
 .wl-tabs{overflow-x:auto;scrollbar-width:none}.wl-tabs button{white-space:nowrap;flex:0 0 auto;padding-left:8px;padding-right:8px}.wl-add{color:#00dcd2!important;font-size:14px!important}
 .wl-tools{display:flex;align-items:center;gap:6px;font-size:11px;color:#9eb2ca;padding:4px 2px}.wl-tools span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wl-tools button{background:#0b1a2e;border:1px solid #24364e;border-radius:6px;color:#d5e2f3;padding:2px 7px;min-height:0;font-size:11px}
 .wl-pick{margin-left:6px;text-decoration:none;color:#00dcd2;cursor:pointer;font-size:11px;padding:0 3px;border:1px solid #24364e;border-radius:4px}
+.chart-symbol-row{display:flex;align-items:center;gap:6px}.chart-symbol-row .chart-symbol-picker{flex:1;min-width:0}
+.chart-star{background:#0b1a2e;border:1px solid #24364e;border-radius:8px;color:#8aa0bb;font-size:17px;width:34px;height:38px;padding:0;cursor:pointer}.chart-star.on{color:#f2c94c;border-color:#7a6320}
+.wl-menu-bg{position:fixed;inset:0;z-index:299}
+.wl-menu{position:fixed;z-index:300;width:220px;background:#0b1a2c;border:1px solid #2b4964;border-radius:10px;padding:10px;box-shadow:0 12px 28px #000b;display:flex;flex-direction:column;gap:4px;color:#dce9f8;font-size:12px}
+.wl-menu label{display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer}.wl-menu input{width:15px;height:15px;accent-color:#00c9b5}.wl-menu button{margin-top:4px;background:#12263f;border:1px solid #24364e;color:#00dcd2;border-radius:6px;padding:6px;font-size:12px}
