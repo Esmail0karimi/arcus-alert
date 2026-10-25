@@ -85,6 +85,22 @@ export class ChartX {
   private drag: Drag | null = null;
   private notes!: NotesLayer;
   private toolBtns = new Map<Kind, HTMLButtonElement>();
+  private favBar = h("div", "cx-favbar");
+  private favBtns = new Map<Kind, HTMLButtonElement>();
+  private favs: Kind[] = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("arcus.chartx.favtools.v1") || "[]");
+    } catch {
+      return [];
+    }
+  })();
+  private favPos: { x: number; y: number } | null = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("arcus.chartx.favbar.v1") || "null");
+    } catch {
+      return null;
+    }
+  })();
   private railText = h("button", "cx-rail-part", "T");
   private smaS: any = null;
   private rsiS: any = null;
@@ -314,7 +330,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -329,6 +345,14 @@ export class ChartX {
         this.notes?.setPlacing(false);
         this.setTool(this.tool === t.kind ? null : t.kind);
       };
+      const st = h("i", "cx-fav-star", "★");
+      st.title = "Favourite (show on the floating bar)";
+      st.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        this.toggleFav(t.kind);
+      };
+      b.append(st);
       this.toolBtns.set(t.kind, b);
       rail?.append(b);
     }
@@ -339,6 +363,7 @@ export class ChartX {
     };
     rail?.append(this.railText);
     this.buildIndMenu();
+    this.buildFavBar();
     this.popColor.type = "color";
     this.popColor.title = "Colour";
     this.popColor.onchange = () => {
@@ -375,7 +400,7 @@ export class ChartX {
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox);
+    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar);
     this.buildScale();
   }
   private labels() {
@@ -954,7 +979,77 @@ export class ChartX {
     this.draft = null;
     this.catcher.classList.toggle("on", !!k);
     for (const [kind, b] of this.toolBtns) b.classList.toggle("selected", kind === k);
+    for (const [kind, b] of this.favBtns) b.classList.toggle("selected", kind === k);
     this.lastSig = "";
+  }
+
+  private toggleFav(k: Kind) {
+    this.favs = this.favs.includes(k) ? this.favs.filter((x) => x !== k) : [...this.favs, k];
+    try {
+      localStorage.setItem("arcus.chartx.favtools.v1", JSON.stringify(this.favs));
+    } catch {}
+    this.buildFavBar();
+  }
+
+  private placeFavBar() {
+    const hw = this.host.clientWidth,
+      hh = this.host.clientHeight,
+      bw = this.favBar.offsetWidth || 120,
+      bh = this.favBar.offsetHeight || 30;
+    let x = this.favPos ? this.favPos.x : (hw - bw) / 2,
+      y = this.favPos ? this.favPos.y : 8;
+    x = Math.max(0, Math.min(hw - bw, x));
+    y = Math.max(0, Math.min(hh - bh, y));
+    this.favBar.style.left = x + "px";
+    this.favBar.style.top = y + "px";
+  }
+
+  private buildFavBar() {
+    for (const [k, b] of this.toolBtns) b.classList.toggle("fav", this.favs.includes(k));
+    this.favBar.replaceChildren();
+    this.favBtns.clear();
+    const list = this.favs.filter((k) => this.toolBtns.has(k));
+    this.favBar.style.display = list.length ? "flex" : "none";
+    if (!list.length) return;
+    const grip = h("span", "cx-fav-grip", "⋮⋮");
+    grip.title = "Drag to move";
+    grip.onpointerdown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = this.favBar.getBoundingClientRect(),
+        hr = this.host.getBoundingClientRect(),
+        dx = e.clientX - r.left,
+        dy = e.clientY - r.top;
+      const mv = (ev: PointerEvent) => {
+        this.favPos = { x: ev.clientX - hr.left - dx, y: ev.clientY - hr.top - dy };
+        this.placeFavBar();
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", mv);
+        window.removeEventListener("pointerup", up);
+        try {
+          localStorage.setItem("arcus.chartx.favbar.v1", JSON.stringify(this.favPos));
+        } catch {}
+      };
+      window.addEventListener("pointermove", mv);
+      window.addEventListener("pointerup", up);
+    };
+    this.favBar.append(grip);
+    for (const k of list) {
+      const src = this.toolBtns.get(k)!;
+      const b = h("button", "cx-fav-btn", src.firstChild?.textContent || "");
+      b.title = src.title;
+      b.style.fontSize = src.style.fontSize;
+      b.onpointerdown = (e) => e.stopPropagation();
+      b.onclick = () => {
+        this.notes?.setPlacing(false);
+        this.setTool(this.tool === k ? null : k);
+      };
+      b.classList.toggle("selected", this.tool === k);
+      this.favBtns.set(k, b);
+      this.favBar.append(b);
+    }
+    requestAnimationFrame(() => this.placeFavBar());
   }
 
   private pt(e: { clientX: number; clientY: number }): P | null {

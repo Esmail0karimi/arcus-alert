@@ -12,13 +12,16 @@ export const LANGS: { code: string; name: string; rtl?: boolean }[] = [
 const ALIAS: Record<string, string> = {
   XAU: "Gold", XAG: "Silver", XPT: "Platinum", XPD: "Palladium", XCU: "Copper", WTI: "West Texas Intermediate", CL: "West Texas Intermediate",
   BRENT: "Brent Crude", NG: "Natural gas", USOIL: "West Texas Intermediate", UKOIL: "Brent Crude", SPX: "S&P 500", SPY: "SPDR S&P 500 ETF Trust",
+  NATGAS: "Natural gas", NGAS: "Natural gas", NATGASUSD: "Natural gas", GAS: "Natural gas", HENRYHUB: "Henry Hub", OIL: "West Texas Intermediate", CRUDE: "West Texas Intermediate",
+  GOLD: "Gold", SILVER: "Silver", COPPER: "Copper", PLATINUM: "Platinum", PALLADIUM: "Palladium", CORN: "Corn", WHEAT: "Wheat", SOYBEAN: "Soybean", SOYBEANS: "Soybean",
+  COFFEE: "Coffee", SUGAR: "Sugar", COTTON: "Cotton", COCOA: "Cocoa bean", GASOLINE: "Gasoline", HEATINGOIL: "Heating oil", LUMBER: "Lumber", URANIUM: "Uranium", ALUMINUM: "Aluminium", ALUMINIUM: "Aluminium", NICKEL: "Nickel", ZINC: "Zinc",
   NDX: "Nasdaq-100", QQQ: "Invesco QQQ", DJI: "Dow Jones Industrial Average", EURUSD: "Euro", GBPUSD: "Pound sterling", USDJPY: "Japanese yen",
 };
 export const assetBase = (display: string) =>
   display.replace(/ ·[A-Z]$/, "").toUpperCase().replace(/^[A-Z0-9]+:/, "").replace(/-(USD[CT]?|PERP|SWAP)(-.*)?$/, "").replace(/^1000(?=[A-Z])/, "");
 
 type Info = { title: string; desc: string; extract: string; thumb?: string; url: string; langs: Record<string, string> };
-const CK = "arcus.assetinfo.v1";
+const CK = "arcus.assetinfo.v2";
 const readCache = (): Record<string, { at: number; v: any }> => {
   try {
     return JSON.parse(localStorage.getItem(CK) || "{}");
@@ -48,6 +51,8 @@ const summary = async (lang: string, title: string, signal?: AbortSignal) => {
   const s = await j("https://" + lang + ".wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title.replace(/ /g, "_")), signal);
   return { title: s.title as string, desc: (s.description || "") as string, extract: (s.extract || "") as string, thumb: s.thumbnail?.source as string | undefined, url: (s.content_urls?.desktop?.page || "") as string };
 };
+const FIN = /(stock|share|ticker|compan|corporation|exchange|nasdaq|nyse|cryptocurrenc|token|blockchain|commodit|futures|\bETF\b|index|currenc|bank|\binc\b|\bplc\b|\bltd\b|trading|biotech|pharmaceutic|\boil\b|\bgas\b|metal|fund|market|financ|bitcoin|ethereum|coin)/i;
+const PERSON = /\b(born|actress|actor|singer|rapper|footballer|politician|novelist|film|album|song|television|character|professional wrestler|model|footballer|athlete|journalist|musician)\b/i;
 const strip = (h: string) => h.replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 
 /** Find the best-matching English Wikipedia article for a ticker / asset name. */
@@ -61,7 +66,7 @@ export async function findAsset(base: string, signal?: AbortSignal): Promise<Inf
       try {
         const r = await j("https://en.wikipedia.org/w/api.php?action=query&list=search&srlimit=6&format=json&origin=*&srsearch=" + encodeURIComponent(q), signal);
         const hits: { title: string; snippet: string }[] = r?.query?.search || [];
-        const good = hits.find((h) => word.test(strip(h.snippet)) || word.test(h.title));
+        const good = hits.find((h) => (word.test(strip(h.snippet)) || word.test(h.title)) && FIN.test(strip(h.snippet) + " " + h.title) && !PERSON.test(strip(h.snippet)));
         if (good) pick = good.title;
       } catch (e: any) {
         if (e?.name === "AbortError") throw e;
@@ -69,6 +74,7 @@ export async function findAsset(base: string, signal?: AbortSignal): Promise<Inf
     }
     if (!pick) return null;
     const s = await summary("en", pick, signal);
+    if (!ALIAS[base] && (PERSON.test(s.desc) || !FIN.test(s.desc + " " + s.extract))) return null;
     let langs: Record<string, string> = {};
     try {
       const l = await j("https://en.wikipedia.org/w/api.php?action=query&prop=langlinks&lllimit=500&format=json&formatversion=2&origin=*&titles=" + encodeURIComponent(s.title), signal);

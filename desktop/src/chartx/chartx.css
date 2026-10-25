@@ -102,3 +102,11 @@
 .cx-wide{display:block;width:100%;height:30px;margin:4px 0;text-align:left}
 
 .cx-count{position:absolute;z-index:6;display:none;text-align:center;font:600 11px system-ui,sans-serif;color:#fff;padding:2px 0;border-radius:0 0 3px 3px;pointer-events:none;font-variant-numeric:tabular-nums}
+.cx-favbar{position:absolute;z-index:12;display:none;align-items:center;gap:2px;padding:3px 4px;background:rgba(7,22,41,.92);border:1px solid #24364e;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.45);user-select:none;touch-action:none}
+.cx-fav-grip{cursor:grab;color:#6f86a3;font-size:12px;letter-spacing:-2px;padding:0 4px 0 2px;line-height:26px}.cx-fav-grip:active{cursor:grabbing}
+.cx-favbar .cx-fav-btn{width:28px;height:26px;min-height:26px;padding:0;border:0;background:transparent;color:#b8c9dc;font-size:16px;border-radius:6px;cursor:pointer}
+.cx-favbar .cx-fav-btn:hover,.cx-favbar .cx-fav-btn.selected{background:#12364a;color:#00dcd2}
+.drawing-rail button{position:relative}
+.cx-fav-star{position:absolute;top:-1px;right:-1px;font-style:normal;font-size:10px;line-height:10px;color:#fff;opacity:0;cursor:pointer;transition:opacity .12s;padding:2px}
+.drawing-rail button:hover .cx-fav-star{opacity:.3}.drawing-rail button .cx-fav-star:hover{opacity:.9;color:#f2c94c}
+.drawing-rail button.fav .cx-fav-star{opacity:.9;color:#f2c94c}
