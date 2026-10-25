@@ -3,13 +3,13 @@
  * lightweight-charts chart. Everything is optional, default off, and costs nothing while off.
  * It never replaces the main candlestick series, so alerts and horizontal lines are untouched.
  */
-import { HistogramSeries, LineSeries } from "lightweight-charts";
+import { HistogramSeries, LineSeries, PriceScaleMode } from "lightweight-charts";
 import "./chartx.css";
 import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
 import { NotesLayer } from "./notes";
 import { undoManager } from "../undo";
-import { Built, Kind, NEED, P, Shape, TOOLS, applyDrag, build, newPosition, pickDistance } from "./drawings";
+import { Built, DASH, Kind, Level, LineStyle, NEED, P, Shape, TOOLS, applyDrag, build, defLevels, newPosition, pickDistance } from "./drawings";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
   DRAW_KEY = "arcus.chartx.drawings.v1";
@@ -110,6 +110,9 @@ export class ChartX {
   private moreBtn = h("button", "cx-btn cx-more", "ƒx");
   private tools = h("div", "cx-tools");
   private panel = h("div", "cx-panel");
+  private panelClose: (() => void) | null = null;
+  private scaleBox = h("div", "cx-scale");
+  private logOn = false;
   private built = new Map<string, Built>();
 
   constructor(
@@ -138,7 +141,7 @@ export class ChartX {
         this.setTool(null);
         this.notes.setPlacing(false);
         this.select(null);
-        this.panel.style.display = "none";
+        this.hidePanel();
       } else if ((e.key === "Delete" || e.key === "Backspace") && this.selected) {
         const t = e.target as HTMLElement | null;
         if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && (t as HTMLInputElement).type !== "color") return;
@@ -152,7 +155,7 @@ export class ChartX {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0 || ui(e)) return;
       down = { x: e.clientX, y: e.clientY };
-      if (!this.panel.contains(e.target as Node)) this.panel.style.display = "none";
+      this.hidePanel();
       if (this.tool) return;
       const r = this.host.getBoundingClientRect();
       const lx = e.clientX - r.left, ly = e.clientY - r.top;
@@ -217,7 +220,19 @@ export class ChartX {
     this.host.addEventListener("pointerup", onUp, true);
     window.addEventListener("pointerup", onUp);
     this.host.addEventListener("contextmenu", onCtx, true);
+    const onDbl = (e: MouseEvent) => {
+      if (ui(e) || this.tool) return;
+      const r = this.host.getBoundingClientRect();
+      const hit = this.hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (!hit) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      this.select(hit);
+      this.openShapePanel(hit);
+    };
+    this.host.addEventListener("dblclick", onDbl, true);
     this.cleanups.push(() => {
+      this.host.removeEventListener("dblclick", onDbl, true);
       this.host.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("pointermove", onDragMove);
       this.host.removeEventListener("pointerup", onUp, true);
@@ -274,7 +289,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.railText, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.railText, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -360,12 +375,16 @@ export class ChartX {
     const del = h("button", "danger", "🗑");
     del.title = "Delete (Del)";
     del.onclick = () => this.deleteSelected();
-    this.pop.append(this.popColor, this.popWidth, del);
+    const gearBtn = h("button", "", "⚙");
+    gearBtn.title = "Settings (double-click the shape)";
+    gearBtn.onclick = () => this.selected && this.openShapePanel(this.selected);
+    this.pop.append(this.popColor, this.popWidth, gearBtn, del);
     this.pop.style.display = "none";
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop, this.panel);
+    this.host.append(this.svg, this.legend, this.srcEl, this.bar, this.catcher, this.pop, this.panel, this.scaleBox);
+    this.buildScale();
   }
   private labels() {
     this.smaBtn.textContent = "SMA " + this.prefs.sma.period;
@@ -406,17 +425,25 @@ export class ChartX {
     i.onchange = () => on(i.checked);
     return i;
   }
-  private showPanel(title: string, rows: HTMLElement[], x: number, y: number, foot?: HTMLElement) {
+  private hidePanel() {
+    this.panel.style.display = "none";
+    const fn = this.panelClose;
+    this.panelClose = null;
+    fn?.();
+  }
+  private showPanel(title: string, rows: HTMLElement[], x: number, y: number, foot?: HTMLElement, onClose?: () => void) {
     const p = this.panel;
+    this.hidePanel();
+    this.panelClose = onClose || null;
     p.replaceChildren();
     const head = h("div", "cx-phead");
     const close = h("button", "cx-x", "✕");
-    close.onclick = () => (p.style.display = "none");
+    close.onclick = () => this.hidePanel();
     head.append(h("b", "", title), close);
     p.append(head, ...rows);
     if (foot) p.append(foot);
     p.style.display = "block";
-    const W = 230, H = p.offsetHeight || 260;
+    const W = 250, H = Math.min(p.offsetHeight || 260, this.host.clientHeight - 8);
     p.style.left = Math.max(4, Math.min(x, this.host.clientWidth - W - 4)) + "px";
     p.style.top = Math.max(4, Math.min(y, this.host.clientHeight - H - 4)) + "px";
   }
@@ -452,6 +479,122 @@ export class ChartX {
       reset,
     );
   }
+  private selIn(opts: [string, string][], value: string, on: (v: string) => void) {
+    const el = h("select");
+    for (const [v, t] of opts) el.append(new Option(t, v));
+    el.value = value;
+    el.onchange = () => on(el.value);
+    return el;
+  }
+
+  private buildScale() {
+    const mk = (label: string, log: boolean) => {
+      const b = h("button", "cx-btn", label);
+      b.title = log ? "Logarithmic price scale" : "Normal (linear) price scale";
+      b.onclick = () => this.setLog(log);
+      return b;
+    };
+    this.scaleBox.append(mk("Lin", false), mk("Log", true));
+    ["pointerdown", "wheel", "dblclick", "contextmenu"].forEach((ev) => this.scaleBox.addEventListener(ev, (e) => e.stopPropagation()));
+    this.logOn = load<{ log: boolean }>("arcus.chartx.scale.v1", { log: false }).log;
+    this.setLog(this.logOn);
+  }
+  private setLog(on: boolean) {
+    this.logOn = on;
+    save("arcus.chartx.scale.v1", { log: on });
+    try {
+      this.chart.priceScale("right").applyOptions({ mode: on ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
+    } catch {}
+    const [lin, lg] = Array.from(this.scaleBox.children);
+    lin?.classList.toggle("on", !on);
+    lg?.classList.toggle("on", on);
+    this.lastSig = "";
+  }
+
+  private openShapePanel(id: string, before?: Shape[], pos?: { x: number; y: number }) {
+    const sh = this.shapes.find((x) => x.id === id);
+    if (!sh) return;
+    const snap = before || this.cloneShapes();
+    const at = pos || { x: Math.max(4, this.host.clientWidth - 330), y: 50 };
+    const cur = () => this.shapes.find((x) => x.id === id);
+    const upd = (fn: (s: Shape) => void, redraw = false) => {
+      const s2 = cur();
+      if (!s2) return;
+      fn(s2);
+      this.persistShapes();
+      this.lastSig = "";
+      if (redraw) {
+        this.panelClose = null; // same editing session: keep the original undo snapshot
+        this.openShapePanel(id, snap, at);
+      }
+    };
+    const chk = (label: string, get: boolean, set: (s: Shape, v: boolean) => void) =>
+      this.row(label, this.checkIn(get, (v) => upd((s2) => set(s2, v))));
+    const col = (label: string, get: string, set: (s: Shape, v: string) => void) =>
+      this.row(label, this.colorIn(get, (v) => upd((s2) => set(s2, v))));
+    const num = (label: string, get: number, min: number, max: number, step: number, set: (s: Shape, v: number) => void) =>
+      this.row(label, this.numIn(get, min, max, step, (v) => upd((s2) => set(s2, v))));
+    const STYLE: [string, string][] = [["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"]];
+    const k = sh.kind;
+    const rows: HTMLElement[] = [];
+    const isPos = k === "long" || k === "short";
+    const isFib = k === "fibret" || k === "fibext";
+    if (!isPos) rows.push(col(isFib ? "Trend line colour" : "Colour", sh.color, (s2, v) => (s2.color = v)));
+    rows.push(num("Width", sh.width, 0.5, 8, 0.5, (s2, v) => (s2.width = v)));
+    rows.push(this.row("Style", this.selIn(STYLE, sh.style || "solid", (v) => upd((s2) => (s2.style = v as LineStyle)))));
+    if (k === "trend" || k === "channel" || isFib || k === "hray") {
+      rows.push(chk("Extend left", !!sh.extL, (s2, v) => (s2.extL = v)));
+      rows.push(chk("Extend right", k === "hray" ? sh.extR !== false : !!sh.extR, (s2, v) => (s2.extR = v)));
+    }
+    if (k === "channel") {
+      rows.push(col("Fill colour", sh.fill || sh.color, (s2, v) => (s2.fill = v)));
+      rows.push(num("Fill opacity", sh.fillOp ?? 0.1, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
+      rows.push(chk("Middle line", sh.mid !== false, (s2, v) => (s2.mid = v)));
+    }
+    if (k === "rect") {
+      rows.push(col("Fill colour", sh.fill || sh.color, (s2, v) => (s2.fill = v)));
+      rows.push(num("Fill opacity", sh.fillOp ?? 0.14, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
+    }
+    if (isPos) {
+      rows.push(col("Target colour", sh.pc || "#089981", (s2, v) => (s2.pc = v)));
+      rows.push(col("Stop colour", sh.sc || "#f23645", (s2, v) => (s2.sc = v)));
+      rows.push(num("Fill opacity", sh.fillOp ?? 0.22, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
+      rows.push(chk("Show labels", sh.labels !== false, (s2, v) => (s2.labels = v)));
+    }
+    if (isFib) {
+      rows.push(chk("Trend line", sh.showTrend !== false, (s2, v) => (s2.showTrend = v)));
+      rows.push(chk("Background", sh.bg !== false, (s2, v) => (s2.bg = v)));
+      rows.push(num("Background opacity", sh.fillOp ?? 0.1, 0, 1, 0.05, (s2, v) => (s2.fillOp = v)));
+      rows.push(chk("Show level", sh.showLvl !== false, (s2, v) => (s2.showLvl = v)));
+      rows.push(chk("Show price", sh.showPrice !== false, (s2, v) => (s2.showPrice = v)));
+      if (k === "fibret") rows.push(chk("Reverse", !!sh.rev, (s2, v) => (s2.rev = v)));
+      rows.push(h("div", "cx-sub", "Levels"));
+      const lv = sh.levels || defLevels(k);
+      lv.forEach((q, i) => {
+        const r = h("div", "cx-lvl");
+        const on = this.checkIn(q.on, (v) => upd((s2) => ((s2.levels ||= defLevels(k))[i].on = v)));
+        const val = this.numIn(q.v, -10, 20, 0.001, (v) => upd((s2) => ((s2.levels ||= defLevels(k))[i].v = v)));
+        const c = this.colorIn(q.color, (v) => upd((s2) => ((s2.levels ||= defLevels(k))[i].color = v)));
+        const x = h("button", "cx-x", "✕");
+        x.title = "Remove level";
+        x.onclick = () => upd((s2) => (s2.levels = (s2.levels || defLevels(k)).filter((_, j) => j !== i)), true);
+        r.append(on, val, c, x);
+        rows.push(r);
+      });
+      const add = h("button", "cx-btn cx-reset", "+ Add level");
+      add.onclick = () =>
+        upd((s2) => {
+          const l = (s2.levels ||= defLevels(k)) as Level[];
+          l.push({ v: Number(((l.length ? Math.max(...l.map((q) => q.v)) : 0) + 1).toFixed(3)), on: true, color: "#9aa7b8" });
+        }, true);
+      const reset = h("button", "cx-btn cx-reset", "Reset levels");
+      reset.onclick = () => upd((s2) => (s2.levels = defLevels(k)), true);
+      rows.push(add, reset);
+    }
+    const names: Record<Kind, string> = { trend: "Trend line", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position" };
+    this.showPanel(names[k] + " settings", rows, at.x, at.y, undefined, () => this.record(snap));
+  }
+
   private openIndicatorPanel(which: "sma" | "rsi" | "vol") {
     const P = this.prefs;
     const commit = (full = true) => {

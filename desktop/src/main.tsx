@@ -103,6 +103,14 @@ function App() {
         return [];
       }
     }),
+    [wlists, setWlists] = useState<{ id: string; name: string; items: string[] }[]>(() => {
+      try {
+        const v = JSON.parse(localStorage.getItem("arcus.watchlists.v1") || "[]");
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    }),
     [favorites, setFavorites] = useState<string[]>(() => {
       try {
         return JSON.parse(localStorage.getItem(FAV) || "[]");
@@ -553,6 +561,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DRAWING_STYLE, JSON.stringify({ color: lineColor, width: lineWidth }));
   }, [lineColor, lineWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.watchlists.v1", JSON.stringify(wlists));
+    } catch {}
+  }, [wlists]);
   useEffect(() => {
     localStorage.setItem(FAV, JSON.stringify(favorites));
   }, [favorites]);
@@ -1675,9 +1688,14 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && (t as HTMLInputElement).type !== "color")
-        return; // let text fields use their own undo
-      const k = e.key.toLowerCase();
+      const typing =
+        t &&
+        (t.tagName === "TEXTAREA" ||
+          t.isContentEditable ||
+          (t.tagName === "INPUT" && /^(text|search|number|email|password|url|tel)$/.test((t as HTMLInputElement).type || "text")));
+      if (typing) return; // let text fields use their own undo
+      // e.code works on every keyboard layout (Persian, etc.); e.key does not
+      const k = e.code === "KeyZ" ? "z" : e.code === "KeyY" ? "y" : e.key.toLowerCase();
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();
         setStatus(undoManager.undo() ? "Undone (Ctrl+Z)" : "Nothing to undo");
@@ -1931,8 +1949,56 @@ function App() {
     }
     return { counts, sections };
   })();
+  const activeList = watchGroup.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === watchGroup) : undefined;
+  const groupItems = (g: string): string[] =>
+    g === "Favorites" ? favorites : g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.items || [] : [];
+  const addList = () => {
+    const name = (window.prompt("Watchlist name", "My list") || "").trim();
+    if (!name) return;
+    const id = Date.now().toString(36);
+    setWlists((v) => [...v, { id, name: name.slice(0, 24), items: [] }]);
+    setWatchGroup("wl:" + id);
+  };
+  const renameList = () => {
+    if (!activeList) return;
+    const name = (window.prompt("Rename watchlist", activeList.name) || "").trim();
+    if (name) setWlists((v) => v.map((l) => (l.id === activeList.id ? { ...l, name: name.slice(0, 24) } : l)));
+  };
+  const deleteList = () => {
+    if (!activeList || !window.confirm('Delete watchlist "' + activeList.name + '"?')) return;
+    setWlists((v) => v.filter((l) => l.id !== activeList.id));
+    setWatchGroup("Favorites");
+  };
+  const toggleInList = (id: string, sym: string) =>
+    setWlists((v) =>
+      v.map((l) => (l.id === id ? { ...l, items: l.items.includes(sym) ? l.items.filter((x) => x !== sym) : [...l.items, sym] } : l)),
+    );
+  const listTabs = (
+    <div className="watch-tabs wl-tabs">
+      {["Favorites", ...wlists.map((l) => "wl:" + l.id), "Market"].map((g) => (
+        <button key={g} className={watchGroup === g ? "active" : ""} onClick={() => setWatchGroup(g)}>
+          {g.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === g)?.name : g}
+        </button>
+      ))}
+      <button className="wl-add" title="New watchlist" onClick={addList}>
+        ＋
+      </button>
+    </div>
+  );
+  const listTools = activeList && (
+    <div className="wl-tools">
+      <span>{activeList.name}</span>
+      <button title="Rename" onClick={renameList}>
+        ✎
+      </button>
+      <button title="Delete this list" onClick={deleteList}>
+        🗑
+      </button>
+    </div>
+  );
+  const wlTabItems = groupItems(watchGroup === "Market" ? "Favorites" : watchGroup);
   watchNavRef.current =
-    watchGroup === "Favorites" ? filtered.filter((s) => favorites.includes(s)) : filtered;
+    watchGroup === "Market" ? filtered : filtered.filter((s) => groupItems(watchGroup).includes(s));
   return (
     <div className="app">
       <header>
@@ -2186,12 +2252,14 @@ function App() {
               <div>
                 <small>YOUR MARKETS</small>
                 <h1>Watchlist</h1>
-                <p>Favorite Arcus markets</p>
+                <p>Favorite markets and your own lists</p>
               </div>
             </div>
-            {favorites.length ? (
+            {listTabs}
+            {listTools}
+            {wlTabItems.length ? (
               <div className="marketlist">
-              {favorites.map((s) => (
+              {wlTabItems.map((s) => (
                 <div
                   className="marketrow"
                   key={s}
@@ -2203,10 +2271,11 @@ function App() {
                   <b>{dn(s)}</b>
                   <button
                     className="market-favorite"
-                    aria-label="Remove favorite"
+                    aria-label="Remove"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleFav(s);
+                      if (activeList) toggleInList(activeList.id, s);
+                      else toggleFav(s);
                     }}
                   >
                     ★
@@ -2234,7 +2303,7 @@ function App() {
               ))}
               </div>
             ) : (
-              <div className="empty">No favorites yet. Add markets from Market.</div>
+              <div className="empty">This list is empty. Open the chart tab → Watchlist → Market and press ＋ next to a symbol (or ☆ in Market for Favorites).</div>
             )}
           </>
         )}
@@ -2688,28 +2757,31 @@ function App() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
-                <div className="watch-tabs">
-                  {["Favorites", "Market"].map((g) => (
-                    <button
-                      key={g}
-                      className={watchGroup === g ? "active" : ""}
-                      onClick={() => setWatchGroup(g)}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
+                {listTabs}
+                {listTools}
                 <div className="watch-items">
-                  {(watchGroup === "Favorites"
-                    ? filtered.filter((s) => favorites.includes(s))
-                    : filtered
-                  ).map((s) => (
+                  {(watchGroup === "Market" ? filtered : filtered.filter((s) => groupItems(watchGroup).includes(s))).map((s) => (
                     <button
                       className={s === symbol ? "current" : ""}
                       key={s}
                       onClick={() => setSymbol(s)}
                     >
-                      <b>{dn(s)}</b>
+                      <b>
+                        {dn(s)}
+                        {wlists.length > 0 && watchGroup !== "Favorites" && (
+                          <u
+                            className="wl-pick"
+                            title={activeList ? "Add/remove in " + activeList.name : "Add to a list: open a custom list tab first"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const id = activeList?.id || wlists[wlists.length - 1].id;
+                              toggleInList(id, s);
+                            }}
+                          >
+                            {(activeList || wlists[wlists.length - 1]).items.includes(s) ? "✓" : "＋"}
+                          </u>
+                        )}
+                      </b>
                       <i
                         className={
                           prices[s]?.change24h == null

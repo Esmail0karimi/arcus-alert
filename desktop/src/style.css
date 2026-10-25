@@ -264,3 +264,6 @@ main.chart-full .fs-only{display:inline-block!important}
 .market-section{margin-bottom:14px}
 .market-sub{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:#7f97b2;margin:14px 2px 6px;font-weight:600}
 .market-sub small{opacity:.7;margin-left:4px}
+.wl-tabs{overflow-x:auto;scrollbar-width:none}.wl-tabs button{white-space:nowrap;flex:0 0 auto;padding-left:8px;padding-right:8px}.wl-add{color:#00dcd2!important;font-size:14px!important}
+.wl-tools{display:flex;align-items:center;gap:6px;font-size:11px;color:#9eb2ca;padding:4px 2px}.wl-tools span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wl-tools button{background:#0b1a2e;border:1px solid #24364e;border-radius:6px;color:#d5e2f3;padding:2px 7px;min-height:0;font-size:11px}
+.wl-pick{margin-left:6px;text-decoration:none;color:#00dcd2;cursor:pointer;font-size:11px;padding:0 3px;border:1px solid #24364e;border-radius:4px}

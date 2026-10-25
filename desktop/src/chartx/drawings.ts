@@ -3,7 +3,17 @@ import { fmtPrice } from "./math";
 
 export type P = { time: number; price: number };
 export type Kind = "trend" | "vline" | "hray" | "channel" | "fibret" | "fibext" | "rect" | "long" | "short";
-export type Shape = { id: string; kind: Kind; pts: P[]; color: string; width: number };
+export type Level = { v: number; on: boolean; color: string };
+export type LineStyle = "solid" | "dashed" | "dotted";
+export type Shape = {
+  id: string; kind: Kind; pts: P[]; color: string; width: number;
+  style?: LineStyle; fill?: string; fillOp?: number; extL?: boolean; extR?: boolean;
+  levels?: Level[]; bg?: boolean; showTrend?: boolean; showPrice?: boolean; showLvl?: boolean; mid?: boolean; rev?: boolean;
+  labels?: boolean; pc?: string; sc?: string;
+};
+export const DASH: Record<LineStyle, string> = { solid: "", dashed: "7 5", dotted: "1.5 4" };
+export const defLevels = (kind: Kind): Level[] =>
+  (kind === "fibext" ? FIB_EXT : FIB_RET).map((v) => ({ v, on: true, color: FIB_COL[String(v)] || "#9aa7b8" }));
 export type XY = { x: number; y: number };
 export type Env = { xy: (p: P) => XY | null; w: number; h: number; selected: boolean; draft?: boolean };
 export type Built = { els: SVGElement[]; segs: [number, number, number, number][]; polys: XY[][]; handles: XY[]; mid: XY };
@@ -63,77 +73,88 @@ export function build(s: Shape, env: Env): Built | null {
   const sel = env.selected || !!env.draft;
   const col = s.color, w = s.width + (env.selected ? 1 : 0);
   const out: Built = { els: [], segs: [], polys: [], handles: [], mid: A };
-  const L = (x1: number, y1: number, x2: number, y2: number, color = col, width = w, dash = "") => {
-    out.els.push(seg(x1, y1, x2, y2, color, width, dash));
+  const dash = env.draft ? "5 4" : DASH[s.style || "solid"];
+  const L = (x1: number, y1: number, x2: number, y2: number, color = col, width = w, d = dash) => {
+    out.els.push(seg(x1, y1, x2, y2, color, width, d));
     out.segs.push([x1, y1, x2, y2]);
   };
-  const dash = env.draft ? "5 4" : "";
+  /** extend segment P->Q to the chart edges on the chosen sides */
+  const ext = (P: XY, Q: XY, l?: boolean, r?: boolean): [XY, XY] => {
+    const dx = Q.x - P.x, dy = Q.y - P.y, len = Math.hypot(dx, dy) || 1, k = (env.w + env.h) * 4;
+    return [l ? { x: P.x - (dx / len) * k, y: P.y - (dy / len) * k } : P, r ? { x: Q.x + (dx / len) * k, y: Q.y + (dy / len) * k } : Q];
+  };
   switch (s.kind) {
-    case "trend":
-      L(A.x, A.y, B.x, B.y, col, w, dash);
+    case "trend": {
+      const [P, Q] = ext(A, B, s.extL, s.extR);
+      L(P.x, P.y, Q.x, Q.y);
       out.handles = [A, B];
       out.mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
       break;
+    }
     case "vline":
-      L(A.x, 0, A.x, env.h, col, w, dash);
+      L(A.x, 0, A.x, env.h);
       out.handles = [A];
       break;
     case "hray":
-      L(A.x, A.y, env.w, A.y, col, w, dash);
+      L(s.extL ? 0 : A.x, A.y, s.extR === false ? A.x + 1 : env.w, A.y);
       out.handles = [A];
       break;
     case "channel": {
       const dx = B.x - A.x, k = Math.abs(dx) < 1e-6 ? 0 : (B.y - A.y) / dx;
       const off = C.y - (A.y + (C.x - A.x) * k);
       const A2 = { x: A.x, y: A.y + off }, B2 = { x: B.x, y: B.y + off };
-      out.els.push(svgEl("polygon", { points: [A, B, B2, A2].map((q) => q.x + "," + q.y).join(" "), fill: col, "fill-opacity": 0.1, stroke: "none" }));
-      out.polys.push([A, B, B2, A2]);
-      L(A.x, A.y, B.x, B.y, col, w, dash);
-      L(A2.x, A2.y, B2.x, B2.y, col, w, dash);
-      out.els.push(seg((A.x + A2.x) / 2, (A.y + A2.y) / 2, (B.x + B2.x) / 2, (B.y + B2.y) / 2, col, 1, "4 4"));
+      const [P1, Q1] = ext(A, B, s.extL, s.extR), [P2, Q2] = ext(A2, B2, s.extL, s.extR);
+      out.els.push(svgEl("polygon", { points: [P1, Q1, Q2, P2].map((q) => q.x + "," + q.y).join(" "), fill: s.fill || col, "fill-opacity": s.fillOp ?? 0.1, stroke: "none" }));
+      out.polys.push([P1, Q1, Q2, P2]);
+      L(P1.x, P1.y, Q1.x, Q1.y);
+      L(P2.x, P2.y, Q2.x, Q2.y);
+      if (s.mid !== false) out.els.push(seg((P1.x + P2.x) / 2, (P1.y + P2.y) / 2, (Q1.x + Q2.x) / 2, (Q1.y + Q2.y) / 2, col, 1, "4 4"));
       out.handles = [A, B, { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 + off }];
       out.mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
       break;
     }
-    case "fibret": {
-      const x0 = Math.min(A.x, B.x), x1 = Math.max(Math.max(A.x, B.x), x0 + 80);
-      const price = (l: number) => pts[1].price + (pts[0].price - pts[1].price) * l;
-      const ys = FIB_RET.map((l) => env.xy({ time: pts[0].time, price: price(l) })!.y);
-      FIB_RET.forEach((l, i) => {
-        const c = FIB_COL[String(l)];
-        if (i < FIB_RET.length - 1) out.els.push(rectEl(x0, ys[i], x1, ys[i + 1], c, "none", 0)), ((out.els[out.els.length - 1] as any).setAttribute("fill-opacity", "0.07"));
-        L(x0, ys[i], x1, ys[i], c, env.selected ? 1.8 : 1.2, dash);
-        out.els.push(text(x0 + 4, ys[i] - 3, l + " (" + fmtPrice(price(l)) + ")", c));
-      });
-      out.els.push(seg(A.x, A.y, B.x, B.y, col, 1, "5 4"));
-      out.polys.push([{ x: x0, y: Math.min(...ys) }, { x: x1, y: Math.min(...ys) }, { x: x1, y: Math.max(...ys) }, { x: x0, y: Math.max(...ys) }]);
-      out.handles = [A, B];
-      out.mid = { x: (x0 + x1) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
-      break;
-    }
+    case "fibret":
     case "fibext": {
-      const price = (l: number) => pts[2].price + (pts[1].price - pts[0].price) * l;
-      const x0 = C.x, x1 = Math.min(env.w - 4, x0 + Math.max(180, Math.abs(B.x - A.x) * 1.5));
-      const ys = FIB_EXT.map((l) => env.xy({ time: pts[2].time, price: price(l) })!.y);
-      out.els.push(seg(A.x, A.y, B.x, B.y, col, 1, "5 4"), seg(B.x, B.y, C.x, C.y, col, 1, "5 4"));
-      FIB_EXT.forEach((l, i) => {
-        const c = FIB_COL[String(l)];
-        L(x0, ys[i], x1, ys[i], c, env.selected ? 1.8 : 1.2, dash);
-        out.els.push(text(x0 + 4, ys[i] - 3, l + " (" + fmtPrice(price(l)) + ")", c));
+      const ret = s.kind === "fibret";
+      const lv = (s.levels || defLevels(s.kind)).filter((q) => q.on).sort((p, q) => p.v - q.v);
+      const price = (l: number) => (ret ? (s.rev ? pts[0].price + (pts[1].price - pts[0].price) * l : pts[1].price + (pts[0].price - pts[1].price) * l) : pts[2].price + (pts[1].price - pts[0].price) * l);
+      const ref = ret ? A : C;
+      let x0 = ret ? Math.min(A.x, B.x) : C.x;
+      let x1 = ret ? Math.max(Math.max(A.x, B.x), x0 + 80) : Math.min(env.w - 4, x0 + Math.max(180, Math.abs(B.x - A.x) * 1.5));
+      if (s.extL) x0 = 0;
+      if (s.extR) x1 = env.w;
+      const t0 = ret ? pts[0].time : pts[2].time;
+      const ys = lv.map((q) => env.xy({ time: t0, price: price(q.v) })!.y);
+      if (s.bg !== false)
+        for (let i = 0; i < lv.length - 1; i++) {
+          const r = rectEl(x0, ys[i], x1, ys[i + 1], lv[i + 1].color, "none", 0);
+          r.setAttribute("fill-opacity", String(s.fillOp ?? 0.1));
+          out.els.push(r);
+        }
+      if (s.showTrend !== false) {
+        if (ret) out.els.push(seg(A.x, A.y, B.x, B.y, col, 1, "5 4"));
+        else out.els.push(seg(A.x, A.y, B.x, B.y, col, 1, "5 4"), seg(B.x, B.y, C.x, C.y, col, 1, "5 4"));
+      }
+      lv.forEach((q, i) => {
+        L(x0, ys[i], x1, ys[i], q.color, env.selected ? s.width + 0.6 : s.width, dash);
+        const parts: string[] = [];
+        if (s.showLvl !== false) parts.push(String(q.v));
+        if (s.showPrice !== false) parts.push("(" + fmtPrice(price(q.v)) + ")");
+        if (parts.length) out.els.push(text(x0 + 4, ys[i] - 3, parts.join(" "), q.color));
       });
-      out.polys.push([{ x: x0, y: Math.min(...ys) }, { x: x1, y: Math.min(...ys) }, { x: x1, y: Math.max(...ys) }, { x: x0, y: Math.max(...ys) }]);
-      out.segs.push([A.x, A.y, B.x, B.y], [B.x, B.y, C.x, C.y]);
-      out.handles = [A, B, C];
-      out.mid = { x: (x0 + x1) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+      if (ys.length) out.polys.push([{ x: x0, y: Math.min(...ys) }, { x: x1, y: Math.min(...ys) }, { x: x1, y: Math.max(...ys) }, { x: x0, y: Math.max(...ys) }]);
+      if (!ret) out.segs.push([A.x, A.y, B.x, B.y], [B.x, B.y, C.x, C.y]);
+      else out.segs.push([A.x, A.y, B.x, B.y]);
+      out.handles = ret ? [A, B] : [A, B, C];
+      out.mid = { x: (x0 + x1) / 2, y: ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : ref.y };
       break;
     }
     case "rect": {
-      const r = rectEl(A.x, A.y, B.x, B.y, col, col, w);
-      r.setAttribute("fill-opacity", "0.14");
-      if (env.draft) r.setAttribute("stroke-dasharray", "5 4");
+      const r = rectEl(A.x, A.y, B.x, B.y, s.fill || col, col, w);
+      r.setAttribute("fill-opacity", String(s.fillOp ?? 0.14));
+      r.setAttribute("stroke-dasharray", dash);
       out.els.push(r);
-      const P4 = [A, { x: B.x, y: A.y }, B, { x: A.x, y: B.y }];
-      out.polys.push(P4);
+      out.polys.push([A, { x: B.x, y: A.y }, B, { x: A.x, y: B.y }]);
       out.segs.push([A.x, A.y, B.x, A.y], [B.x, A.y, B.x, B.y], [B.x, B.y, A.x, B.y], [A.x, B.y, A.x, A.y]);
       out.handles = [A, B];
       out.mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
@@ -143,23 +164,25 @@ export function build(s: Shape, env: Env): Built | null {
     case "short": {
       const E = A, S = B, T = C;
       const x1 = S.x;
-      const G = "#089981", R = "#f23645";
+      const G = s.pc || "#089981", R = s.sc || "#f23645";
       const rp = rectEl(E.x, E.y, x1, T.y, G, G, 1), rl = rectEl(E.x, E.y, x1, S.y, R, R, 1);
-      rp.setAttribute("fill-opacity", "0.22");
-      rl.setAttribute("fill-opacity", "0.22");
+      rp.setAttribute("fill-opacity", String(s.fillOp ?? 0.22));
+      rl.setAttribute("fill-opacity", String(s.fillOp ?? 0.22));
       out.els.push(rp, rl);
       if (env.selected) { rp.setAttribute("stroke-width", "2"); rl.setAttribute("stroke-width", "2"); }
-      out.els.push(seg(E.x, E.y, x1, E.y, "#d5e2f3", 1.2));
+      out.els.push(seg(E.x, E.y, x1, E.y, "#d5e2f3", s.width ? Math.min(s.width, 2) : 1.2, dash));
       out.polys.push([E, { x: x1, y: E.y }, { x: x1, y: T.y }, { x: E.x, y: T.y }], [E, { x: x1, y: E.y }, { x: x1, y: S.y }, { x: E.x, y: S.y }]);
       out.segs.push([E.x, E.y, x1, E.y]);
-      const tp = pct(pts[0].price, pts[2].price), sp = pct(pts[0].price, pts[1].price);
-      const risk = Math.abs(pts[0].price - pts[1].price), reward = Math.abs(pts[2].price - pts[0].price);
-      const lx = Math.min(E.x, x1) + 6;
-      out.els.push(
-        text(lx, (E.y + T.y) / 2 + 4, "Target " + (tp >= 0 ? "+" : "") + tp.toFixed(2) + "%  " + fmtPrice(pts[2].price), G),
-        text(lx, (E.y + S.y) / 2 + 4, "Stop " + (sp >= 0 ? "+" : "") + sp.toFixed(2) + "%  " + fmtPrice(pts[1].price), R),
-        text(lx, E.y - 4, (s.kind === "long" ? "Long" : "Short") + " · R:R " + (risk ? (reward / risk).toFixed(2) : "–") + " · " + fmtPrice(pts[0].price), "#d5e2f3"),
-      );
+      if (s.labels !== false) {
+        const tp = pct(pts[0].price, pts[2].price), sp = pct(pts[0].price, pts[1].price);
+        const risk = Math.abs(pts[0].price - pts[1].price), reward = Math.abs(pts[2].price - pts[0].price);
+        const lx = Math.min(E.x, x1) + 6;
+        out.els.push(
+          text(lx, (E.y + T.y) / 2 + 4, "Target " + (tp >= 0 ? "+" : "") + tp.toFixed(2) + "%  " + fmtPrice(pts[2].price), G),
+          text(lx, (E.y + S.y) / 2 + 4, "Stop " + (sp >= 0 ? "+" : "") + sp.toFixed(2) + "%  " + fmtPrice(pts[1].price), R),
+          text(lx, E.y - 4, (s.kind === "long" ? "Long" : "Short") + " · R:R " + (risk ? (reward / risk).toFixed(2) : "–") + " · " + fmtPrice(pts[0].price), "#d5e2f3"),
+        );
+      }
       out.handles = [E, S, T];
       out.mid = { x: (E.x + x1) / 2, y: E.y };
       break;
