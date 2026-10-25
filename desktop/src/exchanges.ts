@@ -406,6 +406,31 @@ const SOURCES: Src[] = [
       return cleanCandles((Array.isArray(k) ? k : []).map((c: any) => ({ time: num(c[0]), low: num(c[1]), high: num(c[2]), open: num(c[3]), close: num(c[4]), volume: num(c[5]) })));
     },
   },
+  {
+    name: "Binance spot",
+    fn: async (base, tf, signal) => {
+      if (!SPAN[tf]) throw new Error("timeframe");
+      const rows = await jget("https://data-api.binance.vision/api/v3/klines?symbol=" + base + "USDT&interval=" + tf + "&limit=1000", signal);
+      return cleanCandles((Array.isArray(rows) ? rows : []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
+    },
+  },
+  {
+    name: "Gate",
+    fn: async (base, tf, signal) => {
+      const iv = ({ "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "4h": "4h", "1d": "1d", "1w": "7d" } as Record<string, string>)[tf];
+      if (!iv) throw new Error("timeframe");
+      const rows = await jget("https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=" + base + "_USDT&interval=" + iv + "&limit=1000", signal);
+      return cleanCandles((Array.isArray(rows) ? rows : []).map((k: any) => ({ time: num(k.t), open: num(k.o), high: num(k.h), low: num(k.l), close: num(k.c), volume: num(k.v) })));
+    },
+  },
+  {
+    name: "Bybit (mirror)",
+    fn: async (base, tf, signal) => {
+      if (!BYBIT_IV[tf]) throw new Error("timeframe");
+      const j = await jget("https://api.bytick.com/v5/market/kline?category=linear&symbol=" + base + "USDT&interval=" + BYBIT_IV[tf] + "&limit=1000", signal);
+      return cleanCandles((j?.result?.list || []).map((k: any) => ({ time: Math.floor(num(k[0]) / 1000), open: num(k[1]), high: num(k[2]), low: num(k[3]), close: num(k[4]), volume: num(k[5]) })));
+    },
+  },
 ];
 const baseOf = (ad: Adapter, symbol: string) => symbol.slice(ad.prefix.length).split("-")[0].toUpperCase();
 const baseVariants = (b: string) => {
@@ -414,6 +439,43 @@ const baseVariants = (b: string) => {
 };
 export const candleSrc: Record<string, string> = {};
 const deadUntil: Record<string, number> = {};
+const netFails: Record<string, number> = {};
+/** Ask every public exchange at the same time (priority order decides the winner), so one slow or blocked host cannot stall or disable the rest. */
+export async function externalCandles(base: string, tf: string, signal?: AbortSignal): Promise<{ rows: QCandle[]; source: string }> {
+  const run = async (src: Src): Promise<{ rows: QCandle[]; source: string } | null> => {
+    if ((deadUntil[src.name] || 0) > Date.now()) return null;
+    for (const v of baseVariants(base)) {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 8000);
+      const onAbort = () => ctl.abort();
+      signal?.addEventListener("abort", onAbort);
+      try {
+        const rows = await src.fn(v, tf, ctl.signal);
+        netFails[src.name] = 0;
+        if (rows.length > 1) return { rows, source: src.name + " " + v };
+      } catch (e: any) {
+        if (signal?.aborted) return null;
+        if (e instanceof TypeError || e?.name === "AbortError") {
+          // network / CORS / timeout: only park the host after three failures in a row, and only for a minute
+          netFails[src.name] = (netFails[src.name] || 0) + 1;
+          if (netFails[src.name] >= 3) deadUntil[src.name] = Date.now() + 60 * 1000;
+          return null;
+        }
+      } finally {
+        window.clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      }
+    }
+    return null;
+  };
+  const jobs = SOURCES.map((src) => run(src));
+  for (const j of jobs) {
+    const r = await j;
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    if (r) return r;
+  }
+  return { rows: [], source: "" };
+}
 /** Candles for a symbol: the exchange's own API first, then other public exchanges that list the same asset. */
 export async function getCandles(ad: Adapter, symbol: string, tf: string, signal?: AbortSignal) {
   const errs: string[] = [];
@@ -430,32 +492,11 @@ export async function getCandles(ad: Adapter, symbol: string, tf: string, signal
     }
   } else errs.push(ad.label + " has no candle history");
   const base = baseOf(ad, symbol);
-  for (const src of SOURCES) {
-    if ((deadUntil[src.name] || 0) > Date.now()) continue;
-    for (const v of baseVariants(base)) {
-      const ctl = new AbortController();
-      const timer = window.setTimeout(() => ctl.abort(), 7000);
-      const onAbort = () => ctl.abort();
-      signal?.addEventListener("abort", onAbort);
-      try {
-        const rows = await src.fn(v, tf, ctl.signal);
-        if (rows.length) {
-          candleSrc[symbol] = src.name + " " + v;
-          candleNote[symbol] = ad.label + " has no usable candle API here: history from " + src.name + " " + v + ", live bars from " + ad.label;
-          return { rows, source: src.name + " " + v, err: errs.join(" · ") };
-        }
-      } catch (e: any) {
-        if (signal?.aborted) throw e;
-        // unreachable host (blocked / timeout): skip this exchange for a while instead of waiting every time
-        if (e instanceof TypeError || e?.name === "AbortError") {
-          deadUntil[src.name] = Date.now() + 10 * 60 * 1000;
-          break;
-        }
-      } finally {
-        window.clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-      }
-    }
+  const ext = await externalCandles(base, tf, signal);
+  if (ext.rows.length) {
+    candleSrc[symbol] = ext.source;
+    candleNote[symbol] = ad.label + " has no usable candle API here: history from " + ext.source + ", live bars from " + ad.label;
+    return { rows: ext.rows, source: ext.source, err: errs.join(" · ") };
   }
   return { rows: [] as QCandle[], source: "", err: errs.join(" · ") + " · no other exchange lists " + base };
 }

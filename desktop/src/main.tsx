@@ -8,7 +8,7 @@ import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Categ
 import { undoManager } from "./undo";
 import "./style.css";
 import { auth, db } from "./firebase";
-import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote, candleSrc, getCandles } from "./exchanges";
+import { ADAPTERS, adapterOf, displayName, startAdapter, sampleCandles, candleNote, candleSrc, getCandles, externalCandles } from "./exchanges";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -1432,6 +1432,21 @@ function App() {
             lastError = err?.message || "Candle request failed";
           }
         }
+        if (!candles.length && !ex && !fastShown) {
+          // Arcus history unavailable (rate limit / error): borrow candles for the same asset from public exchanges
+          try {
+            const base = requestSymbol.split("-")[0].toUpperCase();
+            const alt = await externalCandles(base, requestTf, controller.signal);
+            if (alt.rows.length) {
+              candles = alt.rows;
+              srcLabel = alt.source;
+              setChartStatus("Arcus history unavailable (" + lastError + "): candles from " + alt.source);
+              lastError = "";
+            }
+          } catch (err: any) {
+            if (err?.name === "AbortError" || cancelled) return;
+          }
+        }
         if (!candles.length && lastError === "Arcus HTTP 429") {
           const retryIn = Math.max(1000, candle429Until - Date.now());
           setChartStatus(
@@ -2497,7 +2512,7 @@ function App() {
                     ? "Click chart to place a horizontal line"
                     : "Select the horizontal-line tool to draw"}
                 </div>
-                {adapterOf(symbol) && /^Chart error|no candle history/i.test(chartStatus) && (
+                {/^Chart error|no candle history|rate limited|unavailable/i.test(chartStatus) && (
                   <div className="chart-note">{chartStatus}</div>
                 )}
                 <div
