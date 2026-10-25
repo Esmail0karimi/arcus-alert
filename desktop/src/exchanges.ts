@@ -394,7 +394,76 @@ const aggregate = (rows: QCandle[], step: number) => {
   }
   return out;
 };
-async function yahooCandles(base: string, tf: string, signal: AbortSignal | undefined, proxy: boolean): Promise<QCandle[]> {
+/* Yahoo does not allow browser (CORS) requests from every site: try it directly first, then through public CORS relays. The first method that works is remembered. */
+const YF_WRAP: ((u: string) => string)[] = [
+  (u) => u,
+  (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  (u) => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
+];
+let yfMode = 0;
+async function yfGet(url: string, signal?: AbortSignal): Promise<any> {
+  let last: any = new Error("Yahoo unreachable");
+  for (let k = 0; k < YF_WRAP.length; k++) {
+    const m = (yfMode + k) % YF_WRAP.length;
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 7000);
+    const onAbort = () => ctl.abort();
+    signal?.addEventListener("abort", onAbort);
+    try {
+      const r = await fetch(YF_WRAP[m](url), { signal: ctl.signal });
+      if (r.status === 404 && m === 0) throw Object.assign(new Error("Yahoo: unknown symbol"), { stop: true });
+      if (!r.ok) throw new Error("Yahoo HTTP " + r.status);
+      const j = await r.json();
+      yfMode = m;
+      return j;
+    } catch (e: any) {
+      if (signal?.aborted || e?.stop) throw e;
+      last = e;
+    } finally {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+  throw last;
+}
+/* 24h change for stocks: Yahoo "spark" answers for up to 20 symbols per call. */
+const yfChange: Record<string, number> = {},
+  yfAt: Record<string, number> = {},
+  yfPending = new Set<string>();
+let yfTimer = 0;
+const yfQueue = (base: string) => {
+  if (yfPending.has(base) || Date.now() - (yfAt[base] || 0) < 300000) return;
+  yfPending.add(base);
+  if (yfTimer) return;
+  yfTimer = window.setInterval(async () => {
+    const batch = Array.from(yfPending).slice(0, 20);
+    if (!batch.length) {
+      window.clearInterval(yfTimer);
+      yfTimer = 0;
+      return;
+    }
+    batch.forEach((b) => (yfPending.delete(b), (yfAt[b] = Date.now() - 180000))); // failed ones retry in ~2 min
+    try {
+      const map: Record<string, string> = {};
+      batch.forEach((b) => (map[yfSym(b)] = b));
+      const j = await yfGet("https://query1.finance.yahoo.com/v8/finance/spark?range=1d&interval=1d&symbols=" + Object.keys(map).map(encodeURIComponent).join(","));
+      const list: any[] = j?.spark?.result || Object.keys(j || {}).filter((k) => j[k] && typeof j[k] === "object" && "symbol" in j[k]).map((k) => j[k]);
+      for (const it of list) {
+        const m = it.response?.[0]?.meta || it,
+          sym = it.symbol || m.symbol,
+          closes: number[] = it.close || it.response?.[0]?.indicators?.quote?.[0]?.close || [];
+        const price = num(m.regularMarketPrice ?? closes[closes.length - 1]),
+          prev = num(m.chartPreviousClose ?? m.previousClose);
+        if (map[sym] && price > 0 && prev > 0) {
+          yfChange[map[sym]] = (price / prev - 1) * 100;
+          yfAt[map[sym]] = Date.now();
+        }
+      }
+    } catch {}
+  }, 1500);
+};
+async function yahooCandles(base: string, tf: string, signal: AbortSignal | undefined): Promise<QCandle[]> {
   const plan: Record<string, [string, string, number]> = {
     "1m": ["1m", "7d", 1], "3m": ["1m", "7d", 3], "5m": ["5m", "60d", 1], "15m": ["15m", "60d", 1], "30m": ["30m", "60d", 1],
     "1h": ["60m", "730d", 1], "2h": ["60m", "730d", 2], "4h": ["60m", "730d", 4], "1d": ["1d", "5y", 1], "1w": ["1wk", "10y", 1],
@@ -402,7 +471,7 @@ async function yahooCandles(base: string, tf: string, signal: AbortSignal | unde
   const p = plan[tf];
   if (!p) throw new Error("timeframe");
   const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(yfSym(base)) + "?interval=" + p[0] + "&range=" + p[1] + "&includePrePost=false";
-  const j = await jget(proxy ? "https://api.allorigins.win/raw?url=" + encodeURIComponent(url) : url, signal);
+  const j = await yfGet(url, signal);
   const r = j?.chart?.result?.[0];
   const ts: number[] = r?.timestamp || [],
     q = r?.indicators?.quote?.[0] || {};
@@ -481,8 +550,7 @@ const SOURCES: Src[] = [
       return cleanCandles((j?.data || []).map((k: any) => ({ time: Math.floor(num(k.time) / 1000), open: num(k.open), high: num(k.high), low: num(k.low), close: num(k.close), volume: num(k.volume) })));
     },
   },
-  { name: "Yahoo", fn: (base, tf, signal) => yahooCandles(base, tf, signal, false) },
-  { name: "Yahoo (proxy)", fn: (base, tf, signal) => yahooCandles(base, tf, signal, true) },
+  { name: "Yahoo", fn: (base, tf, signal) => yahooCandles(base, tf, signal) },
 ];
 const baseOf = (ad: Adapter, symbol: string) => symbol.slice(ad.prefix.length).split("-")[0].toUpperCase();
 const baseVariants = (b: string) => {
@@ -521,7 +589,7 @@ export async function externalCandles(base: string, tf: string, signal?: AbortSi
     return null;
   };
   // stocks / indices / FX / commodities: sources that carry them go first
-  const TRADFI = ["Yahoo", "BingX", "Hyperliquid", "Gate", "Yahoo (proxy)"];
+  const TRADFI = ["Yahoo", "BingX", "Hyperliquid", "Gate"];
   const order = tradfi ? [...TRADFI.map((n) => SOURCES.find((x) => x.name === n)!).filter(Boolean), ...SOURCES.filter((x) => !TRADFI.includes(x.name))] : SOURCES;
   const jobs = order.map((src) => run(src));
   for (const j of jobs) {
@@ -590,7 +658,7 @@ export const extChangeFor = (base: string): number | null => {
     const x = extChange[v.replace(/^1000/, "")];
     if (x != null) return x;
   }
-  return null;
+  return yfChange[b] ?? null;
 };
 
 export const ADAPTERS: Adapter[] = [qfex, hyperliquid, lighter, variational];
@@ -607,7 +675,9 @@ export function startAdapter(ad: Adapter, onPrices: (t: Tick[]) => void, onSymbo
     for (const t of items) {
       if (ad.ownHistory) recordSample(t.marketDisplayName, t.markPrice);
       if (t.change24h == null) {
-        const x = extChangeFor(baseOf(ad, t.marketDisplayName));
+        const b = baseOf(ad, t.marketDisplayName);
+        const x = extChangeFor(b);
+        if (ad.defaultCat === "Stocks") yfQueue(b); // stocks: ask Yahoo (also refreshes the value every 5 min)
         if (x != null) t.change24h = x;
         else if (ad.ownHistory) {
           const c = ownChange24h(t.marketDisplayName, t.markPrice);
