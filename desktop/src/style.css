@@ -362,3 +362,10 @@ main:has(.chart-workspace){padding:3px 6px 2px!important;gap:0!important}
   .cw2 .chartbar{grid-column:1/-1;flex-wrap:wrap}
   .cw2 .watchlist-panel{grid-column:1/-1!important;height:220px!important}
 }
+/* ultra-compact tabs + flag bar */
+.wl-tabs button{max-width:none;min-width:22px;justify-content:center;padding:4px 6px!important}
+.wl-tabs button .tab-name{max-width:none}
+.wl-tabs .tab-dot{width:12px;height:12px;margin:0}
+.flag-bar{gap:3px!important;padding:2px 2px!important;font-size:9px!important;flex-wrap:nowrap!important}
+.flag-bar button.all{padding:0 6px!important;font-size:9px!important;line-height:14px}
+.flag-bar .dot{width:11px!important;height:11px!important;border-width:1.5px!important;flex:0 0 auto}

@@ -2023,7 +2023,7 @@ function App() {
   const flagBar = (
     <div className="flag-bar" title="Filter by colour flag">
       <span>⚑</span>
-      <button className={!flagFilter ? "on" : ""} onClick={() => setFlagFilter("")}>
+      <button className={"all" + (!flagFilter ? " on" : "")} onClick={() => setFlagFilter("")}>
         All
       </button>
       {FLAG_COLORS.map((c) => {
@@ -2136,8 +2136,12 @@ function App() {
   const tabLabel = (g: string, full = false) => (
     <>
       {g.startsWith("flag:") && <i className="tab-dot" style={{ background: g.slice(5) }} />}
-      <span className={full ? "" : "tab-name"}>{groupName(g)}</span>
-      {g.startsWith("flag:") && <em className="tab-n">{flagged(g.slice(5)).length}</em>}
+      {full ? (
+        <span>{groupName(g)}</span>
+      ) : g.startsWith("flag:") ? null : (
+        <span className="tab-name">{Array.from(groupName(g))[0] || "?"}</span>
+      )}
+      {full && g.startsWith("flag:") && <em className="tab-n">{flagged(g.slice(5)).length}</em>}
     </>
   );
   const listTabs = (
