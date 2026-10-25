@@ -300,3 +300,7 @@ main.chart-full .fs-only{display:inline-block!important}
 .guide-zoom-box img{display:block;width:min(96vw,1700px);height:auto;cursor:zoom-in}.guide-zoom-box img.full{width:1920px;max-width:none;cursor:zoom-out}
 .guide-zoom-x{position:absolute;right:14px;top:10px;background:#12263f;border:1px solid #2b4964;color:#fff;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer}
 .guide-zoom small{color:#9eb2ca}
+.flag-i{margin-left:5px;text-decoration:none;cursor:pointer;font-size:12px;color:#3c5069;font-style:normal}.flag-i:hover{color:#8aa0bb}.flag-i.on{text-shadow:0 0 6px currentColor}
+.flag-bar{display:flex;align-items:center;gap:6px;font-size:11px;color:#8aa0bb;padding:4px 2px;flex-wrap:wrap}.flag-bar button{background:#0b1a2e;border:1px solid #24364e;color:#b8c9dc;border-radius:99px;padding:1px 9px;font-size:10px;min-height:0;cursor:pointer}.flag-bar button.on{border-color:#00c9b5;color:#fff}
+.flag-bar .dot{width:16px;height:16px;padding:0;border:2px solid transparent}.flag-bar .dot.on{border-color:#fff}
+.flag-pick{display:flex;gap:7px;flex-wrap:wrap;padding:4px 0}.flag-pick button{width:24px;height:24px;border-radius:50%;border:2px solid transparent;padding:0;margin:0}.flag-pick button.on{border-color:#fff}

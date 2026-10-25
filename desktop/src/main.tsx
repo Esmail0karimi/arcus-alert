@@ -90,6 +90,15 @@ function App() {
     [editLineColor, setEditLineColor] = useState("#39c9c2"),
     [editLineWidth, setEditLineWidth] = useState(2),
     [favName, setFavName] = useState(() => localStorage.getItem("arcus.favName") || "Favorites"),
+    [flags, setFlags] = useState<Record<string, string>>(() => {
+      try {
+        return JSON.parse(localStorage.getItem("arcus.flags.v1") || "{}") || {};
+      } catch {
+        return {};
+      }
+    }),
+    [flagMenu, setFlagMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
+    [flagFilter, setFlagFilter] = useState(""),
     [infoSym, setInfoSym] = useState<string | null>(null),
     [listMenu, setListMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [watchGroup, setWatchGroup] = useState("Favorites");
@@ -580,6 +589,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DRAWING_STYLE, JSON.stringify({ color: lineColor, width: lineWidth }));
   }, [lineColor, lineWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.flags.v1", JSON.stringify(flags));
+    } catch {}
+  }, [flags]);
   useEffect(() => {
     try {
       localStorage.setItem("arcus.watchlists.v1", JSON.stringify(wlists));
@@ -1961,7 +1975,44 @@ function App() {
     setAuthError("");
     setShowAuth(true);
   };
-  const filtered = symbols.filter((s) => s.toLowerCase().includes(query.toLowerCase()));
+  const FLAG_COLORS = ["#f23645", "#ff9800", "#f2c94c", "#089981", "#4aa3ff", "#b388ff", "#ff6fae"];
+  const flagBtn = (s: string) => (
+    <u
+      className={"flag-i" + (flags[s] ? " on" : "")}
+      title="Colour flag"
+      style={flags[s] ? { color: flags[s] } : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setFlagMenu(flagMenu ? null : { sym: s, x: r.left, y: r.bottom + 4 });
+      }}
+    >
+      ⚑
+    </u>
+  );
+  const flagBar = (
+    <div className="flag-bar" title="Filter by colour flag">
+      <span>⚑</span>
+      <button className={!flagFilter ? "on" : ""} onClick={() => setFlagFilter("")}>
+        All
+      </button>
+      {FLAG_COLORS.map((c) => {
+        const n = Object.values(flags).filter((v) => v === c).length;
+        return (
+          <button
+            key={c}
+            className={"dot" + (flagFilter === c ? " on" : "")}
+            style={{ background: c, opacity: n || flagFilter === c ? 1 : 0.35 }}
+            title={n + " flagged"}
+            onClick={() => setFlagFilter(flagFilter === c ? "" : c)}
+          />
+        );
+      })}
+    </div>
+  );
+  const filtered = symbols.filter(
+    (s) => s.toLowerCase().includes(query.toLowerCase()) && (!flagFilter || flags[s] === flagFilter),
+  );
   // Market tab: Crypto / RWA / Commodities (+ sub-groups)
   const [marketCat, setMarketCat] = useState<string>(() => {
     try {
@@ -2047,7 +2098,7 @@ function App() {
       </button>
     </div>
   );
-  const wlTabItems = groupItems(curGroup).filter(symEnabled);
+  const wlTabItems = groupItems(curGroup).filter((s) => symEnabled(s) && (!flagFilter || flags[s] === flagFilter));
   const panelItems = query.trim() ? filtered : wlTabItems;
   watchNavRef.current = panelItems;
   return (
@@ -2067,6 +2118,39 @@ function App() {
             setInfoSym(null);
           }}
         />
+      )}
+      {flagMenu && (
+        <>
+          <div className="wl-menu-bg" onClick={() => setFlagMenu(null)} />
+          <div className="wl-menu flag-menu" style={{ left: Math.min(flagMenu.x, window.innerWidth - 200), top: flagMenu.y }}>
+            <b>{dn(flagMenu.sym)} · flag</b>
+            <div className="flag-pick">
+              {FLAG_COLORS.map((c) => (
+                <button
+                  key={c}
+                  className={flags[flagMenu.sym] === c ? "on" : ""}
+                  style={{ background: c }}
+                  onClick={() => {
+                    setFlags((v) => ({ ...v, [flagMenu.sym]: c }));
+                    setFlagMenu(null);
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setFlags((v) => {
+                  const n = { ...v };
+                  delete n[flagMenu.sym];
+                  return n;
+                });
+                setFlagMenu(null);
+              }}
+            >
+              ✕ No flag
+            </button>
+          </div>
+        </>
       )}
       {listMenu && (
         <>
@@ -2255,6 +2339,7 @@ function App() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {flagBar}
             <label className="ex-merge" title="Show one market per asset: the exchange with the best chart and data">
                   <input
                     type="checkbox"
@@ -2311,6 +2396,7 @@ function App() {
                   <b>
                     {dn(s)}
                     <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
+                    {flagBtn(s)}
                   </b>
                   <button
                     className="market-favorite"
@@ -2363,6 +2449,7 @@ function App() {
             </div>
             {listTabs}
             {listTools}
+            {flagBar}
             {wlTabItems.length ? (
               <div className="marketlist">
               {wlTabItems.map((s) => (
@@ -2377,6 +2464,7 @@ function App() {
                   <b>
                     {dn(s)}
                     <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
+                    {flagBtn(s)}
                   </b>
                   <button
                     className="market-favorite"
@@ -2432,6 +2520,18 @@ function App() {
                   }}
                 >
                   {symbol && inAnyList(symbol) ? "★" : "☆"}
+                </button>
+                <button
+                  className="chart-star"
+                  title="Colour flag"
+                  style={symbol && flags[symbol] ? { color: flags[symbol], borderColor: flags[symbol] } : undefined}
+                  onClick={(e) => {
+                    if (!symbol) return;
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setFlagMenu(flagMenu ? null : { sym: symbol, x: r.left, y: r.bottom + 6 });
+                  }}
+                >
+                  ⚑
                 </button>
                 <button className="chart-star" title="What is this market?" onClick={() => symbol && setInfoSym(symbol)}>
                   ⓘ
@@ -2884,6 +2984,7 @@ function App() {
                 />
                 {listTabs}
                 {listTools}
+                {flagBar}
                 <div className="watch-items">
                   {!panelItems.length && (
                     <div className="empty small">This list is empty. Type a symbol in the search box above and press ＋.</div>
@@ -2906,6 +3007,7 @@ function App() {
                         >
                           {groupItems(curGroup).includes(s) ? "✓" : "＋"}
                         </u>
+                        {flagBtn(s)}
                       </b>
                       <i
                         className={
