@@ -2424,11 +2424,6 @@ function App() {
           })()}
         </div>
         <div className="header-actions">
-          {!window.arcusDesktop?.isDesktop && (
-            <button className="history-button" onClick={enableBrowserNotifications}>
-              Enable notifications
-            </button>
-          )}
           <label className="sound-control" title="Notification sound">
             🔊
             <select
@@ -2494,7 +2489,7 @@ function App() {
           </button>
         </div>
       </header>
-      <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />
+      {tab !== "Chart" && <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />}
       {alertBanners.length > 0 && (
         <div className="alert-toasts">
           {alertBanners.map((a, i) => (
@@ -2852,6 +2847,7 @@ function App() {
               >
                 {chartFull ? "✕ Exit" : "⛶ Full"}
               </button>
+              <SessionBar compact notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />
               {!railOpen && (
                 <button className="secondary reopen" title="Show drawing tools" onClick={() => setRailOpen(true)}>
                   ✎

@@ -37,7 +37,7 @@ const dur = (min: number | null) => {
   return (d ? d + "d " : "") + (h ? h + "h " : "") + (!d ? m + "m" : "").trim();
 };
 
-export function SessionBar(p: { notifPerm: string; onEnable: () => void }) {
+export function SessionBar(p: { notifPerm: string; onEnable: () => void; compact?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30000);
@@ -50,7 +50,7 @@ export function SessionBar(p: { notifPerm: string; onEnable: () => void }) {
   const usNext = untilFlip((t) => isOpen(US, t), now);
   const showBell = p.notifPerm !== "granted" && p.notifPerm !== "unsupported";
   return (
-    <div className={"sess-bar" + (fxOpen ? "" : " closed")}>
+    <div className={"sess-bar" + (fxOpen ? "" : " closed") + (p.compact ? " compact fs-keep" : "")}>
       {fxOpen ? (
         <span className="sess-list" title="Forex sessions that are open right now">
           {open.map((s) => (
@@ -71,7 +71,7 @@ export function SessionBar(p: { notifPerm: string; onEnable: () => void }) {
       <span className={"sess-us" + (usOpen ? "" : " off")} title="NYSE / Nasdaq regular hours, 9:30–16:00 New York time (holidays not included)">
         US stocks {usOpen ? "open" : "closed"} · {usOpen ? "closes" : "opens"} in {dur(usNext)}
       </span>
-      <span className="sess-note">Crypto trades 24/7</span>
+      {!p.compact && <span className="sess-note">Crypto trades 24/7</span>}
       {showBell && (
         <button className="sess-bell" title={p.notifPerm === "denied" ? "Notifications are blocked in the browser settings" : "Turn on desktop notifications"} onClick={p.onEnable}>
           🔕

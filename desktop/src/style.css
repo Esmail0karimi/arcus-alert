@@ -397,3 +397,8 @@ main:has(.chart-workspace){padding:3px 6px 2px!important;gap:0!important}
 .sess-bar.closed{background:#3a2a0e;border-bottom-color:#5a4416;color:#f2c94c}.sess-bar.closed .sess-list b{color:#f2c94c}.sess-bar.closed .sess-list i{background:#f2c94c}.sess-bar.closed .sess-list small,.sess-bar.closed .sess-note{color:#c9a94a}
 .sess-bell{margin-left:auto;background:transparent;border:0;padding:0 4px;font-size:12px;opacity:.7;cursor:pointer;min-height:0}.sess-bell:hover{opacity:1}
 .sess-bar.closed .sess-us{color:#f2c94c}
+
+.sess-bar.compact{display:inline-flex;flex-wrap:nowrap;gap:10px;min-height:0;height:24px;padding:0 9px;margin-left:6px;border:1px solid #1c3048;border-radius:7px;white-space:nowrap;flex:0 1 auto;min-width:0;overflow:hidden}
+.sess-bar.compact.closed{border-color:#5a4416}
+.sess-bar.compact .sess-bell{margin-left:0}
+@media(max-width:900px){.sess-bar.compact .sess-us{display:none}}
