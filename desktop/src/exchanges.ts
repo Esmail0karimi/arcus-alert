@@ -379,7 +379,7 @@ const YF_MAP: Record<string, string> = {
   DAX: "^GDAXI", GER40: "^GDAXI", FTSE: "^FTSE", UK100: "^FTSE", NIKKEI: "^N225", JP225: "^N225", HSI: "^HSI", VIX: "^VIX", DXY: "DX-Y.NYB",
   EUR: "EURUSD=X", GBP: "GBPUSD=X", AUD: "AUDUSD=X", NZD: "NZDUSD=X", JPY: "JPY=X", CHF: "CHF=X", CAD: "CAD=X", CNH: "CNH=X", CNY: "CNY=X", TRY: "TRY=X", MXN: "MXN=X", KRW: "KRW=X", INR: "INR=X",
 };
-const yfSym = (b: string) => YF_MAP[b] || (/^[A-Z0-9]+$/.test(b) && b.length === 6 && /USD$|^USD/.test(b) ? b + "=X" : b.replace(/\./g, "-"));
+export const yfSym = (b: string) => YF_MAP[b] || (/^[A-Z0-9]+$/.test(b) && b.length === 6 && /USD$|^USD/.test(b) ? b + "=X" : b.replace(/\./g, "-"));
 const aggregate = (rows: QCandle[], step: number) => {
   const out: QCandle[] = [];
   for (const c of rows) {

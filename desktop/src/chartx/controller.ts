@@ -9,6 +9,7 @@ import { Candle, Pt, barSpan, fmtPrice, fmtVol, rsi, sma } from "./math";
 import { indexToTime, timeToIndex } from "./geometry";
 import { NotesLayer } from "./notes";
 import { undoManager } from "../undo";
+import type { Ev } from "../events";
 import { Built, DASH, Kind, Level, LineStyle, NEED, P, Shape, TOOLS, applyDrag, build, defLevels, newPosition, pickDistance } from "./drawings";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
@@ -85,6 +86,17 @@ export class ChartX {
   private drag: Drag | null = null;
   private notes!: NotesLayer;
   private toolBtns = new Map<Kind, HTMLButtonElement>();
+  private evLayer = h("div", "cx-evlayer");
+  private evPop = h("div", "cx-evpop");
+  private evs: Ev[] = [];
+  private evOn = load<boolean>("arcus.chartx.events.v1", true);
+  private evSig = "";
+  onEventsToggle: ((on: boolean) => void) | null = null;
+  isEventsOn() {
+    return this.evOn;
+  }
+  private evEls = new Map<string, HTMLElement>();
+  private evEdge = h("button", "cx-ev-edge");
   private favBar = h("div", "cx-favbar");
   private favBtns = new Map<string, HTMLButtonElement>();
   private extBtns = new Map<string, HTMLButtonElement>();
@@ -304,6 +316,135 @@ export class ChartX {
     this.updateLegend(null);
     this.lastSig = "";
   }
+  setEvents(list: Ev[]) {
+    this.evs = list;
+    this.evSig = "";
+    this.evPop.style.display = "none";
+  }
+  private evX(t: number): number | null {
+    const c = this.candles;
+    if (!c.length) return null;
+    const ts = this.chart.timeScale();
+    const last = c[c.length - 1];
+    if (t > last.time) {
+      const span = this.span || (c.length > 1 ? c[c.length - 1].time - c[c.length - 2].time : 900);
+      return ts.logicalToCoordinate((c.length - 1 + (t - last.time) / span) as any);
+    }
+    if (t < c[0].time) return null;
+    let lo = 0, hi = c.length - 1;
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1;
+      if (c[m].time <= t) lo = m;
+      else hi = m - 1;
+    }
+    return ts.timeToCoordinate(c[lo].time as any);
+  }
+  private updateEvents() {
+    const on = this.evOn && this.evs.length > 0;
+    this.evLayer.style.display = on ? "block" : "none";
+    if (!on) this.evEdge.style.display = "none";
+    if (!on) {
+      if (this.evEls.size) {
+        this.evLayer.replaceChildren();
+        this.evEls.clear();
+      }
+      return;
+    }
+    const ts = this.chart.timeScale();
+    const w = this.host.clientWidth, hh = this.host.clientHeight;
+    const sig = [ts.logicalToCoordinate(0 as any), ts.logicalToCoordinate(50 as any), w, hh, this.evs.length, this.candles.length, this.span].join("|");
+    if (sig === this.evSig) return;
+    this.evSig = sig;
+    const maxX = w - (this.chart.priceScale("right").width() || 60);
+    if (!this.evEls.size) {
+      for (const e of this.evs) {
+        const box = h("div", "cx-ev " + e.kind + (e.future ? " future" : ""));
+        const dot = h("button", "cx-ev-dot", e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "dividend" ? "$" : "S");
+        dot.title = (e.future ? "Upcoming · " : "") + e.title;
+        dot.onclick = (ev) => {
+          ev.stopPropagation();
+          this.showEv(e, box);
+        };
+        dot.onpointerdown = (ev) => ev.stopPropagation();
+        box.append(h("i", "cx-ev-line"), dot);
+        this.evLayer.append(box);
+        this.evEls.set(e.id, box);
+      }
+    }
+    let edge: Ev | null = null;
+    for (const e of this.evs) {
+      const box = this.evEls.get(e.id);
+      if (!box) continue;
+      const x = this.evX(e.t);
+      if (x != null && x > maxX && e.future && !edge) edge = e;
+      if (x == null || x < 0 || x > maxX) {
+        box.style.display = "none";
+        continue;
+      }
+      box.style.display = "block";
+      box.style.left = x + "px";
+      box.style.height = hh + "px";
+    }
+    this.stagger();
+    const E = this.evEdge;
+    if (edge) {
+      const d = Math.max(0, Math.round((edge.t * 1000 - Date.now()) / 864e5));
+      E.textContent = (edge.kind === "earnings" ? "E" : "●") + " in " + d + "d ▶";
+      E.title = "Upcoming: " + edge.title + ". Click to scroll there.";
+      E.style.display = "block";
+      E.style.right = maxX < w ? w - maxX + 6 + "px" : "70px";
+      E.onclick = () => {
+        const c = this.candles;
+        const span = this.span || 900;
+        const n = c.length - 1 + (edge!.t - c[c.length - 1].time) / span;
+        const r = ts.getVisibleLogicalRange();
+        const width = r ? r.to - r.from : 120;
+        ts.setVisibleLogicalRange({ from: n - width * 0.7, to: n + width * 0.3 } as any);
+      };
+    } else E.style.display = "none";
+  }
+  private stagger() {
+    const rows: number[][] = [];
+    for (const e of this.evs) {
+      const box = this.evEls.get(e.id);
+      if (!box || box.style.display === "none") continue;
+      const x = parseFloat(box.style.left);
+      let r = 0;
+      while ((rows[r] || []).some((u) => Math.abs(u - x) < 18)) r++;
+      (rows[r] = rows[r] || []).push(x);
+      (box.firstChild!.nextSibling as HTMLElement).style.top = 4 + r * 20 + "px";
+    }
+  }
+  private showEv(e: Ev, box: HTMLElement) {
+    const P = this.evPop;
+    P.replaceChildren();
+    const when = new Date(e.t * 1000);
+    const head = h("div", "cx-evpop-h");
+    head.append(h("b", "", (e.future ? "Upcoming · " : "") + (e.kind === "earnings" ? "Earnings" : e.kind === "news" ? "News" : e.kind === "dividend" ? "Dividend" : "Split")), h("span", "", when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: e.kind === "news" ? "short" : undefined })));
+    const x = h("button", "cx-evpop-x", "✕");
+    x.onclick = () => (P.style.display = "none");
+    head.append(x);
+    P.append(head, h("div", "cx-evpop-t", e.title));
+    if (e.detail) P.append(h("div", "cx-evpop-d", e.detail));
+    if (e.future) {
+      const d = Math.max(0, Math.round((e.t * 1000 - Date.now()) / 864e5));
+      P.append(h("div", "cx-evpop-d", d === 0 ? "Happens today." : "In about " + d + " day" + (d === 1 ? "" : "s") + "."));
+    }
+    if (e.url) {
+      const a = document.createElement("a");
+      a.href = e.url;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = "Open article ↗";
+      P.append(a);
+    }
+    if (e.source) P.append(h("small", "", "Source: " + e.source));
+    P.style.display = "block";
+    const w = this.host.clientWidth;
+    const left = parseFloat(box.style.left) || 0;
+    P.style.left = Math.max(6, Math.min(w - 280, left - 130)) + "px";
+    P.style.top = "34px";
+  }
   updateBar(bar: Candle) {
     const n = this.candles.length;
     if (!n) return;
@@ -337,7 +478,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -424,7 +565,7 @@ export class ChartX {
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar);
+    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge);
     this.buildScale();
   }
   private labels() {
@@ -779,6 +920,20 @@ export class ChartX {
       this.updateIndLabel();
     };
     this.indMenu.replaceChildren();
+    {
+      const row = h("div", "cx-ind-row");
+      const cb = this.checkIn(this.evOn, (v) => {
+        this.evOn = v;
+        save("arcus.chartx.events.v1", v);
+        this.evSig = "";
+        this.evPop.style.display = "none";
+        this.onEventsToggle?.(v);
+      });
+      const nm = h("span", "cx-ind-name", "Events & news (stocks)");
+      nm.title = "Earnings, dividends, splits and news as dashed lines with a dot on top. Click a dot for details.";
+      row.append(cb, nm);
+      this.indMenu.append(row);
+    }
     const defs: ["sma" | "rsi" | "vol", string][] = [["sma", "SMA (moving average)"], ["rsi", "RSI"], ["vol", "Volume"]];
     for (const [k, label] of defs) {
       const row = h("div", "cx-ind-row" + (this.indOpen === k ? " open" : ""));
@@ -1173,6 +1328,7 @@ export class ChartX {
     this.raf = requestAnimationFrame(this.loop);
     this.notes.tick();
     this.tickCount();
+    this.updateEvents();
     if (!this.shapes.length && !this.draft) {
       if (this.svg.firstChild) this.svg.replaceChildren();
       this.built.clear();

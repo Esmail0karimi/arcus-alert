@@ -4,9 +4,10 @@ import QRCode from "qrcode";
 import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
+import { fetchEvents } from "./events";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
-import { AssetInfo } from "./assetinfo";
+import { AssetInfo, assetBase } from "./assetinfo";
 import { Guide } from "./guide";
 import "./style.css";
 import { auth, db } from "./firebase";
@@ -1601,6 +1602,22 @@ function App() {
     const sec = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 } as Record<string, number>)[tf] || 0;
     chartX.current?.setSpan(sec);
   }, [tab, tf, symbol]);
+  const [evTick, setEvTick] = useState(0);
+  useEffect(() => {
+    const cx = chartX.current;
+    if (tab !== "Chart" || !cx || !symbol) return;
+    cx.onEventsToggle = () => setEvTick((n) => n + 1);
+    if (!cx.isEventsOn() || catOfSymbol(symbol) === "Crypto") {
+      cx.setEvents([]);
+      return;
+    }
+    const ctl = new AbortController();
+    cx.setEvents([]);
+    fetchEvents(assetBase(dn(symbol)), ctl.signal)
+      .then((list) => !ctl.signal.aborted && chartX.current?.setEvents(list))
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [tab, symbol, evTick]);
   const addAlert = (p?: number) => {
     const value = Number(p ?? target);
     if (!symbol || !Number.isFinite(value) || value <= 0) return;
