@@ -2784,7 +2784,8 @@ function App() {
                     const r = e.currentTarget.getBoundingClientRect(),
                       x = e.clientX - r.left,
                       y = e.clientY - r.top,
-                      t = chartApi.current.timeScale().coordinateToTime(x),
+                      vr = chartApi.current.timeScale().getVisibleRange(),
+                      t = chartApi.current.timeScale().coordinateToTime(x) ?? (vr ? vr.to : null),
                       p = series.current.coordinateToPrice(y);
                     if (t == null || p == null) return;
                     const point = { time: t, price: Number(p), color: lineColor, width: lineWidth };
