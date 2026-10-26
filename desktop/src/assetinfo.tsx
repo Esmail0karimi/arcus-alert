@@ -21,7 +21,7 @@ export const assetBase = (display: string) =>
   display.replace(/ ·[A-Z]$/, "").toUpperCase().replace(/^[A-Z0-9]+:/, "").replace(/-(USD[CT]?|PERP|SWAP)(-.*)?$/, "").replace(/^1000(?=[A-Z])/, "");
 
 type Info = { who?: YfName | null; title: string; desc: string; extract: string; thumb?: string; url: string; langs: Record<string, string> };
-const CK = "arcus.assetinfo.v3";
+const CK = "arcus.assetinfo.v4";
 const readCache = (): Record<string, { at: number; v: any }> => {
   try {
     return JSON.parse(localStorage.getItem(CK) || "{}");
@@ -57,7 +57,7 @@ const strip = (h: string) => h.replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').r
 
 /** Find the best-matching English Wikipedia article for a ticker / asset name. */
 export async function findAsset(base: string, signal?: AbortSignal, crypto = false): Promise<Info | null> {
-  return cached("find2|" + crypto + "|" + base, async () => {
+  return cached("find3|" + crypto + "|" + base, async () => {
     let who: YfName | null = null;
     if (!ALIAS[base]) {
       try {
@@ -68,7 +68,7 @@ export async function findAsset(base: string, signal?: AbortSignal, crypto = fal
     }
     const clean = (who?.name || "").replace(/,?\s+(Inc|Incorporated|Corporation|Corp|Company|Co|Ltd|Limited|PLC|N\.V|S\.A|AG|SE|Holdings?|Group)\.?$/i, "").replace(/\.$/, "").trim();
     const first = (clean.split(/[\s,.-]+/)[0] || "").toLowerCase();
-    const queries = ALIAS[base] ? [ALIAS[base]] : [...(who ? [who.name, clean + " " + (crypto ? "cryptocurrency" : "company")] : []), base + " ticker symbol stock exchange", base + " cryptocurrency token"];
+    const queries = ALIAS[base] ? [ALIAS[base]] : [...(who ? [who.name, clean + " " + (crypto ? "cryptocurrency" : "company")] : []), "\"NASDAQ: " + base + "\"", "\"NYSE: " + base + "\"", base + " ticker symbol stock exchange", base + " cryptocurrency token"];
     const word = new RegExp("(^|[^A-Za-z0-9])" + base.replace(/[^A-Z0-9]/g, "") + "([^A-Za-z0-9]|$)", "i");
     let pick = ALIAS[base] || "";
     for (let qi = 0; qi < queries.length; qi++) {
@@ -87,6 +87,27 @@ export async function findAsset(base: string, signal?: AbortSignal, crypto = fal
         if (good) pick = good.title;
       } catch (e: any) {
         if (e?.name === "AbortError") throw e;
+      }
+    }
+    if (!pick && !ALIAS[base]) {
+      // Wikidata knows ticker symbols (property P249): ticker → entity → English Wikipedia article.
+      try {
+        const r = await j("https://www.wikidata.org/w/api.php?action=query&list=search&srlimit=8&format=json&origin=*&srsearch=" + encodeURIComponent("haswbstatement:P249=" + base), signal);
+        const ids: string[] = (r?.query?.search || []).map((x: any) => x.title).filter((t: string) => /^Q\d+$/.test(t));
+        if (ids.length) {
+          const e = await j("https://www.wikidata.org/w/api.php?action=wbgetentities&props=labels|sitelinks&languages=en&sitefilter=enwiki&format=json&origin=*&ids=" + ids.join("|"), signal);
+          for (const id of ids) {
+            const en = e?.entities?.[id];
+            const t = en?.sitelinks?.enwiki?.title;
+            if (t) {
+              pick = t;
+              if (!who) who = { name: en?.labels?.en?.value || t };
+              break;
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err?.name === "AbortError") throw err;
       }
     }
     if (!pick) return who ? ({ who, title: who.name, desc: [who.type, who.sector, who.industry].filter(Boolean).join(" · "), extract: "", url: "", langs: {} } as Info) : null;
