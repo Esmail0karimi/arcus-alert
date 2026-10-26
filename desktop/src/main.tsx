@@ -1628,7 +1628,7 @@ function App() {
         if (ctl.signal.aborted) return;
         chartX.current?.setEvents(r.list);
         chartX.current?.setEventsStatus(
-          r.list.length ? r.list.length + " found" + (r.failed ? " (" + r.failed + "/" + r.total + " sources unreachable)" : "") : r.failed === r.total ? "sources unreachable (Yahoo/Nasdaq blocked)" : "nothing found for this symbol",
+          r.list.length ? r.list.length + " found" + (r.failed ? " · failed: " + r.names.join(", ") : "") : r.failed === r.total ? "sources unreachable (Yahoo/Nasdaq blocked)" : "nothing found for this symbol",
         );
       })
       .catch(() => {});

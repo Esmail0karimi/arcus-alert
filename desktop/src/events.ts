@@ -4,7 +4,7 @@ import { yfGet, yfSym } from "./exchanges";
 
 export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split"; title: string; detail?: string; url?: string; source?: string; future: boolean };
 
-export type EvResult = { list: Ev[]; failed: number; total: number };
+export type EvResult = { list: Ev[]; failed: number; total: number; names: string[] };
 const cache = new Map<string, { at: number; v: EvResult }>();
 const dayStr = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
 
@@ -16,8 +16,10 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
   const out: Ev[] = [];
   const add = (e: Omit<Ev, "future" | "id">) => out.push({ ...e, id: e.kind + e.t + e.title.slice(0, 12), future: e.t > now });
   const jobs: Promise<void>[] = [];
+  const jobNames: string[] = [];
 
   // 1) past earnings / dividends / splits that Yahoo keeps with the price history
+  jobNames.push("past earnings/dividends");
   jobs.push(
     (async () => {
       const j = await yfGet("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?interval=1d&range=1y&events=div%2Csplit%2Cearn", signal);
@@ -44,6 +46,7 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
     })(),
   );
   // 2) recent news
+  jobNames.push("news");
   jobs.push(
     (async () => {
       const j = await yfGet("https://query1.finance.yahoo.com/v1/finance/search?quotesCount=0&listsCount=0&newsCount=12&q=" + encodeURIComponent(sym), signal);
@@ -55,6 +58,7 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
   );
   // 3) upcoming earnings date (Nasdaq; stocks only)
   if (/^[A-Z]{1,5}$/.test(base)) {
+    jobNames.push("upcoming earnings");
     jobs.push(
       (async () => {
         const j = await yfGet("https://api.nasdaq.com/api/analyst/" + encodeURIComponent(base) + "/earnings-date", signal);
@@ -69,7 +73,7 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
   const failed = settled.filter((x) => x.status === "rejected").length;
   const seen = new Set<string>();
   const list = out.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
-  const res: EvResult = { list, failed, total: jobs.length };
+  const res: EvResult = { list, failed, total: jobs.length, names: settled.map((x, i) => (x.status === "rejected" ? jobNames[i] : "")).filter(Boolean) };
   if (list.length) cache.set(base, { at: Date.now(), v: res });
   return res;
 }
