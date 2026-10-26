@@ -1607,14 +1607,30 @@ function App() {
     const cx = chartX.current;
     if (tab !== "Chart" || !cx || !symbol) return;
     cx.onEventsToggle = () => setEvTick((n) => n + 1);
-    if (!cx.isEventsOn() || catOfSymbol(symbol) === "Crypto") {
+    const evBase = assetBase(dn(symbol));
+    const CRYPTO_BASES = /^(BTC|ETH|SOL|XRP|DOGE|BNB|ADA|AVAX|LINK|DOT|MATIC|POL|LTC|BCH|TRX|TON|SUI|APT|ARB|OP|NEAR|ATOM|UNI|AAVE|SHIB|PEPE|WIF|HYPE|XLM|ETC|FIL|INJ|TIA|SEI|ENA|WLD|JUP|ONDO|TAO|PENDLE|BONK|FET|RENDER|ICP|HBAR|ALGO|VET|MKR|LDO|CRV|SNX|COMP|RUNE|FTM|S|KAS|XMR|ZEC|DASH|EOS|NEO|IOTA|XTZ|MANA|SAND|AXS|GALA|APE|IMX)$/;
+    const eligible = catOfSymbol(symbol) !== "Crypto" || (/^QFEX:/i.test(symbol) && !CRYPTO_BASES.test(evBase));
+    if (!cx.isEventsOn()) {
       cx.setEvents([]);
+      cx.setEventsStatus("off");
+      return;
+    }
+    if (!eligible) {
+      cx.setEvents([]);
+      cx.setEventsStatus("not available for crypto");
       return;
     }
     const ctl = new AbortController();
     cx.setEvents([]);
-    fetchEvents(assetBase(dn(symbol)), ctl.signal)
-      .then((list) => !ctl.signal.aborted && chartX.current?.setEvents(list))
+    cx.setEventsStatus("loading…");
+    fetchEvents(evBase, ctl.signal)
+      .then((r) => {
+        if (ctl.signal.aborted) return;
+        chartX.current?.setEvents(r.list);
+        chartX.current?.setEventsStatus(
+          r.list.length ? r.list.length + " found" + (r.failed ? " (" + r.failed + "/" + r.total + " sources unreachable)" : "") : r.failed === r.total ? "sources unreachable (Yahoo/Nasdaq blocked)" : "nothing found for this symbol",
+        );
+      })
       .catch(() => {});
     return () => ctl.abort();
   }, [tab, symbol, evTick]);
@@ -2527,6 +2543,7 @@ function App() {
               onChange={(e) => setQuery(e.target.value)}
             />
             {flagBar}
+            {bulkBar(filtered)}
             <label className="ex-merge" title="Show one market per asset: the exchange with the best chart and data">
                   <input
                     type="checkbox"

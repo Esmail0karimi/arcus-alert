@@ -126,3 +126,4 @@
 .cx-evpop-t{margin:5px 0 3px;font-weight:700;color:#fff}.cx-evpop-d{color:#b8c9dc;margin-bottom:3px}
 .cx-evpop a{color:#00dcd2;text-decoration:none;display:inline-block;margin:2px 0}.cx-evpop small{display:block;color:#6f86a3;margin-top:2px}
 .cx-ev-edge{position:absolute;top:26px;z-index:8;display:none;background:#2a2410;border:1px solid #f2c94c;color:#f2c94c;border-radius:99px;padding:1px 8px;font:600 10px system-ui,sans-serif;cursor:pointer;opacity:.9}.cx-ev-edge:hover{opacity:1}
+.cx-ev-status{color:#8aa0bb;font-size:10px;margin-left:4px}

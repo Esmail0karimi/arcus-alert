@@ -316,6 +316,12 @@ export class ChartX {
     this.updateLegend(null);
     this.lastSig = "";
   }
+  private evStatus = "";
+  private evStatusEl: HTMLElement | null = null;
+  setEventsStatus(t: string) {
+    this.evStatus = t;
+    if (this.evStatusEl) this.evStatusEl.textContent = t ? " · " + t : "";
+  }
   setEvents(list: Ev[]) {
     this.evs = list;
     this.evSig = "";
@@ -931,7 +937,9 @@ export class ChartX {
       });
       const nm = h("span", "cx-ind-name", "Events & news (stocks)");
       nm.title = "Earnings, dividends, splits and news as dashed lines with a dot on top. Click a dot for details.";
-      row.append(cb, nm);
+      const st = h("small", "cx-ev-status", this.evStatus ? " · " + this.evStatus : "");
+      this.evStatusEl = st;
+      row.append(cb, nm, st);
       this.indMenu.append(row);
     }
     const defs: ["sma" | "rsi" | "vol", string][] = [["sma", "SMA (moving average)"], ["rsi", "RSI"], ["vol", "Volume"]];

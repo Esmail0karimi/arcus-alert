@@ -4,10 +4,11 @@ import { yfGet, yfSym } from "./exchanges";
 
 export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split"; title: string; detail?: string; url?: string; source?: string; future: boolean };
 
-const cache = new Map<string, { at: number; v: Ev[] }>();
+export type EvResult = { list: Ev[]; failed: number; total: number };
+const cache = new Map<string, { at: number; v: EvResult }>();
 const dayStr = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
 
-export async function fetchEvents(base: string, signal?: AbortSignal): Promise<Ev[]> {
+export async function fetchEvents(base: string, signal?: AbortSignal): Promise<EvResult> {
   const hit = cache.get(base);
   if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
   const sym = yfSym(base);
@@ -64,9 +65,11 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
       })(),
     );
   }
-  await Promise.allSettled(jobs);
+  const settled = await Promise.allSettled(jobs);
+  const failed = settled.filter((x) => x.status === "rejected").length;
   const seen = new Set<string>();
   const list = out.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
-  cache.set(base, { at: Date.now(), v: list });
-  return list;
+  const res: EvResult = { list, failed, total: jobs.length };
+  if (list.length) cache.set(base, { at: Date.now(), v: res });
+  return res;
 }
