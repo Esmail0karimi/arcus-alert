@@ -27,7 +27,7 @@ const DEF_PREFS: Prefs = {
   rsi: { on: false, period: 14, color: "#b388ff", h: 1 },
   vol: { on: false },
 };
-const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645" };
+const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", arrow: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645" };
 const migrate = (raw: any[]): Shape[] =>
   raw
     .map((x: any) =>
@@ -118,6 +118,9 @@ export class ChartX {
     }
   })();
   private railText = h("button", "cx-rail-part", "T");
+  private railLock = h("button", "cx-rail-part", "🔓");
+  private railClear = h("button", "cx-rail-part", "🗑");
+  private extObs2: MutationObserver | null = null;
   private smaS: any = null;
   private rsiS: any = null;
   private volS: any = null;
@@ -215,6 +218,7 @@ export class ChartX {
       if (!id || !p) return;
       const sh = this.shapes.find((x) => x.id === id)!;
       if (this.selected !== id) this.select(id);
+      if (this.lockAll || sh.locked) return; // locked: selectable, but cannot be moved or reshaped
       this.drag = { id, i, orig: JSON.parse(JSON.stringify(sh)), start: p, before: this.cloneShapes(), moved: false };
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -515,13 +519,14 @@ export class ChartX {
       } catch {}
     });
     this.extObs?.disconnect();
+    this.extObs2?.disconnect();
     this.extBtns.forEach((b) => {
       b.removeAttribute("data-fav");
       b.querySelector(".cx-fav-star")?.remove();
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.evBtn, this.evList, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.evBtn, this.evList, this.railText, this.railLock, this.railClear, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -553,6 +558,46 @@ export class ChartX {
       this.notes.setPlacing(!this.notes.isBusy());
     };
     rail?.append(this.railText);
+    {
+      const st = h("i", "cx-fav-star", "★");
+      st.title = "Favourite (show on the floating bar)";
+      st.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        this.toggleFav("text");
+      };
+      this.railText.append(st);
+      this.extBtns.set("text", this.railText);
+      this.extObs2 = new MutationObserver(() => {
+        const b = this.favBtns.get("text");
+        if (b) b.classList.toggle("selected", this.railText.classList.contains("selected"));
+      });
+      this.extObs2.observe(this.railText, { attributes: true, attributeFilter: ["class"] });
+    }
+    this.railLock.title = "Lock all drawings (they cannot be moved or reshaped)";
+    this.railLock.textContent = this.lockAll ? "🔒" : "🔓";
+    this.railLock.classList.toggle("selected", this.lockAll);
+    this.railLock.onclick = () => {
+      this.lockAll = !this.lockAll;
+      save("arcus.chartx.lockall.v1", this.lockAll);
+      this.railLock.textContent = this.lockAll ? "🔒" : "🔓";
+      this.railLock.classList.toggle("selected", this.lockAll);
+    };
+    this.railClear.title = "Delete all drawings and text notes on this symbol";
+    this.railClear.onclick = () => {
+      const n = this.shapes.length + this.notes.count();
+      if (!n) return;
+      if (!window.confirm("Delete all " + n + " drawings and notes on " + this.symbol.replace(/^[A-Z]+:/, "") + "? (Ctrl+Z undoes it)")) return;
+      const before = this.cloneShapes();
+      this.shapes = [];
+      this.record(before);
+      this.persistShapes();
+      this.notes.clearAll();
+      this.selected = null;
+      this.draft = null;
+      this.lastSig = "";
+    };
+    rail?.append(this.railLock, this.railClear);
     const hb = rail?.querySelector('button[title="Horizontal line"]') as HTMLButtonElement | null;
     if (hb) {
       this.extBtns.set("hline", hb);
@@ -583,6 +628,7 @@ export class ChartX {
       if (!sh) return;
       if (!this.colorBefore) this.colorBefore = this.cloneShapes();
       sh.color = this.popColor.value;
+      this.remember(sh);
       this.persistShapes();
       this.lastSig = "";
     };
@@ -593,6 +639,7 @@ export class ChartX {
       if (!sh) return;
       const before = this.cloneShapes();
       sh.width = Number(this.popWidth.value);
+      this.remember(sh);
       this.record(before);
       this.persistShapes();
       this.lastSig = "";
@@ -603,7 +650,18 @@ export class ChartX {
     const gearBtn = h("button", "", "⚙");
     gearBtn.title = "Settings (double-click the shape)";
     gearBtn.onclick = () => this.selected && this.openShapePanel(this.selected);
-    this.pop.append(this.popColor, this.popWidth, gearBtn, del);
+    this.lockBtn.title = "Lock / unlock this drawing";
+    this.lockBtn.onclick = () => {
+      const sh = this.shapes.find((x) => x.id === this.selected);
+      if (!sh) return;
+      const before = this.cloneShapes();
+      sh.locked = !sh.locked;
+      this.lockBtn.textContent = sh.locked ? "🔒" : "🔓";
+      this.record(before);
+      this.persistShapes();
+      this.lastSig = "";
+    };
+    this.pop.append(this.popColor, this.popWidth, this.lockBtn, gearBtn, del);
     this.pop.style.display = "none";
     stop(this.pop);
     this.panel.style.display = "none";
@@ -746,6 +804,7 @@ export class ChartX {
       const s2 = cur();
       if (!s2) return;
       fn(s2);
+      this.remember(s2);
       this.persistShapes();
       this.lastSig = "";
       if (redraw) {
@@ -766,6 +825,7 @@ export class ChartX {
     const isFib = k === "fibret" || k === "fibext";
     if (!isPos) rows.push(col(isFib ? "Trend line colour" : "Colour", sh.color, (s2, v) => (s2.color = v)));
     rows.push(num("Width", sh.width, 0.5, 8, 0.5, (s2, v) => (s2.width = v)));
+    rows.push(this.row("Locked", this.checkIn(!!sh.locked, (v) => { const s2 = cur(); if (s2) { s2.locked = v; this.persistShapes(); this.lastSig = ""; } })));
     rows.push(this.row("Style", this.selIn(STYLE, sh.style || "solid", (v) => upd((s2) => (s2.style = v as LineStyle)))));
     if (k === "trend" || k === "channel" || isFib || k === "hray") {
       rows.push(chk("Extend left", !!sh.extL, (s2, v) => (s2.extL = v)));
@@ -818,7 +878,7 @@ export class ChartX {
       reset.onclick = () => upd((s2) => (s2.levels = defLevels(k)), true);
       rows.push(add, reset);
     }
-    const names: Record<Kind, string> = { trend: "Trend line", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position" };
+    const names: Record<Kind, string> = { trend: "Trend line", arrow: "Arrow", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position" };
     this.showPanel(names[k] + " settings", rows, at.x, at.y, undefined, () => this.record(snap));
   }
 
@@ -1058,6 +1118,19 @@ export class ChartX {
     });
   }
   private colorBefore: Shape[] | null = null;
+  /** Style changes become the default for the next shape of the same kind (kept until you change it again). */
+  private remember(sh: Shape) {
+    const d = load<Record<string, Partial<Shape>>>("arcus.chartx.kdef.v1", {});
+    const { id, kind, pts, locked, ...style } = sh as any;
+    d[sh.kind] = style;
+    save("arcus.chartx.kdef.v1", d);
+  }
+  private newShape(id: string, kind: Kind, pts: P[]): Shape {
+    const d = load<Record<string, Partial<Shape>>>("arcus.chartx.kdef.v1", {})[kind] || {};
+    return { color: DEF_COLOR[kind], width: kind === "trend" || kind === "arrow" ? 1.5 : 2, ...d, id, kind, pts } as Shape;
+  }
+  private lockAll = load<boolean>("arcus.chartx.lockall.v1", false);
+  private lockBtn = h("button", "", "🔓");
 
   private persistShapes() {
     const all = load<Record<string, Shape[]>>(DRAW_KEY, {});
@@ -1307,7 +1380,7 @@ export class ChartX {
         const before = this.cloneShapes();
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
         const final = kind === "long" || kind === "short" ? newPosition(kind, p, barSpan(this.candles)) : pts;
-        this.shapes.push({ id, kind, pts: final, color: DEF_COLOR[kind], width: kind === "trend" ? 1.5 : 2 });
+        this.shapes.push(this.newShape(id, kind, final));
         this.record(before);
         this.persistShapes();
         this.setTool(null);
@@ -1331,6 +1404,7 @@ export class ChartX {
     const sh = this.shapes.find((x) => x.id === id);
     if (sh) {
       this.popColor.value = sh.color;
+      this.lockBtn.textContent = sh.locked ? "🔒" : "🔓";
       this.popWidth.value = String(sh.width);
       if (this.popWidth.value !== String(sh.width)) this.popWidth.value = "2";
     }
@@ -1416,7 +1490,7 @@ export class ChartX {
       }
     }
     if (this.draft)
-      draw({ id: "d", kind: this.draft.kind, pts: [...this.draft.pts, this.draft.cur], color: DEF_COLOR[this.draft.kind], width: 1.5 }, false, true);
+      draw({ ...this.newShape("d", this.draft.kind, [...this.draft.pts, this.draft.cur]), width: 1.5 }, false, true);
   };
 }
 

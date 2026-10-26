@@ -400,6 +400,9 @@ const YF_WRAP: ((u: string) => string)[] = [
   (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
   (u) => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
+  (u) => "https://corsproxy.org/?" + encodeURIComponent(u),
+  (u) => "https://thingproxy.freeboard.io/fetch/" + u,
+  (u) => "https://yacdn.org/proxy/" + u,
 ];
 let yfMode = 0;
 export async function yfGet(url: string, signal?: AbortSignal): Promise<any> {

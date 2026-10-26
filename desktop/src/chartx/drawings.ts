@@ -2,14 +2,14 @@
 import { fmtPrice } from "./math";
 
 export type P = { time: number; price: number };
-export type Kind = "trend" | "vline" | "hray" | "channel" | "fibret" | "fibext" | "rect" | "long" | "short";
+export type Kind = "trend" | "arrow" | "vline" | "hray" | "channel" | "fibret" | "fibext" | "rect" | "long" | "short";
 export type Level = { v: number; on: boolean; color: string };
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type Shape = {
   id: string; kind: Kind; pts: P[]; color: string; width: number;
   style?: LineStyle; fill?: string; fillOp?: number; extL?: boolean; extR?: boolean;
   levels?: Level[]; bg?: boolean; showTrend?: boolean; showPrice?: boolean; showLvl?: boolean; mid?: boolean; rev?: boolean;
-  labels?: boolean; pc?: string; sc?: string; acct?: number; riskP?: number;
+  locked?: boolean; labels?: boolean; pc?: string; sc?: string; acct?: number; riskP?: number;
 };
 export const DASH: Record<LineStyle, string> = { solid: "", dashed: "7 5", dotted: "1.5 4" };
 export const defLevels = (kind: Kind): Level[] =>
@@ -18,9 +18,10 @@ export type XY = { x: number; y: number };
 export type Env = { xy: (p: P) => XY | null; w: number; h: number; selected: boolean; draft?: boolean; hover?: boolean };
 export type Built = { els: SVGElement[]; segs: [number, number, number, number][]; polys: XY[][]; handles: XY[]; mid: XY };
 
-export const NEED: Record<Kind, number> = { trend: 2, vline: 1, hray: 1, channel: 3, fibret: 2, fibext: 3, rect: 2, long: 1, short: 1 };
+export const NEED: Record<Kind, number> = { trend: 2, arrow: 2, vline: 1, hray: 1, channel: 3, fibret: 2, fibext: 3, rect: 2, long: 1, short: 1 };
 export const TOOLS: { kind: Kind; icon: string; title: string }[] = [
   { kind: "trend", icon: "╱", title: "Trend line: click two points" },
+  { kind: "arrow", icon: "↗", title: "Arrow: click the start, then the tip" },
   { kind: "vline", icon: "│", title: "Vertical line: click once" },
   { kind: "hray", icon: "→", title: "Horizontal ray: click once" },
   { kind: "channel", icon: "⫽", title: "Parallel channel: click 3 points (start, end, width)" },
@@ -89,6 +90,25 @@ export function build(s: Shape, env: Env): Built | null {
       L(P.x, P.y, Q.x, Q.y);
       out.handles = [A, B];
       out.mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      break;
+    }
+    case "arrow": {
+      const [P, Q] = ext(A, B, s.extL, s.extR);
+      L(P.x, P.y, Q.x, Q.y);
+      const ang = Math.atan2(B.y - A.y, B.x - A.x), hl = 9 + s.width * 2, sp = 0.45;
+      out.els.push(
+        svgEl("polygon", {
+          points: [B, { x: B.x - hl * Math.cos(ang - sp), y: B.y - hl * Math.sin(ang - sp) }, { x: B.x - hl * Math.cos(ang + sp), y: B.y - hl * Math.sin(ang + sp) }].map((q) => q.x + "," + q.y).join(" "),
+          fill: col,
+          stroke: col,
+          "stroke-width": 1,
+          "stroke-linejoin": "round",
+        }),
+      );
+      const M = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      out.els.push(svgEl("circle", { cx: M.x, cy: M.y, r: 4, fill: "#071629", stroke: col, "stroke-width": 2 }));
+      out.handles = [A, B];
+      out.mid = M;
       break;
     }
     case "vline":
@@ -195,7 +215,7 @@ export function build(s: Shape, env: Env): Built | null {
       break;
     }
   }
-  if (sel) for (const hd of out.handles) out.els.push(svgEl("circle", { cx: hd.x, cy: hd.y, r: env.selected ? 5.5 : 3.5, fill: "#fff", stroke: col, "stroke-width": 2 }));
+  if (sel && !s.locked) for (const hd of out.handles) out.els.push(svgEl("circle", { cx: hd.x, cy: hd.y, r: env.selected ? 5.5 : 3.5, fill: "#fff", stroke: col, "stroke-width": 2 }));
   else if (s.kind === "trend") for (const hd of out.handles) out.els.push(svgEl("circle", { cx: hd.x, cy: hd.y, r: 3, fill: col }));
   return out;
 }

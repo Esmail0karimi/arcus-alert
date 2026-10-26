@@ -7,7 +7,7 @@ import { attachChartX, type ChartX } from "./chartx/controller";
 import { fetchEvents } from "./events";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
-import { AssetInfo, assetBase } from "./assetinfo";
+import { AssetInfo, assetBase, findAsset } from "./assetinfo";
 import { Guide } from "./guide";
 import "./style.css";
 import { auth, db } from "./firebase";
@@ -33,6 +33,7 @@ type ChartDrawing = {
   color?: string;
   width?: number;
 };
+const TF_LIST = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
 const STOCKY = /^(AAPL|MSFT|NVDA|TSLA|AMZN|GOOGL|META|NFLX|AMD|COIN|PLTR|MSTR|HOOD|SPY|QQQ)$/;
 const DRAWINGS = "arcus-alert-chart-drawings-v1",
   DRAWING_STYLE = "arcus-alert-drawing-style-v1";
@@ -129,6 +130,15 @@ function App() {
     [symbol, setSymbol] = useState(""),
     [query, setQuery] = useState(""),
     [tf, setTf] = useState("15m"),
+    [tfMenu, setTfMenu] = useState(false),
+    [tfFavs, setTfFavs] = useState<string[]>(() => {
+      try {
+        const v = JSON.parse(localStorage.getItem("arcus.tfFavs.v1") || "[]");
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    }),
     [levels, setLevels] = useState<Level[]>(() => {
       try {
         return JSON.parse(localStorage.getItem(KEY) || "[]");
@@ -1623,7 +1633,9 @@ function App() {
     const ctl = new AbortController();
     cx.setEvents([]);
     cx.setEventsStatus("loading…");
-    fetchEvents(evBase, ctl.signal)
+    findAsset(evBase, ctl.signal)
+      .catch(() => null)
+      .then((info) => fetchEvents(evBase, ctl.signal, info?.who?.name || info?.title))
       .then((r) => {
         if (ctl.signal.aborted) return;
         chartX.current?.setEvents(r.list);
@@ -2379,7 +2391,7 @@ function App() {
       )}
       <header>
         <div className="brand">
-          <div className="mark">A</div>
+          <div className="mark"><img src="./icon.svg" alt="Arcus" /></div>
           <div>
             <b>ARCUS</b>
             <small>ALERT</small>
@@ -2803,11 +2815,48 @@ function App() {
                 {prices[symbol]?.price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ??
                   "—"}
               </div>
-              <select className="fs-keep" value={tf} onChange={(e) => setTf(e.target.value)}>
-                {["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"].map((x) => (
-                  <option key={x}>{x}</option>
+              <div className="tf-wrap fs-keep">
+                <button className="tf-cur" title="Timeframe" onClick={() => setTfMenu((v) => !v)}>
+                  {tf} ▾
+                </button>
+                {tfMenu && (
+                  <>
+                    <div className="wl-menu-bg" onClick={() => setTfMenu(false)} />
+                    <div className="tf-menu">
+                      {TF_LIST.map((x) => (
+                        <div key={x} className={"tf-row" + (x === tf ? " on" : "")}>
+                          <button
+                            onClick={() => {
+                              setTf(x);
+                              setTfMenu(false);
+                            }}
+                          >
+                            {x}
+                          </button>
+                          <u
+                            className={tfFavs.includes(x) ? "on" : ""}
+                            title={tfFavs.includes(x) ? "Remove from the bar" : "Show on the bar"}
+                            onClick={() => {
+                              const n = tfFavs.includes(x) ? tfFavs.filter((y) => y !== x) : [...tfFavs, x].sort((a, b) => TF_LIST.indexOf(a) - TF_LIST.indexOf(b));
+                              setTfFavs(n);
+                              try {
+                                localStorage.setItem("arcus.tfFavs.v1", JSON.stringify(n));
+                              } catch {}
+                            }}
+                          >
+                            ★
+                          </u>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {tfFavs.map((x) => (
+                  <button key={x} className={"tf-fav" + (x === tf ? " on" : "")} onClick={() => setTf(x)}>
+                    {x}
+                  </button>
                 ))}
-              </select>
+              </div>
               <span className="ind-slot fs-keep" />
               <button
                 className="secondary drawer-toggle fs-keep"

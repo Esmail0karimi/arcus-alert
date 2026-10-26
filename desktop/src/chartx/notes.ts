@@ -295,6 +295,18 @@ export class NotesLayer {
       localStorage.setItem(KEY, JSON.stringify(all));
     } catch {}
   }
+  clearAll() {
+    if (!this.notes.length) return;
+    const before = this.clone();
+    this.notes = [];
+    this.record(before);
+    this.selected = null;
+    this.persist();
+    this.dirty = true;
+  }
+  count() {
+    return this.notes.length;
+  }
   private deleteSelected() {
     if (!this.selected) return;
     const before = this.clone();

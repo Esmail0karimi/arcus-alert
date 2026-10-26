@@ -1,6 +1,7 @@
 /* Scheduled events and news for a market, drawn on the chart as dashed lines with a dot on top.
    Best effort: every source can fail (CORS, rate limits); whatever works is shown. */
 import { yfGet, yfSym } from "./exchanges";
+import { findAsset } from "./assetinfo";
 
 export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split"; title: string; detail?: string; url?: string; source?: string; future: boolean };
 
@@ -8,7 +9,22 @@ export type EvResult = { list: Ev[]; failed: number; total: number; names: strin
 const cache = new Map<string, { at: number; v: EvResult }>();
 const dayStr = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
 
-export async function fetchEvents(base: string, signal?: AbortSignal): Promise<EvResult> {
+const jget = async (url: string, signal?: AbortSignal) => {
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), 9000);
+  const onAbort = () => ctl.abort();
+  signal?.addEventListener("abort", onAbort);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+};
+
+export async function fetchEvents(base: string, signal?: AbortSignal, name?: string): Promise<EvResult> {
   const hit = cache.get(base);
   if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
   const sym = yfSym(base);
@@ -56,6 +72,27 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
       }
     })(),
   );
+  // 2b) news from GDELT (open, allows browser requests): searched by company name
+  jobNames.push("news (GDELT)");
+  jobs.push(
+    (async () => {
+      let name = "";
+      try {
+        const a = await findAsset(base, signal);
+        name = (a?.who?.name || a?.title || "").replace(/\s*\(.*?\)\s*$/, "").trim();
+      } catch {}
+      const q = name ? '"' + name + '" sourcelang:english' : base + " stock sourcelang:english";
+      const r = await fetch("https://api.gdeltproject.org/api/v2/doc/doc?mode=artlist&format=json&maxrecords=15&sort=datedesc&timespan=3months&query=" + encodeURIComponent(q), { signal });
+      if (!r.ok) throw new Error("GDELT " + r.status);
+      const j = await r.json();
+      for (const a of j?.articles || []) {
+        const m = String(a.seendate || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
+        if (!m || !a.title) continue;
+        const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000;
+        add({ t, kind: "news", title: String(a.title), detail: a.domain ? "Published by " + a.domain : undefined, url: a.url, source: a.domain || "GDELT" });
+      }
+    })(),
+  );
   // 3) upcoming earnings date (Nasdaq; stocks only)
   if (/^[A-Z]{1,5}$/.test(base)) {
     jobNames.push("upcoming earnings");
@@ -66,6 +103,34 @@ export async function fetchEvents(base: string, signal?: AbortSignal): Promise<E
         const m = txt.match(/([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})/);
         const t = m ? Date.parse(m[1] + " 12:00:00 UTC") / 1000 : 0;
         if (t) add({ t, kind: "earnings", title: "Upcoming earnings report", detail: "Expected on " + dayStr(t) + ". The company publishes revenue and profit (EPS) against analyst estimates; price often moves sharply right after.", source: "Nasdaq" });
+      })(),
+    );
+  }
+  if (name) {
+    const q = name.replace(/\(.*?\)/g, "").trim();
+    // 4) GDELT: worldwide news index (open, CORS-enabled)
+    jobNames.push("GDELT news");
+    jobs.push(
+      (async () => {
+        const j = await jget("https://api.gdeltproject.org/api/v2/doc/doc?mode=artlist&format=json&maxrecords=15&sort=datedesc&timespan=3months&query=" + encodeURIComponent('"' + q + '" sourcelang:eng'), signal);
+        for (const a of j?.articles || []) {
+          const m = String(a.seendate || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
+          if (!m || !a.title) continue;
+          const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000;
+          add({ t, kind: "news", title: String(a.title), detail: a.domain ? "Published by " + a.domain : undefined, url: a.url, source: "GDELT · " + (a.domain || "") });
+        }
+      })(),
+    );
+    // 5) Hacker News (Algolia): tech / business stories about the company
+    jobNames.push("Hacker News");
+    jobs.push(
+      (async () => {
+        const since = Math.floor(Date.now() / 1000) - 90 * 86400;
+        const j = await jget("https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=10&numericFilters=" + encodeURIComponent("created_at_i>" + since) + "&query=" + encodeURIComponent(q), signal);
+        for (const h of j?.hits || []) {
+          if (!h.title || !h.created_at_i || (h.points || 0) < 20) continue;
+          add({ t: Number(h.created_at_i), kind: "news", title: String(h.title), detail: (h.points || 0) + " points on Hacker News", url: h.url || "https://news.ycombinator.com/item?id=" + h.objectID, source: "Hacker News" });
+        }
       })(),
     );
   }
