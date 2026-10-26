@@ -113,6 +113,8 @@ function App() {
       }
     }),
     [tabsOpen, setTabsOpen] = useState(false),
+    [bulk, setBulk] = useState(false),
+    [sel, setSel] = useState<string[]>([]),
     [flagMenu, setFlagMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
     [flagFilter, setFlagFilter] = useState(""),
     [infoSym, setInfoSym] = useState<string | null>(null),
@@ -2029,6 +2031,16 @@ function App() {
   );
   const flagBar = (
     <div className="flag-bar" title="Filter by colour flag">
+      <button
+        className={"bulk-t" + (bulk ? " on" : "")}
+        title="Select several symbols, then set one flag colour for all"
+        onClick={() => {
+          setBulk((v) => !v);
+          setSel([]);
+        }}
+      >
+        ☑
+      </button>
       <span>⚑</span>
       <button className={"all" + (!flagFilter ? " on" : "")} onClick={() => setFlagFilter("")}>
         All
@@ -2047,6 +2059,45 @@ function App() {
       })}
     </div>
   );
+  const toggleSel = (x: string) => setSel((v) => (v.includes(x) ? v.filter((y) => y !== x) : [...v, x]));
+  const bulkBar = (items: string[]) =>
+    bulk ? (
+      <div className="bulk-bar">
+        <b>{sel.length} selected</b>
+        <button onClick={() => setSel(sel.length === items.length ? [] : [...items])}>{sel.length === items.length ? "None" : "All"}</button>
+        {FLAG_COLORS.map((c) => (
+          <button
+            key={c}
+            className="dot"
+            style={{ background: c }}
+            title={"Flag " + sel.length + " symbols"}
+            disabled={!sel.length}
+            onClick={() => setFlags((v) => ({ ...v, ...Object.fromEntries(sel.map((x) => [x, c])) }))}
+          />
+        ))}
+        <button
+          disabled={!sel.length}
+          title="Remove the flag from the selected symbols"
+          onClick={() =>
+            setFlags((v) => {
+              const n = { ...v };
+              sel.forEach((x) => delete n[x]);
+              return n;
+            })
+          }
+        >
+          ✕ flag
+        </button>
+        <button
+          onClick={() => {
+            setBulk(false);
+            setSel([]);
+          }}
+        >
+          Done
+        </button>
+      </div>
+    ) : null;
   const filtered = symbols.filter(
     (s) => s.toLowerCase().includes(query.toLowerCase()) && (!flagFilter || flags[s] === flagFilter),
   );
@@ -2505,14 +2556,20 @@ function App() {
                     <div className="marketlist">
               {list.map((s) => (
                 <div
-                  className="marketrow"
+                  className={"marketrow" + (bulk && sel.includes(s) ? " picked" : "")}
                   key={s}
-                  onClick={() => {
+                  onClick={(e) => {
+                    if (bulk || e.ctrlKey || e.metaKey) {
+                      if (!bulk) setBulk(true);
+                      toggleSel(s);
+                      return;
+                    }
                     setSymbol(s);
                     setTab("Chart");
                   }}
                 >
                   <b>
+                    {bulk && <em className="bulk-ck">{sel.includes(s) ? "☑" : "☐"}</em>}
                     {dn(s)}
                     <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
                     {flagBtn(s)}
@@ -2569,18 +2626,25 @@ function App() {
             {listTabs}
             {listTools}
             {flagBar}
+            {bulkBar(wlTabItems)}
             {wlTabItems.length ? (
               <div className="marketlist">
               {wlTabItems.map((s) => (
                 <div
-                  className="marketrow"
+                  className={"marketrow" + (bulk && sel.includes(s) ? " picked" : "")}
                   key={s}
-                  onClick={() => {
+                  onClick={(e) => {
+                    if (bulk || e.ctrlKey || e.metaKey) {
+                      if (!bulk) setBulk(true);
+                      toggleSel(s);
+                      return;
+                    }
                     setSymbol(s);
                     setTab("Chart");
                   }}
                 >
                   <b>
+                    {bulk && <em className="bulk-ck">{sel.includes(s) ? "☑" : "☐"}</em>}
                     {dn(s)}
                     <u className="info-i" title="What is this market?" onClick={(e) => { e.stopPropagation(); setInfoSym(s); }}>i</u>
                     {flagBtn(s)}
@@ -3108,17 +3172,24 @@ function App() {
                 {listTabs}
                 {listTools}
                 {flagBar}
+                {bulkBar(panelItems)}
                 <div className="watch-items">
                   {!panelItems.length && (
                     <div className="empty small">This list is empty. Type a symbol in the search box above and press ＋.</div>
                   )}
                   {panelItems.map((s) => (
                     <button
-                      className={s === symbol ? "current" : ""}
+                      className={(s === symbol ? "current" : "") + (bulk && sel.includes(s) ? " picked" : "")}
                       key={s}
-                      onClick={() => setSymbol(s)}
+                      onClick={(e) => {
+                        if (bulk || e.ctrlKey || e.metaKey) {
+                          if (!bulk) setBulk(true);
+                          toggleSel(s);
+                        } else setSymbol(s);
+                      }}
                     >
                       <b>
+                        {bulk && <em className="bulk-ck">{sel.includes(s) ? "☑" : "☐"}</em>}
                         <span className="sym">{dn(s)}</span>
                         <u
                           className="wl-pick"

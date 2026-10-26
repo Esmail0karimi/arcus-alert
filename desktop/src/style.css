@@ -370,3 +370,12 @@ main:has(.chart-workspace){padding:3px 6px 2px!important;gap:0!important}
 .flag-bar button.all{padding:0 6px!important;font-size:9px!important;line-height:14px}
 .flag-bar .dot{width:11px!important;height:11px!important;border-width:1.5px!important;flex:0 0 auto}
 .info-fullname{margin-top:4px;font-size:13px;font-weight:700;color:#e8f2ff}.info-fullname small{display:inline;font-weight:400;color:#8aa0bb}
+/* bulk flag */
+.flag-bar .bulk-t{padding:0 6px!important;font-size:11px!important;line-height:14px;border-radius:5px!important}.flag-bar .bulk-t.on{background:#12364a;border-color:#00c9b5;color:#00dcd2}
+.bulk-bar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:4px 6px;margin:2px 0;background:#0b2238;border:1px solid #1f4a66;border-radius:8px;font-size:11px;color:#b8c9dc}
+.bulk-bar b{font-size:11px;margin-right:2px}
+.bulk-bar button{background:#0b1a2e;border:1px solid #24364e;color:#b8c9dc;border-radius:6px;padding:1px 7px;font-size:10px;min-height:0;cursor:pointer}
+.bulk-bar button:disabled{opacity:.35;cursor:default}
+.bulk-bar .dot{width:15px;height:15px;padding:0;border-radius:50%;border:2px solid transparent}.bulk-bar .dot:not(:disabled):hover{border-color:#fff}
+.bulk-ck{font-style:normal;color:#00dcd2;margin-right:3px;font-size:12px}
+.watch-items button.picked,.marketrow.picked{background:#10304a!important;box-shadow:inset 0 0 0 1px #00c9b5}
