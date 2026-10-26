@@ -1403,7 +1403,7 @@ function App() {
                   key: requestSymbol + "|" + requestTf + "|" + Math.floor(lastFast.time / sp) * sp,
                   bar: lastFast,
                 };
-                chartApi.current.timeScale().fitContent();
+                refit(chartApi.current);
                 fastShown = true;
                 setChartStatus(requestSymbol + " · " + requestTf + " · loading full history…");
               }
@@ -1571,11 +1571,10 @@ function App() {
             chartX.current?.updateBar(bar);
           }
         }
-        if (fastShown && candles.length > 250)
-          activeChart
-            .timeScale()
-            .setVisibleLogicalRange({ from: candles.length - 250, to: candles.length + 3 });
-        else activeChart.timeScale().fitContent();
+        refit(activeChart, fastShown && candles.length > 250 ? candles.length : 0);
+        requestAnimationFrame(() => {
+          if (!cancelled) refit(activeChart, fastShown && candles.length > 250 ? candles.length : 0);
+        });
         setChartStatus(
           requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket" +
             (candleNote[requestSymbol] ? " · " + candleNote[requestSymbol] : ""),
@@ -1646,6 +1645,14 @@ function App() {
     };
     reader.onerror = () => setStatus("Could not read audio file");
     reader.readAsDataURL(file);
+  };
+  const refit = (chart: any, n = 0) => {
+    try {
+      chart.priceScale("right").applyOptions({ autoScale: true });
+      chart.applyOptions({ timeScale: { rightOffset: 5 } });
+      if (n) chart.timeScale().setVisibleLogicalRange({ from: n - 250, to: n + 3 });
+      else chart.timeScale().fitContent();
+    } catch {}
   };
   const resetChart = () => {
     const chart = chartApi.current;
