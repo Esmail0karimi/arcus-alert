@@ -402,7 +402,7 @@ const YF_WRAP: ((u: string) => string)[] = [
   (u) => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
 ];
 let yfMode = 0;
-async function yfGet(url: string, signal?: AbortSignal): Promise<any> {
+export async function yfGet(url: string, signal?: AbortSignal): Promise<any> {
   let last: any = new Error("Yahoo unreachable");
   for (let k = 0; k < YF_WRAP.length; k++) {
     const m = (yfMode + k) % YF_WRAP.length;
@@ -766,4 +766,16 @@ export async function assetStats(base: string, crypto: boolean, signal?: AbortSi
     sma50: tr.s50,
     trend: tr.trend,
   };
+}
+
+/** Full company / asset name for a ticker (e.g. LMT → Lockheed Martin Corporation) through Yahoo search. */
+export type YfName = { name: string; exchange?: string; type?: string; sector?: string; industry?: string };
+export async function companyName(base: string, crypto: boolean, signal?: AbortSignal): Promise<YfName | null> {
+  const want = (crypto ? base + "-USD" : yfSym(base)).toUpperCase();
+  const j = await yfGet("https://query1.finance.yahoo.com/v1/finance/search?quotesCount=8&newsCount=0&listsCount=0&q=" + encodeURIComponent(want), signal);
+  const qs: any[] = j?.quotes || [];
+  const q = qs.find((x) => String(x.symbol || "").toUpperCase() === want) || (crypto ? null : qs.find((x) => String(x.symbol || "").toUpperCase().split(".")[0] === want && x.quoteType === "EQUITY"));
+  const name = q && (q.longname || q.shortname);
+  if (!name) return null;
+  return { name: String(name), exchange: q.exchDisp || q.exchange, type: q.typeDisp || q.quoteType, sector: q.sectorDisp || q.sector, industry: q.industryDisp || q.industry };
 }

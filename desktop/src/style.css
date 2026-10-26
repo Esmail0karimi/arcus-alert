@@ -369,3 +369,4 @@ main:has(.chart-workspace){padding:3px 6px 2px!important;gap:0!important}
 .flag-bar{gap:3px!important;padding:2px 2px!important;font-size:9px!important;flex-wrap:nowrap!important}
 .flag-bar button.all{padding:0 6px!important;font-size:9px!important;line-height:14px}
 .flag-bar .dot{width:11px!important;height:11px!important;border-width:1.5px!important;flex:0 0 auto}
+.info-fullname{margin-top:4px;font-size:13px;font-weight:700;color:#e8f2ff}.info-fullname small{display:inline;font-weight:400;color:#8aa0bb}

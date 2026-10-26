@@ -1,6 +1,6 @@
 /* "What is this market?" window: description from Wikipedia (CORS-enabled) in many languages. */
 import React, { useEffect, useState } from "react";
-import { AssetStats, assetStats } from "./exchanges";
+import { AssetStats, YfName, assetStats, companyName } from "./exchanges";
 
 export const LANGS: { code: string; name: string; rtl?: boolean }[] = [
   { code: "en", name: "English" }, { code: "fa", name: "فارسی", rtl: true }, { code: "ar", name: "العربية", rtl: true },
@@ -20,8 +20,8 @@ const ALIAS: Record<string, string> = {
 export const assetBase = (display: string) =>
   display.replace(/ ·[A-Z]$/, "").toUpperCase().replace(/^[A-Z0-9]+:/, "").replace(/-(USD[CT]?|PERP|SWAP)(-.*)?$/, "").replace(/^1000(?=[A-Z])/, "");
 
-type Info = { title: string; desc: string; extract: string; thumb?: string; url: string; langs: Record<string, string> };
-const CK = "arcus.assetinfo.v2";
+type Info = { who?: YfName | null; title: string; desc: string; extract: string; thumb?: string; url: string; langs: Record<string, string> };
+const CK = "arcus.assetinfo.v3";
 const readCache = (): Record<string, { at: number; v: any }> => {
   try {
     return JSON.parse(localStorage.getItem(CK) || "{}");
@@ -56,31 +56,48 @@ const PERSON = /\b(born|actress|actor|singer|rapper|footballer|politician|noveli
 const strip = (h: string) => h.replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 
 /** Find the best-matching English Wikipedia article for a ticker / asset name. */
-export async function findAsset(base: string, signal?: AbortSignal): Promise<Info | null> {
-  return cached("find|" + base, async () => {
-    const queries = ALIAS[base] ? [ALIAS[base]] : [base + " ticker symbol stock exchange", base + " cryptocurrency token", base];
+export async function findAsset(base: string, signal?: AbortSignal, crypto = false): Promise<Info | null> {
+  return cached("find2|" + crypto + "|" + base, async () => {
+    let who: YfName | null = null;
+    if (!ALIAS[base]) {
+      try {
+        who = await companyName(base, crypto, signal);
+      } catch (e: any) {
+        if (e?.name === "AbortError") throw e;
+      }
+    }
+    const clean = (who?.name || "").replace(/,?\s+(Inc|Incorporated|Corporation|Corp|Company|Co|Ltd|Limited|PLC|N\.V|S\.A|AG|SE|Holdings?|Group)\.?$/i, "").replace(/\.$/, "").trim();
+    const first = (clean.split(/[\s,.-]+/)[0] || "").toLowerCase();
+    const queries = ALIAS[base] ? [ALIAS[base]] : [...(who ? [who.name, clean + " " + (crypto ? "cryptocurrency" : "company")] : []), base + " ticker symbol stock exchange", base + " cryptocurrency token"];
     const word = new RegExp("(^|[^A-Za-z0-9])" + base.replace(/[^A-Z0-9]/g, "") + "([^A-Za-z0-9]|$)", "i");
     let pick = ALIAS[base] || "";
-    for (const q of queries) {
+    for (let qi = 0; qi < queries.length; qi++) {
       if (pick) break;
+      const q = queries[qi];
+      const byName = !!who && qi < 2;
       try {
         const r = await j("https://en.wikipedia.org/w/api.php?action=query&list=search&srlimit=6&format=json&origin=*&srsearch=" + encodeURIComponent(q), signal);
         const hits: { title: string; snippet: string }[] = r?.query?.search || [];
-        const good = hits.find((h) => (word.test(strip(h.snippet)) || word.test(h.title)) && FIN.test(strip(h.snippet) + " " + h.title) && !PERSON.test(strip(h.snippet)));
+        const good = hits.find((h) => {
+          const txt = strip(h.snippet) + " " + h.title;
+          if (PERSON.test(strip(h.snippet))) return false;
+          if (byName) return !!first && h.title.toLowerCase().startsWith(first) && FIN.test(txt);
+          return (word.test(strip(h.snippet)) || word.test(h.title)) && FIN.test(txt);
+        });
         if (good) pick = good.title;
       } catch (e: any) {
         if (e?.name === "AbortError") throw e;
       }
     }
-    if (!pick) return null;
+    if (!pick) return who ? ({ who, title: who.name, desc: [who.type, who.sector, who.industry].filter(Boolean).join(" · "), extract: "", url: "", langs: {} } as Info) : null;
     const s = await summary("en", pick, signal);
-    if (!ALIAS[base] && (PERSON.test(s.desc) || !FIN.test(s.desc + " " + s.extract))) return null;
+    if (!ALIAS[base] && !who && (PERSON.test(s.desc) || !FIN.test(s.desc + " " + s.extract))) return null;
     let langs: Record<string, string> = {};
     try {
       const l = await j("https://en.wikipedia.org/w/api.php?action=query&prop=langlinks&lllimit=500&format=json&formatversion=2&origin=*&titles=" + encodeURIComponent(s.title), signal);
       for (const x of l?.query?.pages?.[0]?.langlinks || []) langs[x.lang] = x.title;
     } catch {}
-    return { ...s, langs } as Info;
+    return { ...s, who, langs } as Info;
   });
 }
 
@@ -103,7 +120,7 @@ export function AssetInfo(p: {
   useEffect(() => {
     const ctl = new AbortController();
     setBase0(undefined);
-    findAsset(base, ctl.signal)
+    findAsset(base, ctl.signal, p.category === "Crypto")
       .then((v) => !ctl.signal.aborted && setBase0(v))
       .catch(() => !ctl.signal.aborted && setBase0(null));
     return () => ctl.abort();
@@ -152,6 +169,14 @@ export function AssetInfo(p: {
             <b>{p.shown}</b>
             <span className="info-cat">{p.category}</span>
             <small>{p.exchange}</small>
+            {(base0?.who?.name || stats?.name) && (
+              <div className="info-fullname">
+                {base0?.who?.name || stats?.name}
+                {base0?.who && [base0.who.exchange, base0.who.sector, base0.who.industry].filter(Boolean).length > 0 && (
+                  <small> · {[base0.who.exchange, base0.who.sector, base0.who.industry].filter(Boolean).join(" · ")}</small>
+                )}
+              </div>
+            )}
           </div>
           <div className="info-price">
             {p.price != null ? p.price.toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}
@@ -179,7 +204,7 @@ export function AssetInfo(p: {
               {base0?.thumb && lang === "en" && <img className="info-img" src={base0.thumb} alt="" />}
               <h3>{view.title}</h3>
               {view.desc && <em>{view.desc}</em>}
-              <p>{view.extract}</p>
+              {view.extract && <p>{view.extract}</p>}
               {!view.same && lang !== "en" && (
                 <small className="info-note">No article in this language: showing English. Use the translate button.</small>
               )}
