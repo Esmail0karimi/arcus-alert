@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
 import { fetchEvents } from "./events";
+import { SessionBar } from "./sessions";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -2493,21 +2494,7 @@ function App() {
           </button>
         </div>
       </header>
-      {!window.arcusDesktop?.isDesktop && notifPerm !== "granted" && notifPerm !== "unsupported" && (
-        <div className="notif-strip">
-          {notifPerm === "denied" ? (
-            <span>
-              🔕 Notifications are blocked by the browser. Click the lock icon next to the address bar
-              and allow Notifications for this site, then reload.
-            </span>
-          ) : (
-            <>
-              <span>🔕 Desktop notifications are off, so you will not see which symbol triggered.</span>
-              <button onClick={enableBrowserNotifications}>Enable notifications</button>
-            </>
-          )}
-        </div>
-      )}
+      <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />
       {alertBanners.length > 0 && (
         <div className="alert-toasts">
           {alertBanners.map((a, i) => (
