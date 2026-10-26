@@ -110,3 +110,4 @@
 .cx-fav-star{position:absolute;top:-1px;right:-1px;font-style:normal;font-size:10px;line-height:10px;color:#fff;opacity:0;cursor:pointer;transition:opacity .12s;padding:2px}
 .drawing-rail button:hover .cx-fav-star{opacity:.3}.drawing-rail button .cx-fav-star:hover{opacity:.9;color:#f2c94c}
 .drawing-rail button.fav .cx-fav-star{opacity:.9;color:#f2c94c}
+.drawing-rail button[data-fav] .cx-fav-star{opacity:.9;color:#f2c94c}

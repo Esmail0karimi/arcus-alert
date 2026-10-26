@@ -86,8 +86,10 @@ export class ChartX {
   private notes!: NotesLayer;
   private toolBtns = new Map<Kind, HTMLButtonElement>();
   private favBar = h("div", "cx-favbar");
-  private favBtns = new Map<Kind, HTMLButtonElement>();
-  private favs: Kind[] = (() => {
+  private favBtns = new Map<string, HTMLButtonElement>();
+  private extBtns = new Map<string, HTMLButtonElement>();
+  private extObs: MutationObserver | null = null;
+  private favs: string[] = (() => {
     try {
       return JSON.parse(localStorage.getItem("arcus.chartx.favtools.v1") || "[]");
     } catch {
@@ -328,6 +330,11 @@ export class ChartX {
         fn();
       } catch {}
     });
+    this.extObs?.disconnect();
+    this.extBtns.forEach((b) => {
+      b.removeAttribute("data-fav");
+      b.querySelector(".cx-fav-star")?.remove();
+    });
     this.notes.destroy();
     undoManager.drop("cx");
     [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
@@ -362,6 +369,23 @@ export class ChartX {
       this.notes.setPlacing(!this.notes.isBusy());
     };
     rail?.append(this.railText);
+    const hb = rail?.querySelector('button[title="Horizontal line"]') as HTMLButtonElement | null;
+    if (hb) {
+      this.extBtns.set("hline", hb);
+      const st = h("i", "cx-fav-star", "★");
+      st.title = "Favourite (show on the floating bar)";
+      st.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        this.toggleFav("hline");
+      };
+      hb.append(st);
+      this.extObs = new MutationObserver(() => {
+        const b = this.favBtns.get("hline");
+        if (b) b.classList.toggle("selected", hb.classList.contains("selected"));
+      });
+      this.extObs.observe(hb, { attributes: true, attributeFilter: ["class"] });
+    }
     this.buildIndMenu();
     this.buildFavBar();
     this.popColor.type = "color";
@@ -979,11 +1003,11 @@ export class ChartX {
     this.draft = null;
     this.catcher.classList.toggle("on", !!k);
     for (const [kind, b] of this.toolBtns) b.classList.toggle("selected", kind === k);
-    for (const [kind, b] of this.favBtns) b.classList.toggle("selected", kind === k);
+    for (const [kind, b] of this.favBtns) if (!this.extBtns.has(kind)) b.classList.toggle("selected", kind === k);
     this.lastSig = "";
   }
 
-  private toggleFav(k: Kind) {
+  private toggleFav(k: string) {
     this.favs = this.favs.includes(k) ? this.favs.filter((x) => x !== k) : [...this.favs, k];
     try {
       localStorage.setItem("arcus.chartx.favtools.v1", JSON.stringify(this.favs));
@@ -1006,9 +1030,13 @@ export class ChartX {
 
   private buildFavBar() {
     for (const [k, b] of this.toolBtns) b.classList.toggle("fav", this.favs.includes(k));
+    for (const [k, b] of this.extBtns) {
+      if (this.favs.includes(k)) b.setAttribute("data-fav", "1");
+      else b.removeAttribute("data-fav");
+    }
     this.favBar.replaceChildren();
     this.favBtns.clear();
-    const list = this.favs.filter((k) => this.toolBtns.has(k));
+    const list = this.favs.filter((k) => this.toolBtns.has(k as Kind) || this.extBtns.has(k));
     this.favBar.style.display = list.length ? "flex" : "none";
     if (!list.length) return;
     const grip = h("span", "cx-fav-grip", "⋮⋮");
@@ -1036,16 +1064,22 @@ export class ChartX {
     };
     this.favBar.append(grip);
     for (const k of list) {
-      const src = this.toolBtns.get(k)!;
+      const ext = this.extBtns.get(k);
+      const src = ext || this.toolBtns.get(k as Kind)!;
       const b = h("button", "cx-fav-btn", src.firstChild?.textContent || "");
       b.title = src.title;
       b.style.fontSize = src.style.fontSize;
       b.onpointerdown = (e) => e.stopPropagation();
       b.onclick = () => {
         this.notes?.setPlacing(false);
-        this.setTool(this.tool === k ? null : k);
+        if (ext) {
+          this.setTool(null);
+          ext.click();
+          return;
+        }
+        this.setTool(this.tool === k ? null : (k as Kind));
       };
-      b.classList.toggle("selected", this.tool === k);
+      b.classList.toggle("selected", ext ? ext.classList.contains("selected") : this.tool === k);
       this.favBtns.set(k, b);
       this.favBar.append(b);
     }
