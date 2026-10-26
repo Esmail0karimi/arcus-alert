@@ -97,6 +97,8 @@ export class ChartX {
   }
   private evEls = new Map<string, HTMLElement>();
   private evEdge = h("button", "cx-ev-edge");
+  private evBtn = h("button", "cx-ev-listbtn");
+  private evList = h("div", "cx-evlist");
   private favBar = h("div", "cx-favbar");
   private favBtns = new Map<string, HTMLButtonElement>();
   private extBtns = new Map<string, HTMLButtonElement>();
@@ -349,6 +351,18 @@ export class ChartX {
     const on = this.evOn && this.evs.length > 0;
     this.evLayer.style.display = on ? "block" : "none";
     if (!on) this.evEdge.style.display = "none";
+    this.evBtn.style.display = on ? "block" : "none";
+    if (!on) this.evList.style.display = "none";
+    if (on && this.evBtn.dataset.n !== String(this.evs.length)) {
+      this.evBtn.dataset.n = String(this.evs.length);
+      this.evBtn.textContent = "🗓 " + this.evs.length;
+      this.evBtn.title = "All events & news for this symbol";
+      this.evBtn.onpointerdown = (e) => e.stopPropagation();
+      this.evBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.toggleEvList();
+      };
+    }
     if (!on) {
       if (this.evEls.size) {
         this.evLayer.replaceChildren();
@@ -421,7 +435,30 @@ export class ChartX {
       (box.firstChild!.nextSibling as HTMLElement).style.top = 4 + r * 20 + "px";
     }
   }
-  private showEv(e: Ev, box: HTMLElement) {
+  private toggleEvList() {
+    const L = this.evList;
+    if (L.style.display === "block") {
+      L.style.display = "none";
+      return;
+    }
+    L.replaceChildren();
+    L.append(h("div", "cx-evlist-h", "Events & news"));
+    const list = [...this.evs].sort((a, b) => b.t - a.t);
+    for (const e of list) {
+      const row = h("button", "cx-evlist-row" + (e.future ? " future" : ""));
+      const k = h("i", "cx-evlist-k " + e.kind, e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "dividend" ? "$" : "S");
+      const d = h("span", "cx-evlist-d", new Date(e.t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }));
+      const t = h("span", "cx-evlist-t", (e.future ? "Upcoming · " : "") + e.title);
+      row.append(k, d, t);
+      row.onclick = () => {
+        L.style.display = "none";
+        this.showEv(e, this.evEls.get(e.id) || null);
+      };
+      L.append(row);
+    }
+    L.style.display = "block";
+  }
+  private showEv(e: Ev, box: HTMLElement | null) {
     const P = this.evPop;
     P.replaceChildren();
     const when = new Date(e.t * 1000);
@@ -447,7 +484,7 @@ export class ChartX {
     if (e.source) P.append(h("small", "", "Source: " + e.source));
     P.style.display = "block";
     const w = this.host.clientWidth;
-    const left = parseFloat(box.style.left) || 0;
+    const left = box && box.style.display !== "none" ? parseFloat(box.style.left) || 0 : w / 2;
     P.style.left = Math.max(6, Math.min(w - 280, left - 130)) + "px";
     P.style.top = "34px";
   }
@@ -484,7 +521,7 @@ export class ChartX {
     });
     this.notes.destroy();
     undoManager.drop("cx");
-    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
+    [this.legend, this.countEl, this.indWrap, this.bar, this.svg, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.evBtn, this.evList, this.railText, this.shareBtn, ...this.toolBtns.values()].forEach((el) => el.remove());
   }
 
   /* ---------- UI ---------- */
@@ -571,7 +608,7 @@ export class ChartX {
     stop(this.pop);
     this.panel.style.display = "none";
     stop(this.panel);
-    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge);
+    this.host.append(this.svg, this.legend, this.countEl, this.srcEl, this.catcher, this.pop, this.panel, this.scaleBox, this.favBar, this.evLayer, this.evPop, this.evEdge, this.evBtn, this.evList);
     this.buildScale();
   }
   private labels() {
