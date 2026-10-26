@@ -260,6 +260,29 @@ export class ChartX {
       const r = this.host.getBoundingClientRect();
       this.openThemePanel(e.clientX - r.left, e.clientY - r.top);
     };
+    /* wheel zoom: our own, so zooming out is never capped at the "standard" view (anchored under the cursor) */
+    try {
+      this.chart.applyOptions({ handleScale: { mouseWheel: false }, timeScale: { minBarSpacing: 0.02 } } as any);
+    } catch {}
+    const onWheel = (e: WheelEvent) => {
+      if ((e.target as HTMLElement)?.closest?.(".cx-panel,.cx-evlist,.cx-evpop,.cx-ind-menu,.cx-scale")) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // sideways wheel: let the chart scroll
+      const ts = this.chart.timeScale();
+      const r = ts.getVisibleLogicalRange();
+      if (!r) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = this.host.getBoundingClientRect();
+      const dy = Math.max(-400, Math.min(400, e.deltaY * (e.deltaMode === 1 ? 16 : 1)));
+      const k = Math.exp(dy * 0.0013); // wheel down => k > 1 => more candles, narrower
+      const a = ts.coordinateToLogical(e.clientX - rect.left);
+      const anchor = a == null ? r.to : Number(a);
+      const from = anchor - (anchor - r.from) * k, to = anchor + (r.to - anchor) * k;
+      if (to - from < 5) return;
+      ts.setVisibleLogicalRange({ from, to } as any);
+    };
+    this.host.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    this.cleanups.push(() => this.host.removeEventListener("wheel", onWheel, true));
     this.host.addEventListener("pointerdown", onDown, true);
     window.addEventListener("pointermove", onDragMove);
     this.host.addEventListener("pointerup", onUp, true);
