@@ -231,26 +231,60 @@ async function earningsCalendar() {
   const nowMs = Date.now();
   const missing = coreTickers.filter((s) => !calRows.some((r) => r.sym === s && r.t > nowMs - 36e5 * 30));
   let fb = 0;
-  await pool(missing, 4, async (sym) => {
+  const dbg = [];
+  const guessYear = (mo, d) => {
+    const y = new Date().getUTCFullYear();
+    let t = Date.UTC(y, mo - 1, d, 12);
+    if (t < nowMs - 36e5 * 30) t = Date.UTC(y + 1, mo - 1, d, 12);
+    return new Date(t).getUTCFullYear();
+  };
+  const fromNasdaq = async (sym) => {
     const j = await nq(`analyst/${sym}/earnings-date`);
-    const txt = JSON.stringify(j?.data || {});
-    const m = txt.match(/([A-Z][a-z]{2,8})\.? (\d{1,2}), (\d{4})/);
-    if (!m) return;
-    const mo = MON[m[1].slice(0, 3).toLowerCase()];
-    if (!mo) return;
-    const day = `${m[3]}-${String(mo).padStart(2, "0")}-${String(Number(m[2])).padStart(2, "0")}`;
-    const t = etToUtc(Number(m[3]), mo, Number(m[2]), 12, 0);
+    if (dbg.length < 3) dbg.push(sym + " nasdaq: " + JSON.stringify(j).slice(0, 300));
+    const m = JSON.stringify(j?.data || {}).match(/([A-Z][a-z]{2,8})\.? (\d{1,2}), (\d{4})/);
+    return m && { mo: MON[m[1].slice(0, 3).toLowerCase()], d: Number(m[2]), y: Number(m[3]), tm: "", src: "Nasdaq" };
+  };
+  const fromFinviz = async (sym) => {
+    const html = await fetchText(`https://finviz.com/quote.ashx?t=${sym}`, {}, { tries: 2 });
+    const i = html.search(/>Earnings</);
+    const seg = i < 0 ? "" : stripHtml(html.slice(i, i + 400)).replace(/\s+/g, " ");
+    if (dbg.length < 6) dbg.push(sym + " finviz: " + seg.slice(0, 120));
+    const m = seg.match(/Earnings\s*\*?\s*([A-Z][a-z]{2}) (\d{1,2})(?:,? (\d{4}))?\s*(AMC|BMO)?/);
+    return m && { mo: MON[m[1].toLowerCase()], d: Number(m[2]), y: m[3] ? Number(m[3]) : guessYear(MON[m[1].toLowerCase()], Number(m[2])), tm: m[4] === "AMC" ? "amc" : m[4] === "BMO" ? "bmo" : "", src: "Finviz" };
+  };
+  const fromSA = async (sym) => {
+    const html = await fetchText(`https://stockanalysis.com/stocks/${sym.toLowerCase()}/`, {}, { tries: 2 });
+    const txt = stripHtml(html).replace(/\s+/g, " ");
+    const m = txt.match(/Earnings Date\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4})/);
+    if (dbg.length < 9) dbg.push(sym + " stockanalysis: " + (m ? m[0] : txt.slice(txt.indexOf("Earnings"), txt.indexOf("Earnings") + 80)));
+    return m && { mo: MON[m[1].toLowerCase()], d: Number(m[2]), y: Number(m[3]), tm: "", src: "StockAnalysis" };
+  };
+  await pool(missing, 4, async (sym) => {
+    let r = null;
+    for (const f of [fromNasdaq, fromFinviz, fromSA]) {
+      try {
+        r = await f(sym);
+      } catch (e) {
+        if (dbg.length < 12) dbg.push(sym + " " + f.name + " error: " + String(e.message || e).slice(0, 80));
+      }
+      if (r && r.mo) break;
+    }
+    if (!r || !r.mo) return;
+    const day = `${r.y}-${String(r.mo).padStart(2, "0")}-${String(r.d).padStart(2, "0")}`;
+    const hh = r.tm === "amc" ? 16 : r.tm === "bmo" ? 8 : 12;
+    const t = etToUtc(r.y, r.mo, r.d, hh, hh === 12 ? 0 : 5);
     if (t < nowMs - 36e5 * 30) return;
-    calRows.push({ sym, day, t, tm: "", cap: MEGA.has(sym) ? 3e11 : 5e10, name: secMap.get(sym)?.name ? titleCase(secMap.get(sym).name) : sym, fq: "", eps: "", n: 0, lyEps: "", lyDate: "", estimated: true });
+    calRows.push({ sym, day, t, tm: r.tm, cap: MEGA.has(sym) ? 3e11 : 5e10, name: secMap.get(sym)?.name ? titleCase(secMap.get(sym).name) : sym, fq: "", eps: "", n: 0, lyEps: "", lyDate: "", estimated: r.src });
     fb++;
   });
+  dbg.forEach((x) => log("  fallback probe:", x));
   if (missing.length) log(`earnings-date fallback: ${fb}/${missing.length} tracked stocks found`);
   for (const r of calRows) {
     events.push({
       id: "er" + r.sym + r.day, t: r.t, title: (r.name ? r.name.replace(/\s+(Inc\.?|Corporation|Corp\.?|Company|Ltd\.?|Limited|Class [A-C].*)$/i, "") : r.sym) + " earnings report",
       impact: r.cap >= 2e11 ? "High" : r.cap >= 3e10 ? "Medium" : "Low", kind: "earnings", symbol: r.sym, scope: "symbol", scopeText: "Only " + r.sym,
       forecast: r.eps || undefined, previous: r.lyEps || undefined,
-      extra: (r.tm === "amc" ? "After market close" : r.tm === "bmo" ? "Before market open" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : "") + (r.estimated ? " · expected date (Nasdaq), not yet confirmed by the company" : ""),
+      extra: (r.tm === "amc" ? "After market close" : r.tm === "bmo" ? "Before market open" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : "") + (r.estimated ? " · expected date (" + r.estimated + "), not yet confirmed by the company" : ""),
       source: "Nasdaq",
     });
   }
