@@ -14,6 +14,7 @@ const PREV = process.env.PREV_DIR || ""; // checkout of the news-data branch (to
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const SEC_UA = "ArcusAlert research contact karimiesmail37@gmail.com";
 const NQ = { "User-Agent": UA, Accept: "application/json, text/plain, */*", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" };
+const DETAIL_V = 2; // bump to force every company file to be rebuilt
 const MAX_DETAIL = Number(process.env.MAX_DETAIL || 110);
 const T0 = Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -425,9 +426,9 @@ async function secDetail(sym, d) {
   const ex = names.find((n) => /ex-?99/i.test(n) && !/ex-?99[.-]?2/i.test(n)) || names.find((n) => /ex/i.test(n) && !/ex-?(10|31|32|21|23)/i.test(n)) || names.find((n) => n !== er.doc);
   if (!ex) return;
   const text = stripHtml(await fetchText(base + ex, { "User-Agent": SEC_UA }, { tries: 2, timeout: 30000 }));
-  const sentences = text.replace(/\n+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z])/);
+  const sentences = text.split(/\n+/).flatMap((line) => line.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z])/));
   const hits = sentences
-    .filter((s) => s.length > 40 && s.length < 600 && /\b(expect|expects|anticipate|anticipates|outlook|guidance|forecast)/i.test(s) && /\$\s?\d/.test(s) && /(range|between|approximately|to be|from \$)/i.test(s))
+    .filter((s) => s.length > 40 && s.length < 800 && /\b(expect|expects|anticipate|anticipates|outlook|guidance|forecast)/i.test(s) && /\$\s?\d/.test(s) && /(range|between|approximately|to be|from \$)/i.test(s))
     .filter((s) => /(revenue|sales|earnings|eps|income|margin|expense|capital)/i.test(s))
     .slice(0, 4);
   if (hits.length) {
@@ -523,7 +524,7 @@ async function details() {
     const cal = bySym.get(s);
     const days = cal ? (cal.t - Date.now()) / 864e5 : 99;
     const hot = days > -2 && days < 3; // reporting around now: refresh every run
-    const need = hot ? age > 0.9 : age > 20;
+    const need = hot ? age > 0.9 : age > 20 || (p && p.v !== DETAIL_V);
     const capBonus = cal ? Math.log10(Math.max(cal.cap, 1e9)) * 40 : 330; // big companies first
     const core = coreTickers.includes(s) ? 250 : 0; // the stocks people actually track come first
     return need ? (hot ? 1000 : 0) + core + Math.min(age, 100) + capBonus - Math.max(days, 0) : -1;
@@ -533,7 +534,7 @@ async function details() {
   let ok = 0, fail = 0;
   const st = { nq: 0, sa: 0, sec: 0, fv: 0 };
   await pool(todo, 3, async (sym) => {
-    const d = { symbol: sym, at: Date.now(), sources: [], name: bySym.get(sym)?.name || secMap.get(sym)?.name || sym };
+    const d = { symbol: sym, v: DETAIL_V, at: Date.now(), sources: [], name: bySym.get(sym)?.name || secMap.get(sym)?.name || sym };
     const res = await Promise.allSettled([nasdaqDetail(sym, d), stockAnalysisDetail(sym, d), secDetail(sym, d), finvizDetail(sym, d)]);
     res.forEach((r, i) => {
       if (r.status === "fulfilled") st[["nq", "sa", "sec", "fv"][i]]++;
