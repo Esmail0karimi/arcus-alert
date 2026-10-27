@@ -10,6 +10,7 @@ import { indexToTime, timeToIndex } from "./geometry";
 import { NotesLayer } from "./notes";
 import { undoManager } from "../undo";
 import type { Ev } from "../events";
+import { openReport } from "../report";
 import { Built, DASH, Kind, Level, LineStyle, NEED, P, Shape, TOOLS, applyDrag, build, defLevels, newPosition, pickDistance } from "./drawings";
 
 const PREFS_KEY = "arcus.chartx.prefs.v2",
@@ -406,7 +407,7 @@ export class ChartX {
     if (!this.evEls.size) {
       for (const e of this.evs) {
         const box = h("div", "cx-ev " + e.kind + (e.future ? " future" : ""));
-        const dot = h("button", "cx-ev-dot", e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "dividend" ? "$" : "S");
+        const dot = h("button", "cx-ev-dot", e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "macro" ? "M" : e.kind === "dividend" ? "$" : "S");
         dot.title = (e.future ? "Upcoming · " : "") + e.title;
         dot.onclick = (ev) => {
           ev.stopPropagation();
@@ -473,7 +474,7 @@ export class ChartX {
     const list = [...this.evs].sort((a, b) => b.t - a.t);
     for (const e of list) {
       const row = h("button", "cx-evlist-row" + (e.future ? " future" : ""));
-      const k = h("i", "cx-evlist-k " + e.kind, e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "dividend" ? "$" : "S");
+      const k = h("i", "cx-evlist-k " + e.kind, e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "macro" ? "M" : e.kind === "dividend" ? "$" : "S");
       const d = h("span", "cx-evlist-d", new Date(e.t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }));
       const t = h("span", "cx-evlist-t", (e.future ? "Upcoming · " : "") + e.title);
       row.append(k, d, t);
@@ -490,7 +491,7 @@ export class ChartX {
     P.replaceChildren();
     const when = new Date(e.t * 1000);
     const head = h("div", "cx-evpop-h");
-    head.append(h("b", "", (e.future ? "Upcoming · " : "") + (e.kind === "earnings" ? "Earnings" : e.kind === "news" ? "News" : e.kind === "dividend" ? "Dividend" : "Split")), h("span", "", when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: e.kind === "news" ? "short" : undefined })));
+    head.append(h("b", "", (e.future ? "Upcoming · " : "") + (e.kind === "earnings" ? "Earnings" : e.kind === "news" ? "News" : e.kind === "macro" ? "Market-wide event" : e.kind === "dividend" ? "Dividend" : "Split")), h("span", "", when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: e.kind === "news" ? "short" : undefined })));
     const x = h("button", "cx-evpop-x", "✕");
     x.onclick = () => (P.style.display = "none");
     head.append(x);
@@ -507,6 +508,14 @@ export class ChartX {
       a.rel = "noreferrer";
       a.textContent = "Open article ↗";
       P.append(a);
+    }
+    if (e.report) {
+      const rb = h("button", "cx-evpop-rep", e.kind === "earnings" ? "Open report table →" : "Open details →");
+      rb.onclick = () => {
+        P.style.display = "none";
+        openReport(e.report!);
+      };
+      P.append(rb);
     }
     if (e.source) P.append(h("small", "", "Source: " + e.source));
     P.style.display = "block";

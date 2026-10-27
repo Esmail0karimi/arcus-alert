@@ -200,6 +200,8 @@ const coreTickers = (() => {
     return [];
   }
 })();
+const MEGA = new Set("AAPL MSFT GOOGL GOOG AMZN META NVDA TSLA NFLX AVGO ORCL AMD".split(" "));
+const titleCase = (s) => String(s).toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\s+(Inc|Corp|Co|Ltd|Plc)\.?$/i, "");
 const parseCap = (s) => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
 const calRows = []; // {sym, day, t, time, cap, ...}
 async function earningsCalendar() {
@@ -225,12 +227,30 @@ async function earningsCalendar() {
       calRows.push({ sym, day, t, tm: /after/i.test(tm) ? "amc" : /pre|before/i.test(tm) ? "bmo" : "", cap, name: r.name, fq: r.fiscalQuarterEnding, eps: r.epsForecast, n: r.noOfEsts, lyEps: r.lastYearEPS, lyDate: r.lastYearRptDt });
     }
   });
+  // tracked stocks the day scan did not find (date not confirmed in the calendar, or further than 75 days): ask Nasdaq for the expected date directly
+  const nowMs = Date.now();
+  const missing = coreTickers.filter((s) => !calRows.some((r) => r.sym === s && r.t > nowMs - 36e5 * 30));
+  let fb = 0;
+  await pool(missing, 4, async (sym) => {
+    const j = await nq(`analyst/${sym}/earnings-date`);
+    const txt = JSON.stringify(j?.data || {});
+    const m = txt.match(/([A-Z][a-z]{2,8})\.? (\d{1,2}), (\d{4})/);
+    if (!m) return;
+    const mo = MON[m[1].slice(0, 3).toLowerCase()];
+    if (!mo) return;
+    const day = `${m[3]}-${String(mo).padStart(2, "0")}-${String(Number(m[2])).padStart(2, "0")}`;
+    const t = etToUtc(Number(m[3]), mo, Number(m[2]), 12, 0);
+    if (t < nowMs - 36e5 * 30) return;
+    calRows.push({ sym, day, t, tm: "", cap: MEGA.has(sym) ? 3e11 : 5e10, name: secMap.get(sym)?.name ? titleCase(secMap.get(sym).name) : sym, fq: "", eps: "", n: 0, lyEps: "", lyDate: "", estimated: true });
+    fb++;
+  });
+  if (missing.length) log(`earnings-date fallback: ${fb}/${missing.length} tracked stocks found`);
   for (const r of calRows) {
     events.push({
       id: "er" + r.sym + r.day, t: r.t, title: (r.name ? r.name.replace(/\s+(Inc\.?|Corporation|Corp\.?|Company|Ltd\.?|Limited|Class [A-C].*)$/i, "") : r.sym) + " earnings report",
       impact: r.cap >= 2e11 ? "High" : r.cap >= 3e10 ? "Medium" : "Low", kind: "earnings", symbol: r.sym, scope: "symbol", scopeText: "Only " + r.sym,
       forecast: r.eps || undefined, previous: r.lyEps || undefined,
-      extra: (r.tm === "amc" ? "After market close" : r.tm === "bmo" ? "Before market open" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : ""),
+      extra: (r.tm === "amc" ? "After market close" : r.tm === "bmo" ? "Before market open" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : "") + (r.estimated ? " · expected date (Nasdaq), not yet confirmed by the company" : ""),
       source: "Nasdaq",
     });
   }

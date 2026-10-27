@@ -17,7 +17,8 @@ export type NewsEv = {
   extra?: string;
   source: string;
 };
-export type NewsResult = { list: NewsEv[]; status: { name: string; ok: boolean; note?: string }[]; at: number };
+export type NewsResult = { list: NewsEv[]; status: { name: string; ok: boolean; note?: string; pending?: boolean }[]; at: number; rates?: Rates; hosted?: boolean };
+export type Rates = { yields: Record<string, number>; date: string; policy: number; hint: "cuts" | "hikes" | "hold"; hintText: string };
 
 const CK = "arcus.news.v1";
 const withTimeout = async (url: string, ms: number, signal?: AbortSignal) => {
@@ -83,7 +84,7 @@ const classify = (ev: { title: string; country: string; impact: string }): { imp
 
 const parseCap = (s: string) => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
 
-export async function fetchNews(tracked: Set<string>, signal?: AbortSignal, onPartial?: (r: NewsResult) => void): Promise<NewsResult> {
+async function fetchNewsBrowser(tracked: Set<string>, signal?: AbortSignal, onPartial?: (r: NewsResult) => void): Promise<NewsResult> {
   const list: NewsEv[] = [];
   const st = new Map<string, { name: string; ok: boolean; note?: string; pending?: boolean }>();
   const now = Date.now();
@@ -215,3 +216,99 @@ export const cachedNews = (): NewsResult | null => {
     return null;
   }
 };
+
+
+/* ---------- server-collected data ----------
+   A scheduled GitHub job reads ForexFactory, Nasdaq, SEC EDGAR, the Fed, Treasury, StockAnalysis and Finviz
+   (sources that block browsers) and publishes plain JSON on the `news-data` branch. raw.githubusercontent.com allows browser reads. */
+const HOSTS = ["https://raw.githubusercontent.com/Esmail0karimi/arcus-alert/news-data/", "https://cdn.jsdelivr.net/gh/Esmail0karimi/arcus-alert@news-data/"];
+export type Hosted = { at: number; events: NewsEv[]; rates?: Rates; sources: { name: string; ok: boolean; note?: string; n?: number }[]; details: string[] };
+export type Company = any;
+const HK = "arcus.newsdata.v1";
+const hget = async (path: string, signal?: AbortSignal): Promise<any> => {
+  const bust = "?v=" + Math.floor(Date.now() / 120000);
+  const one = async (base: string) => {
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 9000);
+    const onAbort = () => ctl.abort();
+    signal?.addEventListener("abort", onAbort);
+    try {
+      const r = await fetch(base + path + (base.includes("raw.") ? bust : ""), { signal: ctl.signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } finally {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  };
+  return Promise.any(HOSTS.map(one));
+};
+let hMem: { at: number; v: Hosted } | null = null;
+let hBusy: Promise<Hosted> | null = null;
+export const cachedHosted = (): Hosted | null => {
+  if (hMem) return hMem.v;
+  try {
+    const v = JSON.parse(localStorage.getItem(HK) || "null");
+    if (v && Array.isArray(v.events)) return v;
+  } catch {}
+  return null;
+};
+export async function loadHosted(signal?: AbortSignal, force = false): Promise<Hosted> {
+  if (!force && hMem && Date.now() - hMem.at < 3 * 60e3) return hMem.v;
+  if (hBusy) return hBusy;
+  hBusy = (async () => {
+    const v: Hosted = await hget("news.json", signal);
+    if (!v || !Array.isArray(v.events)) throw new Error("bad data");
+    hMem = { at: Date.now(), v };
+    try {
+      localStorage.setItem(HK, JSON.stringify(v));
+    } catch {}
+    return v;
+  })().finally(() => (hBusy = null));
+  return hBusy;
+}
+const cMem = new Map<string, { at: number; v: Company | null }>();
+export async function loadCompany(sym: string, signal?: AbortSignal): Promise<Company | null> {
+  const k = sym.toUpperCase();
+  const hit = cMem.get(k);
+  if (hit && Date.now() - hit.at < 10 * 60e3) return hit.v;
+  try {
+    const v = await hget("earn/" + encodeURIComponent(k) + ".json", signal);
+    cMem.set(k, { at: Date.now(), v });
+    return v;
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw e;
+    cMem.set(k, { at: Date.now(), v: null });
+    return null;
+  }
+}
+const ago = (t: number) => {
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  return m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago";
+};
+export function hostedToResult(h: Hosted, tracked: Set<string>): NewsResult {
+  const from = Date.now() - 3 * 864e5;
+  const list = h.events.filter((e) => e.t >= from && (e.kind !== "earnings" || (e.symbol && tracked.has(e.symbol))));
+  const status = [
+    ...h.sources.map((s) => ({ name: s.name, ok: s.ok, note: s.note })),
+    { name: "Server data", ok: true, note: "collected " + ago(h.at) },
+  ];
+  return { list, status, at: Date.now(), rates: h.rates, hosted: true };
+}
+
+/** Calendar + server data first (fast, no browser blocks); if the server data cannot be read, fall back to asking the sites directly. */
+export async function fetchNews(tracked: Set<string>, signal?: AbortSignal, onPartial?: (r: NewsResult) => void, force = false): Promise<NewsResult> {
+  try {
+    const h = await loadHosted(signal, force);
+    const res = hostedToResult(h, tracked);
+    try {
+      localStorage.setItem(CK, JSON.stringify(res));
+    } catch {}
+    return res;
+  } catch (e: any) {
+    if (signal?.aborted) throw e;
+    const res = await fetchNewsBrowser(tracked, signal, onPartial);
+    res.status.unshift({ name: "Server data", ok: false, note: "unreachable, asking the sites directly" });
+    return res;
+  }
+}

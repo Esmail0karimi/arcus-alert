@@ -1,6 +1,7 @@
 /* News tab: this week's market-moving events, colour-coded by importance, with who they affect. */
 import React, { useEffect, useMemo, useState } from "react";
 import { NewsEv, NewsResult, cachedNews, fetchNews } from "./newsdata";
+import { openReport } from "./report";
 
 const COL: Record<string, string> = { High: "#f23645", Medium: "#ff9800", Low: "#f2c94c", Holiday: "#6f86a3" };
 const SCOPE_ICON: Record<string, string> = { all: "🌍", currency: "💱", symbol: "📈" };
@@ -19,16 +20,19 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
   const [imp, setImp] = useState<string>(() => localStorage.getItem("arcus.news.imp") || "High+Medium");
   const [scope, setScope] = useState<string>("all");
   const [open, setOpen] = useState<string | null>(null);
-  const load = () => {
+  const load = (force = false) => {
     setBusy(true);
-    fetchNews(p.trackedBases, undefined, (r) => setRes((prev) => (!prev || r.list.some((e) => e.source !== "Fed calendar (built-in)") ? r : { ...prev, status: r.status })))
+    fetchNews(p.trackedBases, undefined, (r) => setRes((prev) => (!prev || r.list.some((e) => e.source !== "Fed calendar (built-in)") ? r : { ...prev, status: r.status })), force)
       .then((r) => setRes(r))
       .catch(() => {})
       .finally(() => setBusy(false));
   };
   useEffect(() => {
-    if (!res || Date.now() - res.at > 10 * 60e3) load();
+    if (!res || Date.now() - res.at > 3 * 60e3 || !res.hosted) load();
   }, []);
+  useEffect(() => {
+    if (res?.hosted) load();
+  }, [p.trackedBases]);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(id);
@@ -65,7 +69,7 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
           <h1>News</h1>
           <p>Scheduled events that move markets: central banks, economic data and earnings. Times are in your local time.</p>
         </div>
-        <button className="secondary" onClick={load} disabled={busy}>
+        <button className="secondary" onClick={() => load(true)} disabled={busy}>
           {busy ? "Loading…" : "⟳ Refresh"}
         </button>
       </div>
@@ -79,7 +83,10 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
           <b style={{ color: COL[nextStock.impact] }}>{nextStock.t > now ? "Next stock event" : "Latest stock event"}</b> · {nextStock.title} <em>{rel(nextStock.t, now)}</em> ·{" "}
           <span>{new Date(nextStock.t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
           {nextStock.symbol && (
-            <button onClick={() => p.onOpen(nextStock.symbol!)}>Open {nextStock.symbol} →</button>
+            <>
+              <button onClick={() => openReport({ symbol: nextStock.symbol! })}>Report table</button>
+              <button onClick={() => p.onOpen(nextStock.symbol!)}>Open {nextStock.symbol} →</button>
+            </>
           )}
         </div>
       )}
@@ -120,6 +127,14 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
           <span>updated {new Date(res.at).toLocaleTimeString()}</span>
         </div>
       )}
+      {res?.rates && (
+        <div className="news-rates">
+          <b>Fed rate path (rough)</b> · {res.rates.hintText.replace(/ Rough estimate, not CME FedWatch.*$/, "")}{" "}
+          <a href="https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html" target="_blank" rel="noreferrer">
+            CME FedWatch ↗
+          </a>
+        </div>
+      )}
       {!res && busy && <div className="empty">Loading the calendar…</div>}
       {res && !shown.length && <div className="empty">No events match these filters. Try “All” importance.</div>}
       {byDay.map(([day, evs]) => (
@@ -132,7 +147,7 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
             const past = e.t < now;
             const c = COL[e.impact];
             return (
-              <div key={e.id} className={"news-row" + (past ? " past" : "")} style={{ borderLeftColor: c }} onClick={() => setOpen(open === e.id ? null : e.id)}>
+              <div key={e.id} className={"news-row" + (past ? " past" : "")} style={{ borderLeftColor: c }} onClick={() => (e.kind === "earnings" && e.symbol ? openReport({ symbol: e.symbol }) : res?.hosted ? openReport({ evId: e.id }) : setOpen(open === e.id ? null : e.id))}>
                 <div className="news-time">
                   {new Date(e.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   <small>{rel(e.t, now)}</small>
@@ -179,7 +194,15 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
           })}
         </section>
       ))}
-      <p className="news-foot">Importance and “who it affects” are our own rules of thumb, not trading advice. A central-bank decision usually moves everything; a company report mostly moves that stock.</p>
+      <p className="news-foot news-src">
+        More sources:{" "}
+        {[["FRED calendar", "https://fred.stlouisfed.org/releases/calendar"], ["SEC EDGAR", "https://www.sec.gov/edgar/search/"], ["Investing.com", "https://www.investing.com/economic-calendar/"], ["CME FedWatch", "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html"], ["StockAnalysis", "https://stockanalysis.com/stocks/screener/"], ["Macrotrends", "https://www.macrotrends.net/"]].map(([n, u]) => (
+          <a key={n} href={u} target="_blank" rel="noreferrer">
+            {n} ↗
+          </a>
+        ))}
+      </p>
+      <p className="news-foot">Tip: click any row for its report window (previous / forecast / actual and what could happen). Importance and “who it affects” are our own rules of thumb, not trading advice. A central-bank decision usually moves everything; a company report mostly moves that stock.</p>
     </div>
   );
 }

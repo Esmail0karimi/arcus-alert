@@ -8,6 +8,7 @@ import { fetchEvents } from "./events";
 import { SessionBar } from "./sessions";
 import { IpBadge } from "./ipbadge";
 import { News } from "./news";
+import { ReportHost } from "./report";
 import { Screener } from "./screener";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
@@ -461,6 +462,13 @@ function App() {
     return Array.from(best.values()).sort();
   }, [prices, exOn, mergeDup]);
   const newsBases = useMemo(() => new Set(symbols.filter((x) => classifySymbol(x, marketCategories.current) === "Stocks").map((x) => assetBase(dn(x)))), [symbols]);
+  const openBase = (b: string) => {
+    const hit = symbols.find((x) => assetBase(dn(x)) === b);
+    if (hit) {
+      setSymbol(hit);
+      setTab("Chart");
+    }
+  };
   const screenerItems = useMemo(
     () => symbols.map((x) => ({ sym: x, name: dn(x), base: assetBase(dn(x)), change: prices[x]?.change24h ?? null, price: prices[x]?.price })),
     [symbols, prices],
@@ -1649,7 +1657,7 @@ function App() {
         if (ctl.signal.aborted) return;
         chartX.current?.setEvents(r.list);
         chartX.current?.setEventsStatus(
-          r.list.length ? r.list.length + " found" + (r.failed ? " · failed: " + r.names.join(", ") : "") : r.failed === r.total ? "sources unreachable (Yahoo/Nasdaq blocked)" : "nothing found for this symbol",
+          r.list.length ? r.list.length + " found" + (r.failed ? " · unavailable: " + r.names.join(", ") : "") : r.failed === r.total ? "sources unreachable" : "nothing found for this symbol",
         );
       })
       .catch(() => {});
@@ -2650,18 +2658,7 @@ function App() {
               })}
           </>
         )}
-        {tab === "News" && (
-          <News
-            trackedBases={newsBases}
-            onOpen={(b) => {
-              const hit = symbols.find((x) => assetBase(dn(x)) === b);
-              if (hit) {
-                setSymbol(hit);
-                setTab("Chart");
-              }
-            }}
-          />
-        )}
+        {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
         {tab === "Screener" && (
           <Screener
             items={screenerItems}
@@ -2672,6 +2669,7 @@ function App() {
           />
         )}
         {tab === "Guide" && <Guide />}
+        <ReportHost onOpenChart={openBase} />
         {tab === "Watchlist" && (
           <>
             <div className="heading">

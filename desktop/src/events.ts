@@ -2,8 +2,10 @@
    Best effort: every source can fail (CORS, rate limits); whatever works is shown. */
 import { yfGet, yfSym } from "./exchanges";
 import { findAsset } from "./assetinfo";
+import { loadCompany, loadHosted } from "./newsdata";
+import type { ReportReq } from "./report";
 
-export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split"; title: string; detail?: string; url?: string; source?: string; future: boolean };
+export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split" | "macro"; report?: ReportReq; title: string; detail?: string; url?: string; source?: string; future: boolean };
 
 export type EvResult = { list: Ev[]; failed: number; total: number; names: string[] };
 const cache = new Map<string, { at: number; v: EvResult }>();
@@ -34,6 +36,40 @@ export async function fetchEvents(base: string, signal?: AbortSignal, name?: str
   const jobs: Promise<void>[] = [];
   const jobNames: string[] = [];
 
+  // 0) the same server data the News tab uses: earnings dates + history, SEC filings, headlines, big macro events
+  jobNames.push("News data");
+  let gotHosted = false;
+  jobs.push(
+    (async () => {
+      const h = await loadHosted(signal);
+      const nowMs = Date.now();
+      const rep: ReportReq = { symbol: base };
+      for (const e of h.events) {
+        if (e.kind === "earnings" && e.symbol === base) {
+          add({ t: Math.floor(e.t / 1000), kind: "earnings", title: e.t > nowMs ? "Earnings report" : "Earnings report (today/just now)", detail: [e.forecast ? "Analysts expect EPS " + e.forecast : "", e.extra || ""].filter(Boolean).join(" · "), source: e.source, report: rep });
+          gotHosted = true;
+        } else if (e.kind === "macro" && e.impact === "High" && e.scope === "all" && e.t > nowMs - 90 * 864e5) {
+          add({ t: Math.floor(e.t / 1000), kind: "macro", title: e.title, detail: "Affects all markets" + (e.forecast ? " · forecast " + e.forecast : "") + (e.previous ? " · previous " + e.previous : ""), source: e.source, report: { evId: e.id } });
+          gotHosted = true;
+        }
+      }
+      const c = await loadCompany(base, signal);
+      if (c) {
+        for (const x of c.history || []) {
+          if (!x.reported) continue;
+          const t = Date.parse(x.reported + "T21:00:00Z") / 1000; // reports come around the US close
+          const sur = x.surprisePct;
+          add({ t, kind: "earnings", title: "Earnings report " + (x.period || ""), detail: "EPS " + x.epsActual + " vs estimate " + x.epsEst + (sur != null ? " (" + (sur >= 0 ? "+" : "") + sur + "% surprise)" : ""), source: "Nasdaq", report: rep });
+        }
+        for (const f of c.filings || []) {
+          const t = Date.parse(f.date + "T14:00:00Z") / 1000;
+          add({ t, kind: "news", title: "SEC filing " + f.form + (/2\.02/.test(f.items || "") ? " · results" : ""), detail: "Filed with the SEC on " + f.date, url: f.url, source: "SEC EDGAR" });
+        }
+        for (const n of c.news || []) add({ t: Math.floor(n.t / 1000), kind: "news", title: n.title, detail: n.source ? "Published by " + n.source : undefined, url: n.url, source: n.source || "Finviz" });
+        gotHosted = true;
+      }
+    })(),
+  );
   // 1) past earnings / dividends / splits that Yahoo keeps with the price history
   jobNames.push("past earnings/dividends");
   jobs.push(
@@ -134,11 +170,18 @@ export async function fetchEvents(base: string, signal?: AbortSignal, name?: str
       })(),
     );
   }
-  const settled = await Promise.allSettled(jobs);
-  const failed = settled.filter((x) => x.status === "rejected").length;
+  const state: ("run" | "ok" | "fail")[] = jobs.map(() => "run");
+  const all = Promise.all(jobs.map((j, i) => j.then(() => void (state[i] = "ok"), () => void (state[i] = "fail"))));
+  // when the server data answered, do not wait more than 4 s for the browser-blocked sources
+  const quick = jobs[0].then(
+    () => new Promise<void>((r) => window.setTimeout(r, 4000)),
+    () => all,
+  );
+  await Promise.race([all, quick]);
+  const failed = state.filter((x) => x === "fail").length;
   const seen = new Set<string>();
   const list = out.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
-  const res: EvResult = { list, failed, total: jobs.length, names: settled.map((x, i) => (x.status === "rejected" ? jobNames[i] : "")).filter(Boolean) };
+  const res: EvResult = { list, failed, total: jobs.length, names: state.map((x, i) => (x === "fail" ? jobNames[i] : "")).filter(Boolean) };
   if (list.length) cache.set(base, { at: Date.now(), v: res });
   return res;
 }
