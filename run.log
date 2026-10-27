@@ -1,23 +1,20 @@
    3s ForexFactory nextweek HTTP 404
-  62s   fallback probe: META nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"META Earnings Date","announcement":"Earnings announcement* for META: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  62s   fallback probe: META finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  62s   fallback probe: TSLA nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"TSLA Earnings Date","announcement":"Earnings announcement* for TSLA: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  62s   fallback probe: TSLA finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  62s   fallback probe: QQQ finviz: 
-  62s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  62s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  62s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  62s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  62s   fallback probe: BRKB fromFinviz error: HTTP 404
-  62s   fallback probe: BRK fromFinviz error: HTTP 404
-  62s   fallback probe: BRKB fromSA error: HTTP 404
-  62s earnings-date fallback: 22/65 tracked stocks found
-  62s details: 778 companies, refreshing 110
-  96s   detail fail BRK.A finviz HTTP 404
-  97s   detail fail BRK.B finviz HTTP 404
- 121s   detail fail PBR.A finviz HTTP 404
- 184s details written 110, empty 0
- 184s news.json: 870 events, 440 company files
+  61s   fallback probe: TSLA nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"TSLA Earnings Date","announcement":"Earnings announcement* for TSLA: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  61s   fallback probe: META nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"META Earnings Date","announcement":"Earnings announcement* for META: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  61s   fallback probe: NFLX nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"NFLX Earnings Date","announcement":"Earnings announcement* for NFLX: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  61s   fallback probe: META finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  61s   fallback probe: TSLA finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  61s   fallback probe: NFLX finviz: >Earnings Oct 20 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  61s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  61s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  61s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  61s   fallback probe: BRK fromFinviz error: HTTP 404
+  61s   fallback probe: BRKB fromFinviz error: HTTP 404
+  61s   fallback probe: BRK fromSA error: HTTP 404
+  61s earnings-date fallback: 22/65 tracked stocks found
+  61s details: 778 companies, refreshing 110
+ 178s details written 110, empty 0
+ 178s news.json: 870 events, 486 company files
 [
  {
   "name": "Fed calendar",
@@ -68,7 +65,7 @@
  {
   "name": "Finviz headlines",
   "ok": true,
-  "note": "107/110 companies",
-  "n": 107
+  "note": "110/110 companies",
+  "n": 110
  }
 ]
