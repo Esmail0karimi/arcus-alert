@@ -1,0 +1,58 @@
+   3s ForexFactory nextweek HTTP 404
+  22s details: 777 companies, refreshing 45
+  74s details written 45, empty 0
+  74s news.json: 849 events, 45 company files
+[
+ {
+  "name": "Fed calendar",
+  "ok": true,
+  "note": "9 meetings (official)",
+  "n": 9
+ },
+ {
+  "name": "SEC EDGAR",
+  "ok": true,
+  "note": "10429 companies"
+ },
+ {
+  "name": "Treasury yields",
+  "ok": true,
+  "note": "curve of 2026-10-26"
+ },
+ {
+  "name": "ForexFactory",
+  "ok": true,
+  "note": "97 events (2 weeks)",
+  "n": 97
+ },
+ {
+  "name": "Nasdaq earnings",
+  "ok": true,
+  "note": "744 reports in 55 days",
+  "n": 744
+ },
+ {
+  "name": "Nasdaq analysts",
+  "ok": true,
+  "note": "45/45 companies",
+  "n": 45
+ },
+ {
+  "name": "StockAnalysis",
+  "ok": true,
+  "note": "45/45 companies",
+  "n": 45
+ },
+ {
+  "name": "SEC press releases",
+  "ok": true,
+  "note": "45/45 companies",
+  "n": 45
+ },
+ {
+  "name": "Finviz headlines",
+  "ok": true,
+  "note": "45/45 companies",
+  "n": 45
+ }
+]
