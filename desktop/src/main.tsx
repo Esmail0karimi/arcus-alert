@@ -6,6 +6,8 @@ import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-chart
 import { attachChartX, type ChartX } from "./chartx/controller";
 import { fetchEvents } from "./events";
 import { SessionBar } from "./sessions";
+import { News } from "./news";
+import { Screener } from "./screener";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -43,7 +45,7 @@ declare global {
     arcusDesktop: any;
   }
 }
-const TABS = ["Market", "Watchlist", "Chart", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Screener", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -457,6 +459,11 @@ function App() {
     }
     return Array.from(best.values()).sort();
   }, [prices, exOn, mergeDup]);
+  const newsBases = useMemo(() => new Set(symbols.map((x) => assetBase(dn(x)))), [symbols]);
+  const screenerItems = useMemo(
+    () => symbols.map((x) => ({ sym: x, name: dn(x), base: assetBase(dn(x)), change: prices[x]?.change24h ?? null, price: prices[x]?.price })),
+    [symbols, prices],
+  );
   useEffect(
     () =>
       onAuthStateChanged(auth, (next) => {
@@ -2641,6 +2648,27 @@ function App() {
               })}
           </>
         )}
+        {tab === "News" && (
+          <News
+            trackedBases={newsBases}
+            onOpen={(b) => {
+              const hit = symbols.find((x) => assetBase(dn(x)) === b);
+              if (hit) {
+                setSymbol(hit);
+                setTab("Chart");
+              }
+            }}
+          />
+        )}
+        {tab === "Screener" && (
+          <Screener
+            items={screenerItems}
+            onOpen={(sym) => {
+              setSymbol(sym);
+              setTab("Chart");
+            }}
+          />
+        )}
         {tab === "Guide" && <Guide />}
         {tab === "Watchlist" && (
           <>
@@ -3705,7 +3733,7 @@ function App() {
       <nav>
         {TABS.map((t, i) => (
           <button className={tab === t ? "active" : ""} onClick={() => setTab(t)} key={t}>
-            <span>{["▦", "☆", "⌁", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "⌕", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
