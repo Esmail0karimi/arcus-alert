@@ -7,7 +7,7 @@ URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 if git clone -q --depth 1 --branch news-data "$URL" "$PUB" 2>/dev/null; then :; else
   git init -q "$PUB"; git -C "$PUB" checkout -q -b news-data; git -C "$PUB" remote add origin "$URL"
 fi
-cp -r "$SRC"/. "$PUB"/
+rm -rf "$PUB/samples"; cp -r "$SRC"/. "$PUB"/
 cd "$PUB"
 git config user.name "arcus-news-bot"; git config user.email "bot@users.noreply.github.com"
 git add -A

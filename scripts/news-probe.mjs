@@ -1,6 +1,8 @@
 // One-off probe: which data sources answer from a GitHub runner (server side, no CORS)?
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const SEC_UA = "ArcusAlert research contact karimiesmail37@gmail.com";
+import fs from "node:fs";
+fs.mkdirSync("out/samples", { recursive: true });
 const T = "META";
 const tests = [
   ["ForexFactory", "https://nfs.faireconomy.media/ff_calendar_thisweek.json", {}],
@@ -28,14 +30,22 @@ const tests = [
   ["Fed calendar", "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", { "User-Agent": UA }],
   ["Treasury", "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=202610", { "User-Agent": UA }],
   ["GDELT", "https://api.gdeltproject.org/api/v2/doc/doc?mode=artlist&format=json&maxrecords=3&query=%22Meta%20Platforms%22", { "User-Agent": UA }],
+  ["FRED data txt", "https://fred.stlouisfed.org/data/DFEDTARU.txt", { "User-Agent": UA }],
+  ["FRED csv2", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARU&cosd=2025-01-01", { "User-Agent": UA }],
+  ["Nasdaq cal wide", "https://api.nasdaq.com/api/calendar/earnings?date=2026-11-04", { "User-Agent": UA, Accept: "application/json" }],
+  ["Nasdaq info", `https://api.nasdaq.com/api/quote/${T}/info?assetclass=stocks`, { "User-Agent": UA, Accept: "application/json" }],
+  ["Nasdaq est mom", `https://api.nasdaq.com/api/analyst/${T}/estimate-momentum`, { "User-Agent": UA, Accept: "application/json" }],
+  ["Nasdaq target", `https://api.nasdaq.com/api/analyst/${T}/targetprice`, { "User-Agent": UA, Accept: "application/json" }],
+  ["Nasdaq ratings", `https://api.nasdaq.com/api/analyst/${T}/ratings`, { "User-Agent": UA, Accept: "application/json" }],
   ["Finviz", `https://finviz.com/quote.ashx?t=${T}`, { "User-Agent": UA }],
 ];
 for (const [name, url, headers] of tests) {
   try {
     const ctl = new AbortController();
-    const to = setTimeout(() => ctl.abort(), 15000);
+    const to = setTimeout(() => ctl.abort(), 45000);
     const r = await fetch(url, { headers, signal: ctl.signal });
     const txt = await r.text();
+    if (r.status === 200) fs.writeFileSync("out/samples/" + name.replace(/\W+/g, "_") + ".txt", txt.slice(0, 400000));
     clearTimeout(to);
     console.log(`${r.status === 200 ? "OK  " : "FAIL"} ${name.padEnd(18)} ${r.status} ${txt.length}B  ${txt.slice(0, 160).replace(/\s+/g, " ")}`);
   } catch (e) {
