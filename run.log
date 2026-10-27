@@ -1,7 +1,7 @@
    3s ForexFactory nextweek HTTP 404
-  22s details: 777 companies, refreshing 45
-  74s details written 45, empty 0
-  74s news.json: 849 events, 45 company files
+  23s details: 777 companies, refreshing 110
+ 144s details written 110, empty 0
+ 144s news.json: 849 events, 155 company files
 [
  {
   "name": "Fed calendar",
@@ -34,25 +34,25 @@
  {
   "name": "Nasdaq analysts",
   "ok": true,
-  "note": "45/45 companies",
-  "n": 45
+  "note": "110/110 companies",
+  "n": 110
  },
  {
   "name": "StockAnalysis",
   "ok": true,
-  "note": "45/45 companies",
-  "n": 45
+  "note": "110/110 companies",
+  "n": 110
  },
  {
   "name": "SEC press releases",
   "ok": true,
-  "note": "45/45 companies",
-  "n": 45
+  "note": "110/110 companies",
+  "n": 110
  },
  {
   "name": "Finviz headlines",
   "ok": true,
-  "note": "45/45 companies",
-  "n": 45
+  "note": "110/110 companies",
+  "n": 110
  }
 ]
