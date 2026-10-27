@@ -94,35 +94,61 @@ export async function fetchNews(tracked: Set<string>, signal?: AbortSignal): Pro
     list.push({ id: "fomc" + d, t, title: "FOMC interest-rate decision & statement", impact: "High", kind: "macro", currency: "USD", scope: "all", scopeText: "All markets", extra: "Press conference follows at 14:30 New York time.", source: "Fed calendar (built-in)" });
   }
   status.push({ name: "Fed dates", ok: true, note: "built-in schedule" });
-  // 3) earnings from Nasdaq for the next 10 days, only for symbols this app tracks
-  let eOk = 0, eTry = 0;
-  const days: string[] = [];
-  for (let i = -1; i < 10; i++) days.push(new Date(now + i * 864e5).toISOString().slice(0, 10));
-  await Promise.all(
-    days.map(async (day) => {
-      eTry++;
+  // 3) earnings from Nasdaq: the next 10 days; if no tracked stock reports by then, keep looking up to ~100 days
+  let eOk = 0;
+  const dayStr = (i: number) => new Date(now + i * 864e5).toISOString().slice(0, 10);
+  const scanDay = async (day: string) => {
+    try {
+      const j = await get("https://api.nasdaq.com/api/calendar/earnings?date=" + day, signal);
+      const rows: any[] = j?.data?.rows || [];
+      eOk++;
+      for (const r of rows) {
+        const sym = String(r.symbol || "").toUpperCase();
+        if (!sym || !tracked.has(sym)) continue;
+        const cap = parseCap(r.marketCap);
+        const hh = /after/i.test(r.time || "") ? 16 : /pre|before/i.test(r.time || "") ? 8 : 12;
+        const t = nyUtc(day, hh, hh === 12 ? 0 : 5);
+        list.push({
+          id: "er" + sym + day, t, title: (r.name ? r.name + " " : sym + " ") + "earnings report", impact: cap >= 2e11 ? "High" : "Medium", kind: "earnings", symbol: sym,
+          scope: "symbol", scopeText: "Only " + sym, forecast: r.epsForecast || undefined, previous: r.lastYearEPS || undefined,
+          extra: (/after/i.test(r.time || "") ? "After market close" : /pre|before/i.test(r.time || "") ? "Before market open" : "Time not announced") + (r.fiscalQuarterEnding ? " · quarter " + r.fiscalQuarterEnding : ""), source: "Nasdaq",
+        });
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") throw e;
+    }
+  };
+  const first: number[] = [];
+  for (let i = -1; i < 10; i++) first.push(i);
+  await Promise.all(first.map((i) => scanDay(dayStr(i))));
+  const hasStock = () => list.some((x) => x.kind === "earnings" && x.t > now);
+  for (let start = 10; start < 100 && eOk > 0 && !hasStock(); start += 10) {
+    const batch: number[] = [];
+    for (let i = start; i < start + 10; i++) if (new Date(now + i * 864e5).getUTCDay() % 6 !== 0) batch.push(i);
+    await Promise.all(batch.map((i) => scanDay(dayStr(i))));
+  }
+  let note = eOk ? "" : "Nasdaq unreachable";
+  if (!hasStock()) {
+    // fallback: the most recent reports of tracked stocks, from Yahoo's price history (shows the source works)
+    let n = 0;
+    for (const b of [...tracked].slice(0, 12)) {
       try {
-        const j = await get("https://api.nasdaq.com/api/calendar/earnings?date=" + day, signal);
-        const rows: any[] = j?.data?.rows || [];
-        eOk++;
-        for (const r of rows) {
-          const sym = String(r.symbol || "").toUpperCase();
-          if (!sym || !tracked.has(sym)) continue;
-          const cap = parseCap(r.marketCap);
-          const hh = /after/i.test(r.time || "") ? 16 : /pre|before/i.test(r.time || "") ? 8 : 12;
-          const t = nyUtc(day, hh, hh === 12 ? 0 : 5);
-          list.push({
-            id: "er" + sym + day, t, title: (r.name ? r.name + " " : sym + " ") + "earnings report", impact: cap >= 2e11 ? "High" : "Medium", kind: "earnings", symbol: sym,
-            scope: "symbol", scopeText: "Only " + sym, forecast: r.epsForecast || undefined, previous: r.lastYearEPS || undefined,
-            extra: (/after/i.test(r.time || "") ? "After market close" : /pre|before/i.test(r.time || "") ? "Before market open" : "Time not announced") + (r.fiscalQuarterEnding ? " · quarter " + r.fiscalQuarterEnding : ""), source: "Nasdaq",
-          });
+        const j = await get("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(b) + "?interval=1d&range=6mo&events=earn", signal);
+        const ev = j?.chart?.result?.[0]?.events?.earnings || {};
+        for (const e of Object.values<any>(ev)) {
+          const t = Number(e.date) * 1000;
+          if (!t) continue;
+          list.push({ id: "pe" + b + t, t, title: b + " earnings report (past)", impact: "Medium", kind: "earnings", symbol: b, scope: "symbol", scopeText: "Only " + b, forecast: e.epsEstimate != null ? String(e.epsEstimate) : undefined, previous: undefined, extra: e.epsActual != null ? "Reported EPS " + e.epsActual + (e.epsEstimate != null ? " vs estimate " + e.epsEstimate : "") : "Already reported", source: "Yahoo Finance" });
+          n++;
         }
       } catch (e: any) {
         if (e?.name === "AbortError") throw e;
       }
-    }),
-  );
-  status.push({ name: "Earnings", ok: eOk > 0, note: eOk ? "" : "Nasdaq unreachable" });
+      if (n >= 6) break;
+    }
+    note = (eOk ? "no upcoming report found" : "calendar unreachable") + (n ? " · showing " + n + " recent reports (Yahoo)" : tracked.size ? " · no stock data" : " · no stocks in your lists");
+  }
+  status.push({ name: "Earnings", ok: eOk > 0 || list.some((x) => x.kind === "earnings"), note });
   const seen = new Set<string>();
   const out = list.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
   const res = { list: out, status, at: now };

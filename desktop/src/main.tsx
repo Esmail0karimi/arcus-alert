@@ -6,6 +6,7 @@ import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-chart
 import { attachChartX, type ChartX } from "./chartx/controller";
 import { fetchEvents } from "./events";
 import { SessionBar } from "./sessions";
+import { IpBadge } from "./ipbadge";
 import { News } from "./news";
 import { Screener } from "./screener";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
@@ -459,7 +460,7 @@ function App() {
     }
     return Array.from(best.values()).sort();
   }, [prices, exOn, mergeDup]);
-  const newsBases = useMemo(() => new Set(symbols.map((x) => assetBase(dn(x)))), [symbols]);
+  const newsBases = useMemo(() => new Set(symbols.filter((x) => classifySymbol(x, marketCategories.current) === "Stocks").map((x) => assetBase(dn(x)))), [symbols]);
   const screenerItems = useMemo(
     () => symbols.map((x) => ({ sym: x, name: dn(x), base: assetBase(dn(x)), change: prices[x]?.change24h ?? null, price: prices[x]?.price })),
     [symbols, prices],
@@ -2494,6 +2495,7 @@ function App() {
           >
             ◷ History{history.length > 0 && <b>{history.length}</b>}
           </button>
+          <IpBadge />
         </div>
       </header>
       {tab !== "Chart" && <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />}

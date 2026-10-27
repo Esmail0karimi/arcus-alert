@@ -433,3 +433,6 @@ nav button{flex:1 1 0;width:auto!important;max-width:130px;min-width:0}
 .scr-row:not(.head):hover{background:#0c1f35}.scr-row.head{cursor:default;color:#6f86a3;font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:#071629}
 .scr-row span{text-align:right;white-space:nowrap}.scr-row b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scr-row .hot{color:#f2c94c;font-weight:700}
 @media(max-width:760px){.scr-row{grid-template-columns:minmax(80px,1.4fr) repeat(4,minmax(52px,1fr))}.scr-row span:nth-child(n+7){display:none}.news-row{grid-template-columns:62px minmax(0,1fr)}.news-side{grid-column:2;align-items:flex-start;flex-direction:row;flex-wrap:wrap;gap:8px}}
+
+.ip-badge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:34px;line-height:1}.ip-badge img{border-radius:2px;box-shadow:0 0 0 1px #24364e;display:block}.ip-badge small{font-size:10px;font-weight:700;color:#9fb4cc;letter-spacing:.5px}.ip-badge.off{opacity:.5}
+.news-next.stock{background:#0d1a2b;margin-top:-4px}.news-next.stock button{margin-left:8px;padding:2px 9px;font-size:11px}

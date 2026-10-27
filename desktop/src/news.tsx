@@ -44,6 +44,10 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
     return (res?.list || []).filter((e) => okImp(e) && (scope === "all" || (scope === "global" ? e.scope === "all" : scope === "stock" ? e.scope === "symbol" : e.scope === "currency")));
   }, [res, imp, scope]);
   const next = useMemo(() => (res?.list || []).find((e) => e.t > now && e.impact === "High"), [res, now]);
+  const nextStock = useMemo(() => {
+    const st = (res?.list || []).filter((e) => e.kind === "earnings");
+    return st.find((e) => e.t > now) || st[st.length - 1];
+  }, [res, now]);
   const byDay = useMemo(() => {
     const m = new Map<string, NewsEv[]>();
     for (const e of shown) {
@@ -68,6 +72,15 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
       {next && (
         <div className="news-next" style={{ borderColor: COL.High }}>
           <b style={{ color: COL.High }}>Next big event</b> · {next.title} <em>{rel(next.t, now)}</em> · <span>{SCOPE_ICON[next.scope]} {next.scopeText}</span>
+        </div>
+      )}
+      {nextStock && (
+        <div className="news-next stock" style={{ borderColor: COL[nextStock.impact] }}>
+          <b style={{ color: COL[nextStock.impact] }}>{nextStock.t > now ? "Next stock event" : "Latest stock event"}</b> · {nextStock.title} <em>{rel(nextStock.t, now)}</em> ·{" "}
+          <span>{new Date(nextStock.t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
+          {nextStock.symbol && (
+            <button onClick={() => p.onOpen(nextStock.symbol!)}>Open {nextStock.symbol} →</button>
+          )}
         </div>
       )}
       <div className="news-filters">
