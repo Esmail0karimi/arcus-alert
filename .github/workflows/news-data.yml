@@ -1,11 +1,11 @@
 name: News data (server-side fetch)
 
 # Fetches calendars / earnings / filings from sources browsers cannot read (CORS, bot blocks)
-# and publishes one JSON file on the `news-data` branch. The web app reads it from raw.githubusercontent.com.
+# and publishes JSON files on the `news-data` branch. The web app reads them from raw.githubusercontent.com.
 on:
   push:
     branches: [experiment/qfex]
-    paths: [scripts/news-probe.mjs, scripts/publish.sh, scripts/news-data.mjs, .github/workflows/news-data.yml]
+    paths: [scripts/news-probe.mjs, scripts/news-data.mjs, scripts/publish.sh, .github/workflows/news-data.yml]
   workflow_dispatch:
     inputs:
       mode:
@@ -24,16 +24,31 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
           ref: experiment/qfex
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: news-data
+          path: prev
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Probe sources
-        if: ${{ github.event.inputs.mode == 'probe' || github.event_name == 'push' }}
+        if: ${{ github.event.inputs.mode == 'probe' }}
         run: |
           mkdir -p out
           node scripts/news-probe.mjs | tee out/probe.txt
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} scripts/publish.sh out
+      - name: Build news data
+        if: ${{ github.event.inputs.mode != 'probe' }}
+        env:
+          PREV_DIR: prev
+          OUT_DIR: out
+        run: |
+          mkdir -p out
+          node scripts/news-data.mjs 2>&1 | tee out/run.log
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} scripts/publish.sh out
