@@ -1,5 +1,5 @@
 /* Market-moving events for the News tab: ForexFactory calendar (macro), Nasdaq earnings (single stocks), built-in Fed dates as a fallback. */
-import { yfGet } from "./exchanges";
+import { YF_WRAP } from "./exchanges";
 
 export type Impact = "High" | "Medium" | "Low" | "Holiday";
 export type NewsEv = {
@@ -20,14 +20,36 @@ export type NewsEv = {
 export type NewsResult = { list: NewsEv[]; status: { name: string; ok: boolean; note?: string }[]; at: number };
 
 const CK = "arcus.news.v1";
-const get = async (url: string, signal?: AbortSignal) => {
+const withTimeout = async (url: string, ms: number, signal?: AbortSignal) => {
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), ms);
+  const onAbort = () => ctl.abort();
+  signal?.addEventListener("abort", onAbort);
   try {
-    const r = await fetch(url, { signal });
-    if (r.ok) return await r.json();
-  } catch (e: any) {
-    if (e?.name === "AbortError") throw e;
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
-  return yfGet(url, signal); // direct failed (CORS / rate limit): try the public relays
+};
+let relayOk = -1; // index of the relay that worked last time
+/** Direct first (4 s); if blocked, ask every public relay at once and take the first answer. */
+const get = async (url: string, signal?: AbortSignal): Promise<any> => {
+  if (relayOk < 0) {
+    try {
+      return await withTimeout(url, 4000, signal);
+    } catch (e: any) {
+      if (signal?.aborted) throw e;
+    }
+  }
+  const wraps = YF_WRAP.map((w, i) => ({ w, i })).filter((x) => x.i > 0);
+  const order = relayOk > 0 ? [wraps.find((x) => x.i === relayOk)!, ...wraps.filter((x) => x.i !== relayOk)] : wraps;
+  return Promise.any(order.map((x) => withTimeout(x.w(url), 6500, signal).then((j) => ((relayOk = x.i), j)))).catch((e) => {
+    relayOk = -1;
+    throw e;
+  });
 };
 
 /** FOMC decision days (second day of each meeting), 14:00 New York time. */
@@ -61,98 +83,124 @@ const classify = (ev: { title: string; country: string; impact: string }): { imp
 
 const parseCap = (s: string) => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
 
-export async function fetchNews(tracked: Set<string>, signal?: AbortSignal): Promise<NewsResult> {
+export async function fetchNews(tracked: Set<string>, signal?: AbortSignal, onPartial?: (r: NewsResult) => void): Promise<NewsResult> {
   const list: NewsEv[] = [];
-  const status: NewsResult["status"] = [];
+  const st = new Map<string, { name: string; ok: boolean; note?: string; pending?: boolean }>();
   const now = Date.now();
-  // 1) ForexFactory weekly calendar (this week + next week)
-  const ffAll: any[] = [];
-  let ffOk = false;
-  for (const w of ["thisweek", "nextweek"]) {
-    try {
-      const j = await get("https://nfs.faireconomy.media/ff_calendar_" + w + ".json", signal);
-      if (Array.isArray(j)) {
-        ffAll.push(...j);
-        ffOk = true;
-      }
-    } catch (e: any) {
-      if (e?.name === "AbortError") throw e;
-    }
-  }
-  for (const e of ffAll) {
-    const t = Date.parse(e.date);
-    if (!t || !e.title) continue;
-    const c = classify(e);
-    list.push({ id: "ff" + t + e.title + e.country, t, title: String(e.title), impact: c.impact, kind: "macro", currency: e.country, scope: c.scope, scopeText: c.scopeText, forecast: e.forecast || undefined, previous: e.previous || undefined, source: "ForexFactory" });
-  }
-  status.push({ name: "ForexFactory", ok: ffOk, note: ffOk ? ffAll.length + " events" : "unreachable" });
-  // 2) built-in Fed dates (always; skipped when ForexFactory already lists FOMC that day)
-  for (const d of FOMC_2026) {
-    const t = nyUtc(d, 14, 0);
-    if (t < now - 864e5 || t > now + 21 * 864e5) continue;
-    if (list.some((x) => /fomc|federal funds/i.test(x.title) && Math.abs(x.t - t) < 36e5 * 14)) continue;
-    list.push({ id: "fomc" + d, t, title: "FOMC interest-rate decision & statement", impact: "High", kind: "macro", currency: "USD", scope: "all", scopeText: "All markets", extra: "Press conference follows at 14:30 New York time.", source: "Fed calendar (built-in)" });
-  }
-  status.push({ name: "Fed dates", ok: true, note: "built-in schedule" });
-  // 3) earnings from Nasdaq: the next 10 days; if no tracked stock reports by then, keep looking up to ~100 days
-  let eOk = 0;
-  const dayStr = (i: number) => new Date(now + i * 864e5).toISOString().slice(0, 10);
-  const scanDay = async (day: string) => {
-    try {
-      const j = await get("https://api.nasdaq.com/api/calendar/earnings?date=" + day, signal);
-      const rows: any[] = j?.data?.rows || [];
-      eOk++;
-      for (const r of rows) {
-        const sym = String(r.symbol || "").toUpperCase();
-        if (!sym || !tracked.has(sym)) continue;
-        const cap = parseCap(r.marketCap);
-        const hh = /after/i.test(r.time || "") ? 16 : /pre|before/i.test(r.time || "") ? 8 : 12;
-        const t = nyUtc(day, hh, hh === 12 ? 0 : 5);
-        list.push({
-          id: "er" + sym + day, t, title: (r.name ? r.name + " " : sym + " ") + "earnings report", impact: cap >= 2e11 ? "High" : "Medium", kind: "earnings", symbol: sym,
-          scope: "symbol", scopeText: "Only " + sym, forecast: r.epsForecast || undefined, previous: r.lastYearEPS || undefined,
-          extra: (/after/i.test(r.time || "") ? "After market close" : /pre|before/i.test(r.time || "") ? "Before market open" : "Time not announced") + (r.fiscalQuarterEnding ? " · quarter " + r.fiscalQuarterEnding : ""), source: "Nasdaq",
-        });
-      }
-    } catch (e: any) {
-      if (e?.name === "AbortError") throw e;
+  const build = (): NewsResult => {
+    const seen = new Set<string>();
+    const out = list.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
+    return { list: out, status: [...st.values()], at: now };
+  };
+  const emit = () => onPartial?.(build());
+  const setSt = (name: string, ok: boolean, note?: string, pending = false) => st.set(name, { name, ok, note, pending });
+  setSt("ForexFactory", true, "loading…", true);
+  setSt("Fed dates", true, "built-in schedule");
+  setSt("Earnings", true, "loading…", true);
+  // built-in Fed dates first: they show up instantly
+  const addFomc = () => {
+    for (const d of FOMC_2026) {
+      const t = nyUtc(d, 14, 0);
+      if (t < now - 864e5 || t > now + 21 * 864e5) continue;
+      if (list.some((x) => x.source !== "Fed calendar (built-in)" && /fomc|federal funds/i.test(x.title) && Math.abs(x.t - t) < 36e5 * 14)) continue;
+      if (list.some((x) => x.id === "fomc" + d)) continue;
+      list.push({ id: "fomc" + d, t, title: "FOMC interest-rate decision & statement", impact: "High", kind: "macro", currency: "USD", scope: "all", scopeText: "All markets", extra: "Press conference follows at 14:30 New York time.", source: "Fed calendar (built-in)" });
     }
   };
-  const first: number[] = [];
-  for (let i = -1; i < 10; i++) first.push(i);
-  await Promise.all(first.map((i) => scanDay(dayStr(i))));
-  const hasStock = () => list.some((x) => x.kind === "earnings" && x.t > now);
-  for (let start = 10; start < 100 && eOk > 0 && !hasStock(); start += 10) {
-    const batch: number[] = [];
-    for (let i = start; i < start + 10; i++) if (new Date(now + i * 864e5).getUTCDay() % 6 !== 0) batch.push(i);
-    await Promise.all(batch.map((i) => scanDay(dayStr(i))));
-  }
-  let note = eOk ? "" : "Nasdaq unreachable";
-  if (!hasStock()) {
-    // fallback: the most recent reports of tracked stocks, from Yahoo's price history (shows the source works)
+  addFomc();
+  emit();
+
+  const ff = async () => {
+    const got = await Promise.allSettled(["thisweek", "nextweek"].map((w) => get("https://nfs.faireconomy.media/ff_calendar_" + w + ".json", signal)));
     let n = 0;
-    for (const b of [...tracked].slice(0, 12)) {
+    for (const g of got) {
+      if (g.status !== "fulfilled" || !Array.isArray(g.value)) continue;
+      for (const e of g.value) {
+        const t = Date.parse(e.date);
+        if (!t || !e.title) continue;
+        const c = classify(e);
+        list.push({ id: "ff" + t + e.title + e.country, t, title: String(e.title), impact: c.impact, kind: "macro", currency: e.country, scope: c.scope, scopeText: c.scopeText, forecast: e.forecast || undefined, previous: e.previous || undefined, source: "ForexFactory" });
+        n++;
+      }
+    }
+    // drop the built-in Fed entries that ForexFactory already lists
+    for (let i = list.length - 1; i >= 0; i--) {
+      const x = list[i];
+      if (x.source === "Fed calendar (built-in)" && list.some((y) => y.source === "ForexFactory" && /fomc|federal funds/i.test(y.title) && Math.abs(y.t - x.t) < 36e5 * 14)) list.splice(i, 1);
+    }
+    setSt("ForexFactory", n > 0, n ? n + " events" : "unreachable");
+    emit();
+  };
+
+  const earn = async () => {
+    let eOk = 0;
+    const dayStr = (i: number) => new Date(now + i * 864e5).toISOString().slice(0, 10);
+    const scanDay = async (day: string) => {
       try {
-        const j = await get("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(b) + "?interval=1d&range=6mo&events=earn", signal);
-        const ev = j?.chart?.result?.[0]?.events?.earnings || {};
-        for (const e of Object.values<any>(ev)) {
-          const t = Number(e.date) * 1000;
-          if (!t) continue;
-          list.push({ id: "pe" + b + t, t, title: b + " earnings report (past)", impact: "Medium", kind: "earnings", symbol: b, scope: "symbol", scopeText: "Only " + b, forecast: e.epsEstimate != null ? String(e.epsEstimate) : undefined, previous: undefined, extra: e.epsActual != null ? "Reported EPS " + e.epsActual + (e.epsEstimate != null ? " vs estimate " + e.epsEstimate : "") : "Already reported", source: "Yahoo Finance" });
-          n++;
+        const j = await get("https://api.nasdaq.com/api/calendar/earnings?date=" + day, signal);
+        const rows: any[] = j?.data?.rows || [];
+        eOk++;
+        for (const r of rows) {
+          const sym = String(r.symbol || "").toUpperCase();
+          if (!sym || !tracked.has(sym)) continue;
+          const cap = parseCap(r.marketCap);
+          const hh = /after/i.test(r.time || "") ? 16 : /pre|before/i.test(r.time || "") ? 8 : 12;
+          const t = nyUtc(day, hh, hh === 12 ? 0 : 5);
+          list.push({
+            id: "er" + sym + day, t, title: (r.name ? r.name + " " : sym + " ") + "earnings report", impact: cap >= 2e11 ? "High" : "Medium", kind: "earnings", symbol: sym,
+            scope: "symbol", scopeText: "Only " + sym, forecast: r.epsForecast || undefined, previous: r.lastYearEPS || undefined,
+            extra: (/after/i.test(r.time || "") ? "After market close" : /pre|before/i.test(r.time || "") ? "Before market open" : "Time not announced") + (r.fiscalQuarterEnding ? " · quarter " + r.fiscalQuarterEnding : ""), source: "Nasdaq",
+          });
         }
       } catch (e: any) {
         if (e?.name === "AbortError") throw e;
       }
-      if (n >= 6) break;
+    };
+    const hasStock = () => list.some((x) => x.kind === "earnings" && x.t > now);
+    const weekdays = (from: number, to: number) => {
+      const out: number[] = [];
+      for (let i = from; i < to; i++) if (new Date(now + i * 864e5).getUTCDay() % 6 !== 0) out.push(i);
+      return out;
+    };
+    // all 10 near days at once, then 20 days further at once, and so on until a tracked stock is found
+    for (let start = -1; start < 100; start += start < 0 ? 11 : 20) {
+      const end = start < 0 ? 10 : start + 20;
+      await Promise.all(weekdays(start, end).map((i) => scanDay(dayStr(i))));
+      setSt("Earnings", eOk > 0, eOk ? "scanned to +" + end + " days" : "loading…", eOk === 0 && start < 0);
+      emit();
+      if (eOk === 0 || hasStock()) break;
     }
-    note = (eOk ? "no upcoming report found" : "calendar unreachable") + (n ? " · showing " + n + " recent reports (Yahoo)" : tracked.size ? " · no stock data" : " · no stocks in your lists");
-  }
-  status.push({ name: "Earnings", ok: eOk > 0 || list.some((x) => x.kind === "earnings"), note });
-  const seen = new Set<string>();
-  const out = list.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.t - b.t);
-  const res = { list: out, status, at: now };
-  if (out.length > 2) {
+    let note = eOk ? (hasStock() ? "" : "no upcoming report found") : "Nasdaq unreachable";
+    if (!hasStock()) {
+      let n = 0;
+      const syms = [...tracked].slice(0, 8);
+      await Promise.all(
+        syms.map(async (b) => {
+          try {
+            const j = await get("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(b) + "?interval=1d&range=6mo&events=earn", signal);
+            const ev = j?.chart?.result?.[0]?.events?.earnings || {};
+            for (const e of Object.values<any>(ev)) {
+              const t = Number(e.date) * 1000;
+              if (!t) continue;
+              list.push({ id: "pe" + b + t, t, title: b + " earnings report (past)", impact: "Medium", kind: "earnings", symbol: b, scope: "symbol", scopeText: "Only " + b, forecast: e.epsEstimate != null ? String(e.epsEstimate) : undefined, extra: e.epsActual != null ? "Reported EPS " + e.epsActual + (e.epsEstimate != null ? " vs estimate " + e.epsEstimate : "") : "Already reported", source: "Yahoo Finance" });
+              n++;
+            }
+          } catch (e: any) {
+            if (e?.name === "AbortError") throw e;
+          }
+        }),
+      );
+      note += (note ? " · " : "") + (n ? "showing " + n + " recent reports (Yahoo)" : tracked.size ? "no stock data" : "no stocks in your lists");
+      setSt("Earnings", eOk > 0 || n > 0, note);
+    } else setSt("Earnings", true, note);
+    emit();
+  };
+
+  await Promise.allSettled([ff(), earn()]);
+  if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+  addFomc();
+  const res = build();
+  if (res.list.length > 2) {
     try {
       localStorage.setItem(CK, JSON.stringify(res));
     } catch {}

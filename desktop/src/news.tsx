@@ -21,7 +21,7 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
   const [open, setOpen] = useState<string | null>(null);
   const load = () => {
     setBusy(true);
-    fetchNews(p.trackedBases)
+    fetchNews(p.trackedBases, undefined, (r) => setRes((prev) => (!prev || r.list.some((e) => e.source !== "Fed calendar (built-in)") ? r : { ...prev, status: r.status })))
       .then((r) => setRes(r))
       .catch(() => {})
       .finally(() => setBusy(false));
@@ -112,8 +112,8 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
       {res && (
         <div className="news-status">
           {res.status.map((s) => (
-            <span key={s.name} className={s.ok ? "ok" : "bad"}>
-              {s.ok ? "●" : "○"} {s.name}
+            <span key={s.name} className={(s as any).pending ? "" : s.ok ? "ok" : "bad"}>
+              {(s as any).pending ? "◌" : s.ok ? "●" : "○"} {s.name}
               {s.note ? " · " + s.note : ""}
             </span>
           ))}

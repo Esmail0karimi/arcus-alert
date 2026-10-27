@@ -395,7 +395,7 @@ const aggregate = (rows: QCandle[], step: number) => {
   return out;
 };
 /* Yahoo does not allow browser (CORS) requests from every site: try it directly first, then through public CORS relays. The first method that works is remembered. */
-const YF_WRAP: ((u: string) => string)[] = [
+export const YF_WRAP: ((u: string) => string)[] = [
   (u) => u,
   (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
