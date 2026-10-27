@@ -5,7 +5,7 @@ name: News data (server-side fetch)
 on:
   push:
     branches: [experiment/qfex]
-    paths: [scripts/news-probe.mjs, scripts/news-data.mjs, .github/workflows/news-data.yml]
+    paths: [scripts/news-probe.mjs, scripts/publish.sh, scripts/news-data.mjs, .github/workflows/news-data.yml]
   workflow_dispatch:
     inputs:
       mode:
@@ -33,4 +33,7 @@ jobs:
           node-version: "22"
       - name: Probe sources
         if: ${{ github.event.inputs.mode == 'probe' || github.event_name == 'push' }}
-        run: node scripts/news-probe.mjs
+        run: |
+          mkdir -p out
+          node scripts/news-probe.mjs | tee out/probe.txt
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} scripts/publish.sh out
