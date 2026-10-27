@@ -1,7 +1,8 @@
    3s ForexFactory nextweek HTTP 404
-  23s details: 777 companies, refreshing 110
- 144s details written 110, empty 0
- 144s news.json: 849 events, 155 company files
+  57s earnings-date fallback: 0/65 tracked stocks found
+  57s details: 777 companies, refreshing 110
+ 180s details written 110, empty 0
+ 180s news.json: 849 events, 262 company files
 [
  {
   "name": "Fed calendar",
@@ -10,14 +11,14 @@
   "n": 9
  },
  {
+  "name": "Treasury yields",
+  "ok": true,
+  "note": "curve of 2026-10-27"
+ },
+ {
   "name": "SEC EDGAR",
   "ok": true,
   "note": "10429 companies"
- },
- {
-  "name": "Treasury yields",
-  "ok": true,
-  "note": "curve of 2026-10-26"
  },
  {
   "name": "ForexFactory",
