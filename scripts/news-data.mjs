@@ -232,11 +232,10 @@ async function earningsCalendar() {
   const missing = coreTickers.filter((s) => !calRows.some((r) => r.sym === s && r.t > nowMs - 36e5 * 30));
   let fb = 0;
   const dbg = [];
+  // Finviz omits the year and may show the LAST report: take the year that puts the date closest to today
   const guessYear = (mo, d) => {
     const y = new Date().getUTCFullYear();
-    let t = Date.UTC(y, mo - 1, d, 12);
-    if (t < nowMs - 36e5 * 30) t = Date.UTC(y + 1, mo - 1, d, 12);
-    return new Date(t).getUTCFullYear();
+    return [y - 1, y, y + 1].map((yy) => [yy, Math.abs(Date.UTC(yy, mo - 1, d, 12) - nowMs)]).sort((a, b) => a[1] - b[1])[0][0];
   };
   const fromNasdaq = async (sym) => {
     const j = await nq(`analyst/${sym}/earnings-date`);
@@ -273,7 +272,7 @@ async function earningsCalendar() {
     const day = `${r.y}-${String(r.mo).padStart(2, "0")}-${String(r.d).padStart(2, "0")}`;
     const hh = r.tm === "amc" ? 16 : r.tm === "bmo" ? 8 : 12;
     const t = etToUtc(r.y, r.mo, r.d, hh, hh === 12 ? 0 : 5);
-    if (t < nowMs - 36e5 * 30) return;
+    if (t < nowMs - 14 * 864e5) return; // a report from the last two weeks still shows (as already reported)
     calRows.push({ sym, day, t, tm: r.tm, cap: MEGA.has(sym) ? 3e11 : 5e10, name: secMap.get(sym)?.name ? titleCase(secMap.get(sym).name) : sym, fq: "", eps: "", n: 0, lyEps: "", lyDate: "", estimated: r.src });
     fb++;
   });
@@ -526,7 +525,8 @@ async function details() {
     const hot = days > -2 && days < 3; // reporting around now: refresh every run
     const need = hot ? age > 0.9 : age > 20;
     const capBonus = cal ? Math.log10(Math.max(cal.cap, 1e9)) * 40 : 330; // big companies first
-    return need ? (hot ? 1000 : 0) + Math.min(age, 100) + capBonus - Math.max(days, 0) : -1;
+    const core = coreTickers.includes(s) ? 250 : 0; // the stocks people actually track come first
+    return need ? (hot ? 1000 : 0) + core + Math.min(age, 100) + capBonus - Math.max(days, 0) : -1;
   };
   const todo = syms.map((s) => [s, score(s)]).filter((x) => x[1] >= 0).sort((a, b) => b[1] - a[1]).slice(0, MAX_DETAIL).map((x) => x[0]);
   log(`details: ${syms.length} companies, refreshing ${todo.length}`);

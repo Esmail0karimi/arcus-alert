@@ -42,7 +42,7 @@ function scenarios(c: Company, mega: boolean): { facts: string[]; scen: Scen[]; 
   const rlo = g ? num(g.lo) : null;
   const rhi = g ? num(g.hi) : null;
   const facts: string[] = [];
-  if (cons != null) facts.push(`Analysts expect EPS ${usd(cons)}` + (lo != null && hi != null ? ` (range ${usd(lo)}–${usd(hi)}` + (nx.nEstimates ? `, ${nx.nEstimates} analysts)` : ")") : "") + (num(nx.lastYearEps) ? `, versus ${usd(num(nx.lastYearEps))} a year ago (${pct(((cons - num(nx.lastYearEps)!) / Math.abs(num(nx.lastYearEps)!)) * 100)}).` : "."));
+  if (cons != null) facts.push(`Analysts ${c?.__reported ? "expected" : "expect"} EPS ${usd(cons)}` + (lo != null && hi != null ? ` (range ${usd(lo)}–${usd(hi)}` + (nx.nEstimates ? `, ${nx.nEstimates} analysts)` : ")") : "") + (num(nx.lastYearEps) ? `, versus ${usd(num(nx.lastYearEps))} a year ago (${pct(((cons - num(nx.lastYearEps)!) / Math.abs(num(nx.lastYearEps)!)) * 100)}).` : "."));
   if (rlo != null && rhi != null) facts.push(`The company itself guided revenue of ${money(rlo)}–${money(rhi)} (SEC press release of ${day(c.guidance.filed)}).`);
   if (sur.length) facts.push(`It beat the EPS estimate in ${beats} of the last ${sur.length} reports, on average by ${pct(avg)}.` + (typical != null && beats >= 3 ? ` So the market is probably already counting on about ${usd(typical)}, not just ${usd(cons)}.` : ""));
   const m = c?.forecast?.momentum;
@@ -52,6 +52,8 @@ function scenarios(c: Company, mega: boolean): { facts: string[]; scen: Scen[]; 
   const last = hist[0];
   if (last?.revenueYoY != null) facts.push(`Last quarter revenue grew ${pct(num(last.revenueYoY))} year on year.`);
   const hot = beats >= 3;
+  const nq = c?.forecast?.quarterly?.[0];
+  if (c?.__reported && nq?.eps != null) facts.push(`Next quarter (${nq.period}): analysts expect EPS ${usd(num(nq.eps))}` + (nq.n ? ` from ${nq.n} analysts` : "") + ". The next report date is not scheduled yet.");
   const scen: Scen[] = [
     {
       key: "low",
@@ -126,11 +128,20 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
   const t = p.ev?.t ?? nx.t ?? null;
   const mega = (num(nx.marketCap) || 0) >= 2e11 || p.ev?.impact === "High";
   const hist: any[] = c?.history || [];
-  const S = useMemo(() => (c ? scenarios(c, mega) : null), [c, mega]);
-  const [h1, h0] = [hist[1], hist[0]];
-  const q = nx.fiscalQuarter || c?.forecast?.quarterly?.[0]?.period || "next quarter";
+  // a report from the last days: its real numbers are already in the history
+  const rep0 = hist[0];
+  const reportedNow = !!(rep0 && t && t < Date.now() && rep0.reported && Math.abs(Date.parse(rep0.reported + "T21:00:00Z") - t) < 4 * 864e5);
+  const S = useMemo(() => {
+    if (!c) return null;
+    if (!reportedNow) return scenarios(c, mega);
+    // judge the finished report against what was expected for it
+    const c2 = { ...c, __reported: true, next: { ...c.next, epsForecast: rep0.epsEst, epsLow: null, epsHigh: null, nEstimates: null, lastYearEps: null }, guidance: null, forecast: { ...c.forecast, momentum: null } };
+    return scenarios(c2, mega);
+  }, [c, mega, reportedNow]);
+  const [h1, h0] = reportedNow ? [hist[2], hist[1]] : [hist[1], hist[0]];
+  const q = reportedNow ? rep0.period : nx.fiscalQuarter || c?.forecast?.quarterly?.[0]?.period || "next quarter";
   // verdict once the user types the real numbers
-  const aE = num(actEps), aR = num(actRev);
+  const aE = reportedNow ? num(rep0.epsActual) : num(actEps), aR = reportedNow ? (rep0.revenue != null ? rep0.revenue / 1000 : null) : num(actRev);
   const verdict = (() => {
     if (!S) return null;
     const out: { key: "low" | "inline" | "high"; text: string }[] = [];
@@ -195,7 +206,7 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
                 ))}
                 <th className="now">
                   {q}
-                  <small>this report</small>
+                  <small>{reportedNow ? "reported " + day(rep0.reported) : "this report"}</small>
                 </th>
               </tr>
             </thead>
@@ -207,20 +218,24 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
                 <th>Company forecast</th>
                 {cell("—", "dim")}
                 {cell("—", "dim")}
-                {cell(S.rev.lo != null ? money(S.rev.lo) + " – " + money(S.rev.hi) : "not given in the press release", S.rev.lo != null ? "co" : "dim")}
+                {cell(reportedNow ? "—" : S.rev.lo != null ? money(S.rev.lo) + " – " + money(S.rev.hi) : "not given in the press release", !reportedNow && S.rev.lo != null ? "co" : "dim")}
               </tr>
               <tr>
                 <th>Investors / analysts forecast</th>
                 {cell("—", "dim")}
                 {cell("—", "dim")}
-                {cell(nx.revenueEstimate != null ? "≈ " + money(nx.revenueEstimate) : c.revenueAnnual ? "FY" + c.revenueAnnual.year + " total ≈ $" + c.revenueAnnual.avg : "—", nx.revenueEstimate != null ? "an" : "dim")}
+                {cell(reportedNow ? "—" : nx.revenueEstimate != null ? "≈ " + money(nx.revenueEstimate) : c.revenueAnnual ? "FY" + c.revenueAnnual.year + " total ≈ $" + c.revenueAnnual.avg : "—", !reportedNow && nx.revenueEstimate != null ? "an" : "dim")}
               </tr>
               <tr>
                 <th>Actual</th>
                 {quarters.map((x, i) => cell(x.d?.revenue != null ? <>{money(x.d.revenue)}<small>{pct(num(x.d.revenueYoY))} YoY</small></> : "—", "act"))}
-                <td className="empty">
-                  <input inputMode="decimal" placeholder="$ billions" value={actRev} onChange={(e) => setActRev(e.target.value)} />
-                </td>
+                {reportedNow ? (
+                  cell(rep0.revenue != null ? <>{money(rep0.revenue)}<small>{pct(num(rep0.revenueYoY))} YoY</small></> : "—", "act")
+                ) : (
+                  <td className="empty">
+                    <input inputMode="decimal" placeholder="$ billions" value={actRev} onChange={(e) => setActRev(e.target.value)} />
+                  </td>
+                )}
               </tr>
               <tr className="sec">
                 <td colSpan={4}>Earnings per share (EPS)</td>
@@ -235,7 +250,7 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
                 <th>Investors / analysts forecast</th>
                 {quarters.map((x, i) => cell(x.d ? usd(num(x.d.epsEst)) : "—", "an"))}
                 {cell(
-                  nx.epsForecast != null ? (
+                  reportedNow ? usd(num(rep0.epsEst)) : nx.epsForecast != null ? (
                     <>
                       {usd(num(nx.epsForecast))}
                       <small>
@@ -251,18 +266,22 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
               <tr>
                 <th>Actual</th>
                 {quarters.map((x, i) => cell(x.d ? usd(num(x.d.epsActual)) : "—", "act"))}
-                <td className="empty">
-                  <input inputMode="decimal" placeholder="$ per share" value={actEps} onChange={(e) => setActEps(e.target.value)} />
-                </td>
+                {reportedNow ? (
+                  cell(usd(num(rep0.epsActual)), "act")
+                ) : (
+                  <td className="empty">
+                    <input inputMode="decimal" placeholder="$ per share" value={actEps} onChange={(e) => setActEps(e.target.value)} />
+                  </td>
+                )}
               </tr>
               <tr>
                 <th>Surprise vs analysts</th>
                 {quarters.map((x, i) => cell(x.d ? <b className={num(x.d.surprisePct)! >= 0 ? "up" : "dn"}>{pct(num(x.d.surprisePct))}</b> : "—"))}
-                {cell(verdict && verdict[0] ? verdict[0].text : "after the report", "dim")}
+                {reportedNow ? cell(<b className={num(rep0.surprisePct)! >= 0 ? "up" : "dn"}>{pct(num(rep0.surprisePct))}</b>) : cell(verdict && verdict[0] ? verdict[0].text : "after the report", "dim")}
               </tr>
             </tbody>
           </table>
-          <p className="rp-hint">The “Actual” boxes in the last column are empty on purpose. After the company reports, type the real numbers and the matching scenario below lights up. Revenue guidance comes from the company’s own latest results press release (SEC); “—” means that figure is not published by our sources.</p>
+          <p className="rp-hint">{reportedNow ? "This company has already reported, so the last column shows the real result next to what was expected. " : ""}The “Actual” boxes in the last column are empty on purpose when the report is still ahead. After the company reports, type the real numbers and the matching scenario below lights up. Revenue guidance comes from the company’s own latest results press release (SEC); “—” means that figure is not published by our sources.</p>
 
           {verdict && verdict.length > 0 && (
             <div className="rp-verdict">
@@ -281,7 +300,7 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
             ))}
           </ul>
 
-          <h3>What could happen</h3>
+          <h3>{reportedNow ? "How it compares (the matching case is highlighted)" : "What could happen"}</h3>
           <div className="rp-scen">
             {S.scen.map((s) => (
               <div key={s.key} className={"rp-sc " + s.key + (hl === s.key ? " on" : "")}>

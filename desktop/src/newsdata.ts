@@ -288,7 +288,8 @@ const ago = (t: number) => {
 };
 export function hostedToResult(h: Hosted, tracked: Set<string>): NewsResult {
   const from = Date.now() - 3 * 864e5;
-  const list = h.events.filter((e) => e.t >= from && (e.kind !== "earnings" || (e.symbol && tracked.has(e.symbol))));
+  // tracked stocks keep their report for two weeks after it happened (the table then shows the real result)
+  const list = h.events.filter((e) => (e.kind === "earnings" ? e.t >= Date.now() - 14 * 864e5 && !!e.symbol && tracked.has(e.symbol) : e.t >= from));
   const status = [
     ...h.sources.map((s) => ({ name: s.name, ok: s.ok, note: s.note })),
     { name: "Server data", ok: true, note: "collected " + ago(h.at) },
