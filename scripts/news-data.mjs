@@ -14,7 +14,7 @@ const PREV = process.env.PREV_DIR || ""; // checkout of the news-data branch (to
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const SEC_UA = "ArcusAlert research contact karimiesmail37@gmail.com";
 const NQ = { "User-Agent": UA, Accept: "application/json, text/plain, */*", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" };
-const MAX_DETAIL = Number(process.env.MAX_DETAIL || 45);
+const MAX_DETAIL = Number(process.env.MAX_DETAIL || 110);
 const T0 = Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(((Date.now() - T0) / 1000).toFixed(0).padStart(4) + "s", ...a);
@@ -471,7 +471,8 @@ async function details() {
     const days = cal ? (cal.t - Date.now()) / 864e5 : 99;
     const hot = days > -2 && days < 3; // reporting around now: refresh every run
     const need = hot ? age > 0.9 : age > 20;
-    return need ? (hot ? 1000 : 0) + age - Math.max(days, 0) : -1;
+    const capBonus = cal ? Math.log10(Math.max(cal.cap, 1e9)) * 40 : 330; // big companies first
+    return need ? (hot ? 1000 : 0) + Math.min(age, 100) + capBonus - Math.max(days, 0) : -1;
   };
   const todo = syms.map((s) => [s, score(s)]).filter((x) => x[1] >= 0).sort((a, b) => b[1] - a[1]).slice(0, MAX_DETAIL).map((x) => x[0]);
   log(`details: ${syms.length} companies, refreshing ${todo.length}`);
