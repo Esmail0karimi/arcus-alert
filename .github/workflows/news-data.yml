@@ -42,7 +42,7 @@ jobs:
         run: |
           mkdir -p out
           node scripts/news-probe.mjs | tee out/probe.txt
-          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} scripts/publish.sh out
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} scripts/publish.sh out probe
       - name: Build news data
         if: ${{ github.event.inputs.mode != 'probe' }}
         env:
