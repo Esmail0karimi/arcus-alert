@@ -38,6 +38,9 @@ type ChartDrawing = {
   color?: string;
   width?: number;
 };
+const TF_SEC: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 };
+/** Candle that contains time t. Aligned to the LAST candle we actually have: some sources start candles off the UTC grid (stocks at :30, weekly on Monday, daily at another hour), and an epoch-aligned bucket then falls before the last candle and every live tick was dropped. */
+const bucketFrom = (t: number, span: number, anchor?: number) => (anchor ? anchor + Math.floor((t - anchor) / span) * span : Math.floor(t / span) * span);
 const TF_LIST = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
 const STOCKY = /^(AAPL|MSFT|NVDA|TSLA|AMZN|GOOGL|META|NFLX|AMD|COIN|PLTR|MSTR|HOOD|SPY|QQQ)$/;
 const DRAWINGS = "arcus-alert-chart-drawings-v1",
@@ -462,6 +465,13 @@ function App() {
     return Array.from(best.values()).sort();
   }, [prices, exOn, mergeDup]);
   const newsBases = useMemo(() => new Set(symbols.filter((x) => classifySymbol(x, marketCategories.current) === "Stocks").map((x) => assetBase(dn(x)))), [symbols]);
+  const [hdrFull, setHdrFull] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("arcus.hdrFull") === "1";
+    } catch {
+      return false;
+    }
+  });
   const openBase = (b: string) => {
     const hit = symbols.find((x) => assetBase(dn(x)) === b);
     if (hit) {
@@ -883,39 +893,31 @@ function App() {
     let pendingPrices: Record<string, { price: number; source: string; marketId: string }> = {};
     let flushTimer: number | undefined;
     const updateLiveChartCandle = (marketName: string, price: number, time: number) => {
-      if (marketName !== chartSymbolRef.current || !series.current) return;
-      const secondsByTf: Record<string, number> = {
-        "1m": 60,
-        "3m": 180,
-        "5m": 300,
-        "15m": 900,
-        "30m": 1800,
-        "1h": 3600,
-        "2h": 7200,
-        "4h": 14400,
-        "1d": 86400,
-        "1w": 604800,
-      };
-      const span = secondsByTf[chartTfRef.current] || 900;
-      const bucket = Math.floor(time / span) * span;
+      if (!series.current || marketName.toUpperCase() !== String(chartSymbolRef.current || "").toUpperCase()) return;
+      const span = TF_SEC[chartTfRef.current] || 900;
+      const anchor = liveBarRef.current?.bar.time ?? chartX.current?.lastCandleTime();
+      if (!anchor) return; // candles are still loading; the loader applies the latest tick itself
+      const bucket = bucketFrom(time, span, anchor);
+      if (bucket < anchor) return; // tick older than the newest candle
       const key = marketName + "|" + chartTfRef.current + "|" + bucket;
       let bar: any;
       if (liveBarRef.current?.key === key) {
         const previous = liveBarRef.current.bar;
-        bar = {
-          ...previous,
-          high: Math.max(previous.high, price),
-          low: Math.min(previous.low, price),
-          close: price,
-        };
-      } else {
-        const previous = liveBarRef.current?.bar;
-        if (previous && bucket < previous.time) return;
-        bar = { time: bucket, open: price, high: price, low: price, close: price, volume: 0 };
+        bar = { ...previous, high: Math.max(previous.high, price), low: Math.min(previous.low, price), close: price };
+      } else if (bucket === anchor && liveBarRef.current) {
+        const previous = liveBarRef.current.bar;
+        bar = { ...previous, high: Math.max(previous.high, price), low: Math.min(previous.low, price), close: price };
+      } else bar = { time: bucket, open: liveBarRef.current && bucket > anchor ? liveBarRef.current.bar.close : price, high: price, low: price, close: price, volume: 0 };
+      if (bar.time === bucket && bar.open !== price) {
+        bar.high = Math.max(bar.high, bar.open);
+        bar.low = Math.min(bar.low, bar.open);
       }
       liveBarRef.current = { key, bar };
+      // two separate tries: a failing chart series must not stop the module (legend, indicators, countdown) from seeing the tick
       try {
         series.current.update(bar);
+      } catch {}
+      try {
         chartX.current?.updateBar(bar);
       } catch {}
     };
@@ -1559,47 +1561,24 @@ function App() {
         activeSeries.setData(candles);
         chartX.current?.setCandles(candles, requestSymbol);
         chartX.current?.setSource("Candles: " + (srcLabel || ex?.label || "Arcus"));
-        const secondsByTf: Record<string, number> = {
-          "1m": 60,
-          "3m": 180,
-          "5m": 300,
-          "15m": 900,
-          "30m": 1800,
-          "1h": 3600,
-          "2h": 7200,
-          "4h": 14400,
-          "1d": 86400,
-          "1w": 604800,
-        };
-        const span = secondsByTf[requestTf] || 900,
-          last = candles[candles.length - 1],
-          lastBucket = Math.floor(last.time / span) * span;
-        liveBarRef.current = { key: requestSymbol + "|" + requestTf + "|" + lastBucket, bar: last };
+        const span = TF_SEC[requestTf] || 900,
+          last = candles[candles.length - 1];
+        liveBarRef.current = { key: requestSymbol + "|" + requestTf + "|" + last.time, bar: last };
         const latest = latestWsPriceRef.current[requestSymbol];
-        if (latest) {
-          const bucket = Math.floor(latest.time / span) * span;
-          if (bucket >= lastBucket) {
-            const key = requestSymbol + "|" + requestTf + "|" + bucket;
-            const bar =
-              bucket === lastBucket
-                ? {
-                    ...last,
-                    high: Math.max(last.high, latest.price),
-                    low: Math.min(last.low, latest.price),
-                    close: latest.price,
-                  }
-                : {
-                    time: bucket,
-                    open: latest.price,
-                    high: latest.price,
-                    low: latest.price,
-                    close: latest.price,
-                    volume: 0,
-                  };
-            liveBarRef.current = { key, bar };
+        if (latest && latest.time >= last.time) {
+          const bucket = bucketFrom(latest.time, span, last.time);
+          const key = requestSymbol + "|" + requestTf + "|" + bucket;
+          const bar =
+            bucket === last.time
+              ? { ...last, high: Math.max(last.high, latest.price), low: Math.min(last.low, latest.price), close: latest.price }
+              : { time: bucket, open: last.close, high: Math.max(last.close, latest.price), low: Math.min(last.close, latest.price), close: latest.price, volume: 0 };
+          liveBarRef.current = { key, bar };
+          try {
             activeSeries.update(bar);
+          } catch {}
+          try {
             chartX.current?.updateBar(bar);
-          }
+          } catch {}
         }
         refit(activeChart, fastShown && candles.length > 250 ? candles.length : 0);
         requestAnimationFrame(() => {
@@ -1626,7 +1605,7 @@ function App() {
   }, [tab, symbol, tf]);
 
   useEffect(() => {
-    const sec = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800 } as Record<string, number>)[tf] || 0;
+    const sec = TF_SEC[tf] || 0;
     chartX.current?.setSpan(sec);
   }, [tab, tf, symbol]);
   const [evTick, setEvTick] = useState(0);
@@ -2406,8 +2385,8 @@ function App() {
           </div>
         </>
       )}
-      <header>
-        <div className="brand">
+      <header className={tab === "Chart" && !hdrFull ? "slim" : ""}>
+        <div className="brand" title="ARCUS ALERT">
           <div className="mark"><img src="./icon.svg" alt="Arcus" /></div>
           <div>
             <b>ARCUS</b>
@@ -2420,7 +2399,7 @@ function App() {
               <button
                 key={id}
                 className={"ex-line " + (isOn(id) ? "on " : "off ") + st}
-                title={isOn(id) ? "Click to hide this exchange" : "Click to show this exchange"}
+                title={text + " — " + (isOn(id) ? "click to hide this exchange" : "click to show this exchange")}
                 onClick={() => setExOn((v) => ({ ...v, [id]: v[id] === false }))}
               >
                 <i /> {text}
@@ -2479,7 +2458,7 @@ function App() {
             }
             onClick={() => void syncToCloud(false)}
           >
-            {syncBusy ? "Syncing…" : "⇅ Sync to Android"}
+            {syncBusy ? "…" : "⇅"}<span className="lbl">{syncBusy ? "Syncing…" : " Sync to Android"}</span>
           </button>
           {user && (syncMsg || unsynced) && (
             <span
@@ -2494,16 +2473,23 @@ function App() {
             title={user?.email || "Sign in to sync alerts across devices"}
             onClick={accountAction}
           >
-            {user ? "Sign out" : "Sign in"}
+            <span className="ico">👤</span>
+            <span className="lbl">{user ? "Sign out" : "Sign in"}</span>
           </button>
           <button
             className="history-button"
             title="Alert history"
             onClick={() => setShowHistory((v) => !v)}
           >
-            ◷ History{history.length > 0 && <b>{history.length}</b>}
+            ◷<span className="lbl"> History</span>
+            {history.length > 0 && <b>{history.length}</b>}
           </button>
           <IpBadge />
+          {tab === "Chart" && (
+            <button className="history-button hdr-toggle" title={hdrFull ? "Slim top bar (more room for the chart)" : "Show the full top bar"} onClick={() => setHdrFull((v) => { try { localStorage.setItem("arcus.hdrFull", v ? "0" : "1"); } catch {} return !v; })}>
+              {hdrFull ? "⌃" : "⌄"}
+            </button>
+          )}
         </div>
       </header>
       {tab !== "Chart" && <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />}
@@ -2537,7 +2523,7 @@ function App() {
           )}
         </div>
       )}
-      <main className={chartFull && tab === "Chart" ? "chart-full" : ""}>
+      <main className={(chartFull && tab === "Chart" ? "chart-full" : "") + (tab === "Chart" ? " chart-wide" : "")}>
         {tab === "Market" && (
           <>
             <div className="heading">

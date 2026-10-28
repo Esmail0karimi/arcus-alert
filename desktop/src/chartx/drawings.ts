@@ -2,7 +2,7 @@
 import { fmtPrice } from "./math";
 
 export type P = { time: number; price: number };
-export type Kind = "trend" | "arrow" | "vline" | "hray" | "channel" | "fibret" | "fibext" | "rect" | "long" | "short";
+export type Kind = "trend" | "arrow" | "vline" | "hray" | "channel" | "fibret" | "fibext" | "rect" | "long" | "short" | "measure";
 export type Level = { v: number; on: boolean; color: string };
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type Shape = {
@@ -18,7 +18,7 @@ export type XY = { x: number; y: number };
 export type Env = { xy: (p: P) => XY | null; w: number; h: number; selected: boolean; draft?: boolean; hover?: boolean };
 export type Built = { els: SVGElement[]; segs: [number, number, number, number][]; polys: XY[][]; handles: XY[]; mid: XY };
 
-export const NEED: Record<Kind, number> = { trend: 2, arrow: 2, vline: 1, hray: 1, channel: 3, fibret: 2, fibext: 3, rect: 2, long: 1, short: 1 };
+export const NEED: Record<Kind, number> = { trend: 2, arrow: 2, vline: 1, hray: 1, channel: 3, fibret: 2, fibext: 3, rect: 2, long: 1, short: 1, measure: 2 };
 export const TOOLS: { kind: Kind; icon: string; title: string }[] = [
   { kind: "trend", icon: "╱", title: "Trend line: click two points" },
   { kind: "arrow", icon: "↗", title: "Arrow: click the start, then the tip" },
@@ -28,6 +28,7 @@ export const TOOLS: { kind: Kind; icon: string; title: string }[] = [
   { kind: "fibret", icon: "Fr", title: "Fibonacci retracement: click two points" },
   { kind: "fibext", icon: "Fe", title: "Fibonacci extension: click 3 points (A, B, C)" },
   { kind: "rect", icon: "▭", title: "Rectangle: click two corners" },
+  { kind: "measure", icon: "%", title: "Measure % change: click the start, then the end (shows %, price change and time)" },
   { kind: "long", icon: "L▲", title: "Long position: click the entry" },
   { kind: "short", icon: "S▼", title: "Short position: click the entry" },
 ];
@@ -178,6 +179,35 @@ export function build(s: Shape, env: Env): Built | null {
       out.segs.push([A.x, A.y, B.x, A.y], [B.x, A.y, B.x, B.y], [B.x, B.y, A.x, B.y], [A.x, B.y, A.x, A.y]);
       out.handles = [A, B];
       out.mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      break;
+    }
+    case "measure": {
+      // green when the end is above the start, red when below; label: % change, price change, time span
+      const up = pts[1].price >= pts[0].price;
+      const c2 = env.draft || !s.color || s.color === "#4aa3ff" ? (up ? "#089981" : "#f23645") : col;
+      const r = rectEl(A.x, A.y, B.x, B.y, c2, c2, 1);
+      r.setAttribute("fill-opacity", String(s.fillOp ?? 0.12));
+      r.setAttribute("stroke-dasharray", "4 3");
+      out.els.push(r);
+      const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+      out.els.push(seg(mx, A.y, mx, B.y, c2, 1.4), seg(A.x, my, B.x, my, c2, 1, "2 3"));
+      const ah = 6, dy = B.y >= A.y ? 1 : -1;
+      out.els.push(svgEl("polygon", { points: `${mx},${B.y} ${mx - ah},${B.y - dy * ah * 1.4} ${mx + ah},${B.y - dy * ah * 1.4}`, fill: c2 }));
+      const dP = pts[1].price - pts[0].price, pc = pct(pts[0].price, pts[1].price);
+      const secs = Math.abs(pts[1].time - pts[0].time);
+      const dur = secs >= 86400 ? (secs / 86400).toFixed(secs % 86400 ? 1 : 0) + "d" : secs >= 3600 ? Math.floor(secs / 3600) + "h " + Math.round((secs % 3600) / 60) + "m" : Math.round(secs / 60) + "m";
+      const l1 = (pc >= 0 ? "+" : "") + pc.toFixed(2) + "%  (" + (dP >= 0 ? "+" : "") + fmtPrice(dP) + ")", l2 = dur;
+      const wBox = Math.max(l1.length * 6.6, l2.length * 6.6) + 14, hBox = 34;
+      const bx = Math.min(Math.max(mx - wBox / 2, 2), Math.max(2, env.w - wBox - 2));
+      const by = dy > 0 ? Math.min(B.y + 8, env.h - hBox - 2) : Math.max(B.y - hBox - 8, 2);
+      out.els.push(rectEl(bx, by, bx + wBox, by + hBox, c2, "none", 0));
+      const t1 = text(bx + wBox / 2, by + 14, l1, "#fff", "middle"), t2 = text(bx + wBox / 2, by + 27, l2, "#fff", "middle");
+      t1.setAttribute("font-weight", "700");
+      out.els.push(t1, t2);
+      out.polys.push([A, { x: B.x, y: A.y }, B, { x: A.x, y: B.y }]);
+      out.segs.push([A.x, A.y, B.x, A.y], [B.x, A.y, B.x, B.y], [B.x, B.y, A.x, B.y], [A.x, B.y, A.x, A.y]);
+      out.handles = [A, B];
+      out.mid = { x: mx, y: my };
       break;
     }
     case "long":

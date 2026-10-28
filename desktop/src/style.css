@@ -490,3 +490,21 @@ nav button{flex:1 1 0;width:auto!important;max-width:130px;min-width:0}
 .news-head-btns{display:flex;gap:8px}
 
 .rp-tr{color:#00dcd2!important;font-size:11px;flex:0 0 auto!important;border:1px solid #27425e;border-radius:99px;padding:0 8px;text-decoration:none}
+
+/* ---- slim top bar on the Chart tab (more room for the chart) ---- */
+header.slim{height:34px!important;min-height:34px;padding:0 10px!important;gap:8px!important}
+header.slim .brand{min-width:0!important;gap:0}
+header.slim .brand>div:last-child{display:none}
+header.slim .mark{width:24px!important;height:24px!important;border-radius:8px!important}
+header.slim .mark img{width:16px!important;height:16px!important}
+header.slim .connection.ex-grid{display:flex!important;flex-direction:row;gap:3px!important;flex:1;width:auto!important;overflow:hidden!important;grid-template-columns:none!important}
+header.slim .ex-line{font-size:0!important;width:16px;height:16px;justify-content:center;gap:0!important;flex:none}
+header.slim .ex-line i{width:8px!important;height:8px!important;margin:0!important}
+header.slim .sound-control,header.slim .sync-msg{display:none!important}
+header.slim .header-actions{gap:4px!important;flex-wrap:nowrap}
+header.slim .lbl{display:none}
+header.slim .history-button{padding:3px 8px!important;font-size:12px!important;height:24px;line-height:1}
+header.slim .ipbadge,header.slim .ip-badge{transform:scale(.85)}
+header:not(.slim) .ico{display:none}
+header:not(.slim) .hdr-toggle{padding:5px 10px}
+main.chart-wide{width:100%!important;max-width:none!important;padding:4px 8px 4px!important}

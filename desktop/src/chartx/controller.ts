@@ -28,7 +28,7 @@ const DEF_PREFS: Prefs = {
   rsi: { on: false, period: 14, color: "#b388ff", h: 1 },
   vol: { on: false },
 };
-const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", arrow: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645" };
+const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", arrow: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645", measure: "#4aa3ff" };
 const migrate = (raw: any[]): Shape[] =>
   raw
     .map((x: any) =>
@@ -910,7 +910,7 @@ export class ChartX {
       reset.onclick = () => upd((s2) => (s2.levels = defLevels(k)), true);
       rows.push(add, reset);
     }
-    const names: Record<Kind, string> = { trend: "Trend line", arrow: "Arrow", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position" };
+    const names: Record<Kind, string> = { trend: "Trend line", arrow: "Arrow", vline: "Vertical line", hray: "Horizontal ray", channel: "Parallel channel", fibret: "Fib retracement", fibext: "Fib extension", rect: "Rectangle", long: "Long position", short: "Short position", measure: "Measure %" };
     this.showPanel(names[k] + " settings", rows, at.x, at.y, undefined, () => this.record(snap));
   }
 
@@ -1229,6 +1229,9 @@ export class ChartX {
     } catch {}
   }
 
+  lastCandleTime(): number | undefined {
+    return this.candles.length ? this.candles[this.candles.length - 1].time : undefined;
+  }
   /** Seconds per candle (from the timeframe selector); 0 = guess from the data. */
   setSpan(sec: number) {
     this.span = sec;
@@ -1247,8 +1250,9 @@ export class ChartX {
     } catch {}
     if (y == null || !w || !span) return void (el.style.display = "none");
     const now = Date.now() / 1000;
-    let left = Math.floor(last.time / span) * span + span - now;
-    if (left < 0) left = 0;
+    // the candle ends one span after it started (works for candles that are not on the UTC grid); if the feed is behind, step forward
+    let left = last.time + span - now;
+    if (left < 0) left = span - ((now - last.time) % span);
     const d = Math.floor(left / 86400),
       hh = Math.floor((left % 86400) / 3600),
       mm = Math.floor((left % 3600) / 60),
