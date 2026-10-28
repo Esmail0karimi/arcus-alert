@@ -14,7 +14,7 @@ const PREV = process.env.PREV_DIR || ""; // checkout of the news-data branch (to
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const SEC_UA = "ArcusAlert research contact karimiesmail37@gmail.com";
 const NQ = { "User-Agent": UA, Accept: "application/json, text/plain, */*", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" };
-const DETAIL_V = 2; // bump to force every company file to be rebuilt
+const DETAIL_V = 3; // bump to force every company file to be rebuilt
 const MAX_DETAIL = Number(process.env.MAX_DETAIL || 110);
 const T0 = Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -431,6 +431,12 @@ async function secDetail(sym, d) {
     .filter((s) => s.length > 40 && s.length < 800 && /\b(expect|expects|anticipate|anticipates|outlook|guidance|forecast)/i.test(s) && /\$\s?\d/.test(s) && /(range|between|approximately|to be|from \$)/i.test(s))
     .filter((s) => /(revenue|sales|earnings|eps|income|margin|expense|capital)/i.test(s))
     .slice(0, 4);
+  // headline results sentences ("Revenue was $X billion, up Y%"), shown after the report
+  d.results = sentences
+    .slice(0, 80)
+    .filter((x) => x.length > 40 && x.length < 320 && /\$\s?\d/.test(x) && /(revenue|net sales|net income|earnings per|diluted|operating income|free cash flow|record)/i.test(x) && !/\b(expect|anticipate|outlook|guidance)\b/i.test(x))
+    .slice(0, 3)
+    .map((x) => x.trim());
   if (hits.length) {
     d.guidance = { filed: er.date, url: base + ex, quotes: hits.map((s) => s.trim()) };
     const rg = hits.map((s) => s.match(/\$\s?([\d.,]+)\s*(billion|million|B|M)?\s*(?:to|and|-|–)\s*\$?\s?([\d.,]+)\s*(billion|million|B|M)/i)).find((m) => m && /revenue|sales/i.test(m.input));
@@ -564,11 +570,191 @@ async function details() {
   log(`details written ${ok}, empty ${fail}`);
 }
 
+// ---------- 6) after publication: actual values + key points ----------
+const fmtNum = (v, unit) => {
+  if (v == null || !isFinite(v)) return "";
+  let x = String(Math.round(v * 1000) / 1000);
+  if (unit === "%") x += "%";
+  else if (unit && /^[KMBT]$/.test(unit)) x += unit;
+  return x;
+};
+const STOP = new Set("the of and for in on to a an m/m y/y q/q mom yoy qoq s rate index change".split(" "));
+const toks = (t) => String(t).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !STOP.has(w));
+const sim = (a, b) => {
+  const A = new Set(toks(a)), B = new Set(toks(b));
+  if (!A.size || !B.size) return 0;
+  let k = 0;
+  for (const w of A) if (B.has(w)) k++;
+  return k / (A.size + B.size - k);
+};
+/** FXStreet's calendar API is open and carries the ACTUAL number as soon as it is released (ForexFactory's public feed does not). */
+async function fxstreetActuals() {
+  const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+  const arr = await fetchJson(`https://calendar-api.fxstreet.com/en/api/v1/eventDates/${iso(-4)}/${iso(8)}`, { Origin: "https://www.fxstreet.com", Referer: "https://www.fxstreet.com/" }, { timeout: 40000 });
+  let n = 0;
+  const ff = events.filter((e) => e.kind === "macro" && e.source === "ForexFactory" && e.t < Date.now() + 3600e3);
+  for (const ev of ff) {
+    const cand = arr.filter((x) => x.actual != null && x.currencyCode === ev.currency && Math.abs(Date.parse(x.dateUtc) - ev.t) <= 20 * 60e3);
+    if (!cand.length) continue;
+    const sameSlot = ff.filter((o) => o.currency === ev.currency && Math.abs(o.t - ev.t) <= 20 * 60e3).length;
+    let best = null, bs = 0;
+    for (const x of cand) {
+      const sc = sim(ev.title, x.name);
+      if (sc > bs) (bs = sc), (best = x);
+    }
+    if (!best || bs < 0.34) {
+      if (cand.length === 1 && sameSlot === 1) best = cand[0];
+      else continue;
+    }
+    ev.actual = fmtNum(best.actual, best.unit);
+    if (best.revised != null) ev.extra = (ev.extra ? ev.extra + " · " : "") + "previous revised to " + fmtNum(best.revised, best.unit);
+    if (!ev.forecast && best.consensus != null) ev.forecast = fmtNum(best.consensus, best.unit);
+    n++;
+  }
+  setStatus("FXStreet actuals", true, `${n} released numbers filled in (${arr.length} events checked)`, n);
+}
+
+/** Short extractive summary: the sentences that carry the substance (decision, numbers, outlook). */
+const KEYW = /(inflation|rates?\b|policy|employment|unemployment|labor|jobs?\b|growth|outlook|risks?|uncertain|balance sheet|tariff|prices?|financial conditions|productivity|decided|decision|target range|expect|support|should|will\b|committee|projection|dissent|vote)/i;
+function keyPoints(text, n = 5) {
+  const sents = text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z“"])/).map((x) => x.trim());
+  const sc = sents.map((x, i) => {
+    if (x.length < 50 || x.length > 300 || /^(For release|Share|Last Update|For media|Implementation Note)/i.test(x) || /^\W*\d+\W/.test(x)) return -1;
+    let v = (x.match(new RegExp(KEYW.source, "gi")) || []).length + (/\d/.test(x) ? 1 : 0) + (/\b(I|we)\b/.test(x) ? 0.5 : 0);
+    v += i < 6 ? 1.5 : 0;
+    return v;
+  });
+  const idx = sc.map((v, i) => [v, i]).filter((x) => x[0] >= 2).sort((a, b) => b[0] - a[0]).slice(0, n).map((x) => x[1]).sort((a, b) => a - b);
+  return idx.map((i) => sents[i]);
+}
+const articleText = (html) => {
+  let h = html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ");
+  const i = h.indexOf('id="article"');
+  if (i > 0) h = h.slice(i);
+  const j = h.search(/Last Update:/);
+  if (j > 0) h = h.slice(0, j);
+  return stripHtml(h).replace(/&[a-z#0-9]+;/gi, " ");
+};
+const rssItems = (xml) =>
+  [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+    const g = (tag) => ((m[1].match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`)) || [])[1] || "").trim();
+    return { title: stripHtml(g("title")).replace(/\s+/g, " ").trim(), link: g("link"), t: Date.parse(g("pubDate")) || 0, desc: stripHtml(g("description")) };
+  });
+
+async function fedNotes() {
+  const now = Date.now();
+  const past = events.filter((e) => e.kind === "macro" && e.t < now - 20 * 60e3 && e.t > now - 5 * 864e5);
+  const [pr, sp, ts] = await Promise.allSettled(["press_monetary", "speeches", "testimony"].map((f) => fetchText(`https://www.federalreserve.gov/feeds/${f}.xml`, {}, { tries: 2 })));
+  const press = pr.status === "fulfilled" ? rssItems(pr.value) : [];
+  const speeches = [...(sp.status === "fulfilled" ? rssItems(sp.value) : []), ...(ts.status === "fulfilled" ? rssItems(ts.value) : [])];
+  let n = 0;
+  for (const ev of past) {
+    if (ev.notes) continue;
+    const usd = ev.currency === "USD";
+    try {
+      if (usd && /fomc (statement|press)|federal funds rate|fomc interest/i.test(ev.title)) {
+        const it = press.find((x) => /FOMC statement/i.test(x.title) && Math.abs(x.t - ev.t) < 20 * 36e5);
+        if (!it) continue;
+        const text = articleText(await fetchText(it.link, {}, { tries: 2 }));
+        const body = text.slice(text.search(/The Federal Open Market Committee approved|Information received since/i) >= 0 ? text.search(/The Federal Open Market Committee approved|Information received since/i) : 0);
+        const vote = body.match(/by an? (\d+)\s*[–-]\s*(\d+) vote/i);
+        const dec = body.match(/decided to (maintain|raise|lower|increase|reduce|keep)[^.]*?(?:range[^.]*?(?:at|to|by)\s+)([^.]*?percent)/i);
+        const against = body.match(/Voting against[\s\S]*?were ([\s\S]*?),? who\s+preferred to ([^.]*?)(?: at this meeting)?\./i);
+        const notes = [];
+        const fa = [];
+        if (dec) {
+          const act = dec[1].toLowerCase();
+          notes.push(`Decision: ${/maintain|keep/.test(act) ? "held" : /raise|increase/.test(act) ? "raised" : "cut"} the federal funds target range ${/maintain|keep/.test(act) ? "at" : "to"} ${dec[2]}.`);
+          fa.push(`تصمیم: نرخ بهره فدرال رزرو ${/maintain|keep/.test(act) ? "ثابت ماند" : /raise|increase/.test(act) ? "افزایش یافت" : "کاهش یافت"} (${/maintain|keep/.test(act) ? "در" : "به"} بازهٔ ${dec[2].replace("percent", "درصد")}).`);
+        }
+        if (vote) {
+          notes.push(`Vote ${vote[1]}–${vote[2]}` + (against ? `; against: ${against[1]} (preferred to ${against[2].replace(/ at this meeting/, "")})` : "") + ".");
+          fa.push(`رأی‌گیری ${vote[1]} به ${vote[2]}` + (against ? `؛ مخالفان: ${against[1].replace(/ and /g, " و ")} (${/raise/.test(against[2]) ? "خواهان افزایش نرخ" : /lower|cut/.test(against[2]) ? "خواهان کاهش نرخ" : "نظر دیگر"})` : "") + ".");
+        }
+        for (const k of keyPoints(body, 6)) if (!notes.some((x) => x.slice(0, 40) === k.slice(0, 40)) && !/^The Committee decided/.test(k) && !/Voting against|preferred to|approved the following|\bvote\b/.test(k)) notes.push(k);
+        if (notes.length) {
+          ev.notes = notes.slice(0, 6);
+          if (fa.length) ev.notesFa = fa;
+          ev.noteSrc = { title: it.title, url: it.link };
+          n++;
+        }
+      } else if (usd && /fomc meeting minutes|minutes/i.test(ev.title)) {
+        const it = press.find((x) => /Minutes of the Federal Open Market Committee/i.test(x.title) && Math.abs(x.t - ev.t) < 20 * 36e5);
+        if (!it) continue;
+        const ks = keyPoints(articleText(await fetchText(it.link, {}, { tries: 2 })), 6);
+        if (ks.length) {
+          ev.notes = ks;
+          ev.noteSrc = { title: it.title, url: it.link };
+          n++;
+        }
+      } else if (usd && /speaks|testif|speech/i.test(ev.title)) {
+        const who = (ev.title.match(/(?:FOMC Member|Fed Chair|Fed Governor|Fed Vice Chair|Fed Vice Chair for Supervision|Fed Chair Nominee)?\s*([A-Z][A-Za-z'-]+)\s+(?:Speaks|Testifies)/) || [])[1];
+        if (!who) continue;
+        const it = speeches.find((x) => new RegExp("^" + who + "\\b", "i").test(x.title) && x.t > ev.t - 8 * 36e5 && x.t < ev.t + 36 * 36e5);
+        if (!it) continue;
+        const ks = keyPoints(articleText(await fetchText(it.link, {}, { tries: 2, timeout: 30000 })), 5);
+        if (ks.length) {
+          ev.notes = ks;
+          ev.noteSrc = { title: it.title, url: it.link };
+          n++;
+        }
+      } else if (/ecb|main refinancing|deposit facility/i.test(ev.title) && ev.currency === "EUR") {
+        const xml = await fetchText("https://www.ecb.europa.eu/rss/press.html", {}, { tries: 2 });
+        const it = rssItems(xml).find((x) => /monetary policy|key ecb interest rates|decisions/i.test(x.title) && Math.abs(x.t - ev.t) < 30 * 36e5);
+        if (it) {
+          ev.notes = [it.title, ...(it.desc ? [it.desc.slice(0, 260)] : [])];
+          ev.noteSrc = { title: it.title, url: it.link };
+          n++;
+        }
+      }
+    } catch (e) {
+      log("  notes fail", ev.title, String(e.message || e).slice(0, 80));
+    }
+  }
+  setStatus("Fed statements & speeches", true, `${n} write-ups for ${past.length} recent events`, n);
+}
+
+/** Earnings that already happened: the real EPS (Nasdaq) and the headline sentences of the results press release (SEC). */
+function patchEarnings() {
+  let n = 0;
+  for (const e of events) {
+    if (e.kind !== "earnings" || e.t > Date.now() || !e.symbol) continue;
+    let d;
+    try {
+      d = JSON.parse(fs.readFileSync(path.join(OUT, "earn", e.symbol + ".json"), "utf8"));
+    } catch {
+      continue;
+    }
+    const h = (d.history || []).find((x) => x.reported && Math.abs(Date.parse(x.reported + "T12:00:00Z") - e.t) < 3.5 * 864e5);
+    if (!h) continue;
+    if (h.epsActual != null) e.actual = "$" + h.epsActual;
+    if (h.surprisePct != null) e.extra = (e.extra ? e.extra + " · " : "") + `EPS ${h.surprisePct >= 0 ? "beat" : "missed"} by ${Math.abs(h.surprisePct)}%`;
+    const notes = [];
+    if (h.epsActual != null && h.epsEst != null) notes.push(`EPS $${h.epsActual} vs $${h.epsEst} expected (${h.surprisePct >= 0 ? "+" : ""}${h.surprisePct}%).`);
+    if (h.revenue != null) notes.push(`Revenue ${h.revenue >= 1000 ? "$" + (h.revenue / 1000).toFixed(2) + "B" : "$" + h.revenue + "M"}` + (h.revenueYoY != null ? ` (${h.revenueYoY >= 0 ? "+" : ""}${h.revenueYoY}% year on year).` : "."));
+    for (const r of d.results || []) if (notes.length < 5) notes.push(r);
+    for (const g of d.guidance?.quotes || []) if (notes.length < 6 && d.guidance.filed >= (h.reported || "")) notes.push("Outlook: " + g);
+    if (notes.length) {
+      e.notes = notes;
+      e.noteSrc = d.guidance?.url ? { title: "Results press release (SEC)", url: d.guidance.url } : undefined;
+      n++;
+    }
+  }
+  setStatus("Earnings write-ups", true, `${n} reported companies summarised`, n);
+}
+
 // ---------- run ----------
 await Promise.allSettled([forexFactory(), fedDates(), treasury(), loadSecTickers()]);
 rateHint();
 await earningsCalendar().catch((e) => setStatus("Nasdaq earnings", false, String(e.message || e).slice(0, 60)));
 await details().catch((e) => log("details error", e));
+await fxstreetActuals().catch((e) => setStatus("FXStreet actuals", false, String(e.message || e).slice(0, 60)));
+await fedNotes().catch((e) => setStatus("Fed statements & speeches", false, String(e.message || e).slice(0, 60)));
+try {
+  patchEarnings();
+} catch (e) {
+  log("patchEarnings", e);
+}
 
 // carry over per-company files from the previous run that were not refreshed now
 if (PREV && fs.existsSync(path.join(PREV, "earn"))) {

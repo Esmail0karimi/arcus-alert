@@ -311,6 +311,7 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
             </div>
           )}
 
+          <KeyPoints ev={p.ev} fa={fa} />
           <h3>{T("What the numbers say", "اعداد چه می‌گویند")}</h3>
           <ul className="rp-facts">
             {S.facts.map((f, i) => (
@@ -435,13 +436,54 @@ export const rateFa = (r: Rates) => {
   const act = r.hint === "hold" ? "تغییر بزرگی نیست" : r.hint === "cuts" ? "کاهش نرخ" : "افزایش نرخ";
   return `بازدهی اوراق خزانه ۶‌ماهه ${y6?.toFixed(2)}٪ است و نرخ سیاستی حدود ${mid ?? "?"}٪ → بازار اوراق به نظر «${act}» را قیمت‌گذاری می‌کند. برآورد تقریبی است، نه CME FedWatch (CME دسترسی خودکار را می‌بندد).`.replace(/٪/g, "%");
 };
+function KeyPoints(p: { ev?: NewsEv; fa: boolean }) {
+  const e = p.ev;
+  if (!e?.notes?.length) return null;
+  const list = p.fa && e.notesFa?.length ? e.notesFa : e.notes;
+  const tr = p.fa && !e.notesFa?.length;
+  return (
+    <>
+      <h3>{p.fa ? "نکات مهم بعد از انتشار" : "Key points after publication"}</h3>
+      <ul className="rp-facts rp-keys">
+        {list.map((x, i) => (
+          <li key={i}>
+            {x}
+            {tr && (
+              <>
+                {" "}
+                <a className="rp-tr" href={"https://translate.google.com/?sl=en&tl=fa&op=translate&text=" + encodeURIComponent(x)} target="_blank" rel="noreferrer">
+                  ترجمه
+                </a>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {p.fa && e.notesFa?.length && e.notes.length > e.notesFa.length ? (
+        <ul className="rp-facts rp-keys en" dir="ltr">
+          {e.notes.slice(e.notesFa.length).map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+      ) : null}
+      {e.noteSrc && (
+        <a className="rp-src" href={e.noteSrc.url} target="_blank" rel="noreferrer">
+          {p.fa ? "متن کامل: " : "Full text: "}
+          {e.noteSrc.title} ↗
+        </a>
+      )}
+      <p className="rp-hint">{p.fa ? "این خلاصه را خود سیستم از متن رسمی بیرون کشیده است، نه برداشت شخصی." : "Picked automatically from the official text; not a personal opinion."}</p>
+    </>
+  );
+}
+
 function MacroReport(p: { ev: NewsEv; rates?: Rates; onClose: () => void }) {
   const fa = useLang() === "fa";
   const T = (en: string, f: string) => (fa ? f : en);
   const [act, setAct] = useState("");
   const e = p.ev;
   const k = KINDS.find((x) => x.re.test(e.title));
-  const f = num(e.forecast), a = num(act);
+  const f = num(e.forecast), a = num(e.actual ?? act);
   const diff = a != null && f != null ? a - f : null;
   const fomc = /fomc|federal funds|interest rate/i.test(e.title) && e.currency === "USD";
   return (
@@ -460,13 +502,18 @@ function MacroReport(p: { ev: NewsEv; rates?: Rates; onClose: () => void }) {
             <th>{T("Value", "مقدار")}</th>
             <td className="act">{e.previous || "—"}</td>
             <td className="an">{e.forecast || "—"}</td>
-            <td className="empty">
-              <input value={act} placeholder={T("type when released", "بعد از انتشار بنویسید")} onChange={(x) => setAct(x.target.value)} />
-            </td>
+            {e.actual ? (
+              <td className="act">{e.actual}</td>
+            ) : (
+              <td className="empty">
+                <input value={act} placeholder={e.t > Date.now() ? T("after release", "بعد از انتشار") : T("not filled in yet", "هنوز ثبت نشده")} onChange={(x) => setAct(x.target.value)} />
+              </td>
+            )}
           </tr>
         </tbody>
       </table>
-      {diff != null && <div className="rp-verdict"><span className={diff > 0 ? "high" : diff < 0 ? "low" : "inline"}>{T("Actual", "واقعی")} {act} {T("vs forecast", "در برابر پیش‌بینی")} {e.forecast} → {diff > 0 ? T("higher", "بالاتر") : diff < 0 ? T("lower", "پایین‌تر") : T("in line", "مطابق")}</span></div>}
+      {diff != null && <div className="rp-verdict"><span className={diff > 0 ? "high" : diff < 0 ? "low" : "inline"}>{T("Actual", "واقعی")} {e.actual ?? act} {T("vs forecast", "در برابر پیش‌بینی")} {e.forecast} → {diff > 0 ? T("higher", "بالاتر") : diff < 0 ? T("lower", "پایین‌تر") : T("in line", "مطابق")}</span></div>}
+      <KeyPoints ev={e} fa={fa} />
       <h3>{T("How the market usually reacts", "واکنش معمول بازار")} {k ? "· " + (fa ? k.fl : k.label) : ""}</h3>
       {k ? (
         <div className="rp-scen two">

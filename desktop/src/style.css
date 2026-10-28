@@ -508,3 +508,27 @@ header.slim .ipbadge,header.slim .ip-badge{transform:scale(.85)}
 header:not(.slim) .ico{display:none}
 header:not(.slim) .hdr-toggle{padding:5px 10px}
 main.chart-wide{width:100%!important;max-width:none!important;padding:4px 8px 4px!important}
+
+/* ---- News: sub-tabs and a quiet table (no lines, soft bands, colour dots) ---- */
+.news-subtabs{display:flex;gap:8px;margin:0 0 12px}
+.news-subtabs button{display:flex;align-items:center;gap:8px;background:#0b1a2c;border:1px solid #1d3550;border-radius:12px;color:#b8c9dc;padding:9px 16px;font-size:13px;font-weight:600}
+.news-subtabs button small{color:#6f86a3;font-weight:400;font-size:11px}.news-subtabs button i{font-style:normal;background:#12243a;border-radius:99px;padding:0 8px;font-size:11px;color:#8aa0bb}
+.news-subtabs button.on{background:#0f3a46;border-color:#00c9b5;color:#fff}.news-subtabs button.on i{background:#00c9b5;color:#03131d}
+.news-table .news-day h3{margin:18px 0 6px;font-size:12.5px;letter-spacing:.3px;color:#8fb3d4;text-transform:none}
+.nt-head,.nt-row{display:grid;grid-template-columns:22px 62px 74px minmax(0,1fr) 84px 84px 84px;align-items:center;gap:8px;padding:0 12px}
+.nt-head{font-size:10.5px;color:#58708c;letter-spacing:.6px;text-transform:uppercase;padding-top:2px;padding-bottom:4px}
+.nt-head span:nth-child(n+5){text-align:right}
+.nt-row{min-height:46px;border-radius:10px;cursor:pointer;background:transparent;transition:background .12s}
+.nt-row.alt{background:rgba(120,160,210,.045)}.nt-row:hover{background:rgba(0,201,181,.09)}.nt-row.past{opacity:.6}
+.nt-dot{width:11px;height:11px;border-radius:50%;display:block}
+.nt-cur{font-weight:700;font-size:12.5px;color:#9fd8ff;letter-spacing:.3px}
+.nt-time{font-weight:650;font-size:13px;font-variant-numeric:tabular-nums;color:#e8f1fc}.nt-time small{display:block;font-weight:400;font-size:10.5px;color:#6f86a3;margin-top:1px}
+.nt-title{font-size:13.5px;color:#e8f1fc;line-height:1.35;padding:7px 0}.nt-title small{display:block;color:#8aa0bb;font-size:11.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nt-num{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:#cfe0f2}.nt-num.dim{color:#7f95ae}
+.nt-num.act{font-weight:800;color:#fff}.nt-num.act.up{color:#3ddc97}.nt-num.act.dn{color:#f5666f}
+.news-tab.fa .nt-num,.news-tab.fa .nt-head span:nth-child(n+5){text-align:left}
+.news-tab.fa .nt-row{border-right:0}
+.news-status summary{cursor:pointer;color:#6f86a3;font-size:11px;margin:12px 0 4px}.news-status>div{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#6f86a3;padding-top:4px}.news-status .ok{color:#3ddc97}.news-status .bad{color:#f5666f}
+@media(max-width:760px){.nt-head,.nt-row{grid-template-columns:18px 50px 62px minmax(0,1fr) 62px}.nt-head span:nth-child(n+6),.nt-row>span:nth-child(n+6){display:none}}
+
+.rp-keys li{margin-bottom:6px}.rp-keys.en{opacity:.85;font-size:12.5px;text-align:left}.nt-note{color:#a9c4de!important}

@@ -14,6 +14,10 @@ export type NewsEv = {
   scopeText: string;
   forecast?: string;
   previous?: string;
+  actual?: string; // filled by the server once the number is out
+  notesFa?: string[];
+  notes?: string[]; // key points written by the server after a speech / statement
+  noteSrc?: { title: string; url: string };
   extra?: string;
   source: string;
 };
