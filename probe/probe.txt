@@ -1,0 +1,24 @@
+OK   FF json this       200 13128B  [{"title":"Bank Holiday","country":"NZD","date":"2026-10-25T15:00:00-04:00","impact":"Holiday","forecast":"","previous":""},{"title":"RBA Assist Gov Jones Speaks","country":"AUD","date":"2026-10-25T17
+OK   FF csv             200 12009B  Title,Country,Date,Time,Impact,Forecast,Previous,URL Bank Holiday,NZD,10-25-2026,7:00pm,Holiday,,,https://www.forexfactory.com/calendar/395-nz-bank-holiday RBA Assist Gov Jones Speaks,AUD,10-25-2026
+OK   FF xml             200 33846B  <?xml version="1.0" encoding="windows-1252"?> <weeklyevents> <event> <title>Bank Holiday</title> <country>NZD</country> <date><![CDATA[10-25-2026]]></date> <time><![CDATA[7:00pm]]></time> <
+FAIL FF html            403 5733B  <!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=Edge"><meta nam
+FAIL TE guest           410 214B  <p>We are sorry, but the guest account has been discontinued.</p> <p>Please subscribe to a plan at <a href="https://tradingeconomics.com/api/pricing.aspx"> https://tradingeconomics.com/api/pricing
+FAIL TE guest US        410 214B  <p>We are sorry, but the guest account has been discontinued.</p> <p>Please subscribe to a plan at <a href="https://tradingeconomics.com/api/pricing.aspx"> https://tradingeconomics.com/api/pricing
+OK   FXStreet           200 311627B  [{"id":"b969b91f-6d1a-4e8d-a227-8c3755f91ff2","eventId":"19414d34-58bc-47d5-ac6e-6200ca9da9f7","dateUtc":"2026-10-22T01:00:00Z","periodDateUtc":null,"periodType":null,"actual":3.000,"revised":null,"co
+FAIL Investing widget   403 3B  403
+FAIL MQL5               404 0B  
+OK   Fed press rss      200 9680B  <?xml version="1.0" encoding="utf-8" ?> <rss version="2.0"> <channel> <title>FRB: Press Release - Monetary Policy</title> <link><![CDATA[https://www.federalreserve.gov/feeds/fe
+OK   Fed speeches rss   200 9603B  <?xml version="1.0" encoding="utf-8" ?> <rss version="2.0"> <channel> <title>FRB: Speeches</title> <link><![CDATA[https://www.federalreserve.gov/feeds/feeds.htm]]></link> 
+OK   Fed all press rss  200 14569B  <?xml version="1.0" encoding="utf-8" ?> <rss version="2.0"> <channel> <title>FRB: Press Release - All Releases</title> <link><![CDATA[https://www.federalreserve.gov/feeds/feeds
+OK   Fed statement 1028 200 82872B  <!doctype html> <html lang="en" class="no-js"> <head> <meta charset="utf-8"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <meta name="viewport" content="width=dev
+OK   Fed monetary page  200 85260B  <!doctype html> <html lang="en" class="no-js"> <head> <meta charset="utf-8"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <meta name="viewport" content="width=device-width, i
+OK   Fed testimony rss  200 9488B  <?xml version="1.0" encoding="utf-8" ?> <rss version="2.0"> <channel> <title>FRB: Testimony</title> <link><![CDATA[https://www.federalreserve.gov/feeds/feeds.htm]]></link> 
+OK   BLS CPI v1         200 3291B  {"status":"REQUEST_SUCCEEDED","responseTime":106,"message":[],"Results":{ "series": [{"seriesID":"CUUR0000SA0","data":[{"year":"2026","period":"M09","periodName":"September","latest":"true","value":"3
+OK   BLS NFP v1         200 3076B  {"status":"REQUEST_SUCCEEDED","responseTime":106,"message":[],"Results":{ "series": [{"seriesID":"CES0000000001","data":[{"year":"2026","period":"M09","periodName":"September","latest":"true","value":
+FAIL BLS schedule       403 1323B  <!DOCTYPE HTML> <html lang="en-us"> <head> <meta http-equiv="Content-Type" content="text/html; charset=utf-8" /> <title>Access Denied</title> </head> <style type="text/css"> 
+OK   BEA                200 71481B   <!DOCTYPE html> <html lang="en" dir="ltr" prefix="content: http://purl.org/rss/1.0/modules/content/ dc: http://purl.org/dc/terms/ foaf: http://xmlns.com/foaf/0.1/ og: http://ogp.me/ns# rdfs: htt
+OK   ECB press rss      200 5692B  <?xml version="1.0" encoding="utf-8"?> <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel> <title>ECB - European Central Bank</title><link>https://www.ecb.europa.eu/</link><descr
+OK   BoE news           200 25829B  <rss xmlns:a10="http://www.w3.org/2005/Atom" version="2.0"><channel><title>News</title><link>https://www.bankofengland.co.uk/rss/news</link><description>News</description><language>en</language><item>
+OK   Yahoo econ cal     200 1218270B  <!doctype html> <html lang="en-US" theme="auto" data-color-theme-enabled="true" data-color-scheme="auto" class="desktop neo-green dock-upscale failsafe"> <head> <meta charset="utf-8"> 
+OK   Nasdaq econ        200 31958B  {"data":{"asOf":"Wed, Oct 28, 2026","headers":{"gmt":"Time","country":"Country","eventName":"Event","actual":"Actual","consensus":"Consensus","previous":"Previous","description":"Description"},"rows":
+FAIL Finnhub-free       401 28B  {"error":"Invalid API key."}

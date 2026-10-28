@@ -1,0 +1,98 @@
+Title,Country,Date,Time,Impact,Forecast,Previous,URL
+Bank Holiday,NZD,10-25-2026,7:00pm,Holiday,,,https://www.forexfactory.com/calendar/395-nz-bank-holiday
+RBA Assist Gov Jones Speaks,AUD,10-25-2026,9:10pm,Low,,,https://www.forexfactory.com/calendar/924-au-rba-assist-gov-jones-speaks
+German ifo Business Climate,EUR,10-26-2026,9:00am,Low,90.0,89.9,https://www.forexfactory.com/calendar/316-ge-ifo-business-climate
+CBI Realized Sales,GBP,10-26-2026,11:00am,Low,-47,-55,https://www.forexfactory.com/calendar/329-uk-cbi-realized-sales
+SPPI y/y,JPY,10-26-2026,11:50pm,Low,3.7%,3.7%,https://www.forexfactory.com/calendar/176-jn-sppi-yy
+BRC Shop Price Index y/y,GBP,10-27-2026,12:01am,Low,1.6%,1.4%,https://www.forexfactory.com/calendar/116-uk-brc-shop-price-index-yy
+BOJ Core CPI y/y,JPY,10-27-2026,5:00am,Low,1.9%,1.8%,https://www.forexfactory.com/calendar/631-jn-boj-core-cpi-yy
+Spanish Unemployment Rate,EUR,10-27-2026,8:00am,Low,9.9%,9.9%,https://www.forexfactory.com/calendar/559-sp-unemployment-rate
+M3 Money Supply y/y,EUR,10-27-2026,9:00am,Low,3.5%,3.5%,https://www.forexfactory.com/calendar/375-ez-m3-money-supply-yy
+Private Loans y/y,EUR,10-27-2026,9:00am,Low,3.1%,3.1%,https://www.forexfactory.com/calendar/365-ez-private-loans-yy
+ADP Weekly Employment Change,USD,10-27-2026,12:15pm,Low,,18.5K,https://www.forexfactory.com/calendar/929-us-adp-weekly-employment-change
+Core Durable Goods Orders m/m,USD,10-27-2026,12:30pm,Low,0.6%,0.3%,https://www.forexfactory.com/calendar/350-us-core-durable-goods-orders-mm
+Durable Goods Orders m/m,USD,10-27-2026,12:30pm,Low,2.0%,0.0%,https://www.forexfactory.com/calendar/349-us-durable-goods-orders-mm
+HPI m/m,USD,10-27-2026,1:00pm,Low,0.2%,0.3%,https://www.forexfactory.com/calendar/239-us-hpi-mm
+S&P/CS Composite-20 HPI y/y,USD,10-27-2026,1:00pm,Low,2.6%,2.5%,https://www.forexfactory.com/calendar/240-us-spcs-composite-20-hpi-yy
+CB Consumer Confidence,USD,10-27-2026,2:00pm,Medium,81.2,81.9,https://www.forexfactory.com/calendar/208-us-cb-consumer-confidence
+New Home Sales,USD,10-27-2026,2:00pm,Low,651K,684K,https://www.forexfactory.com/calendar/231-us-new-home-sales
+Richmond Manufacturing Index,USD,10-27-2026,2:00pm,Low,0,-2,https://www.forexfactory.com/calendar/186-us-richmond-manufacturing-index
+API Weekly Statistical Bulletin,USD,10-27-2026,8:30pm,Low,,,https://www.forexfactory.com/calendar/754-us-api-weekly-statistical-bulletin
+RBA Gov Bullock Speaks,AUD,10-28-2026,12:15am,Medium,,,https://www.forexfactory.com/calendar/671-au-rba-gov-bullock-speaks
+CPI m/m,AUD,10-28-2026,12:30am,High,0.7%,0.4%,https://www.forexfactory.com/calendar/98-au-cpi-mm
+CPI y/y,AUD,10-28-2026,12:30am,High,4.2%,4.0%,https://www.forexfactory.com/calendar/888-au-cpi-yy
+Trimmed Mean CPI m/m,AUD,10-28-2026,12:30am,High,0.3%,0.2%,https://www.forexfactory.com/calendar/99-au-trimmed-mean-cpi-mm
+Official Cash Rate,NZD,10-28-2026,1:00am,High,3.00%,2.75%,https://www.forexfactory.com/calendar/23-nz-official-cash-rate
+RBNZ Rate Statement,NZD,10-28-2026,1:00am,High,,,https://www.forexfactory.com/calendar/24-nz-rbnz-rate-statement
+RBNZ Press Conference,NZD,10-28-2026,2:00am,High,,,https://www.forexfactory.com/calendar/406-nz-rbnz-press-conference
+German GfK Consumer Climate,EUR,10-28-2026,7:00am,Low,-30.1,-30.6,https://www.forexfactory.com/calendar/335-ge-gfk-consumer-climate
+UBS Economic Expectations,CHF,10-28-2026,9:00am,Low,,2.6,https://www.forexfactory.com/calendar/315-sz-ubs-economic-expectations
+German 10-y Bond Auction,EUR,10-28-2026,10:32am,Low,,3.58|1.2,https://www.forexfactory.com/calendar/522-ge-10-y-bond-auction
+Annual Budget Release,GBP,10-28-2026,12:30pm,High,,,https://www.forexfactory.com/calendar/428-uk-annual-budget-release
+Autumn Forecast Statement,GBP,10-28-2026,12:30pm,Medium,,,https://www.forexfactory.com/calendar/505-uk-autumn-forecast-statement
+Goods Trade Balance,USD,10-28-2026,12:30pm,Low,-130.4B,-132.6B,https://www.forexfactory.com/calendar/625-us-goods-trade-balance
+Prelim Wholesale Inventories m/m,USD,10-28-2026,12:30pm,Low,0.5%,0.7%,https://www.forexfactory.com/calendar/642-us-prelim-wholesale-inventories-mm
+CB Leading Index m/m,CNY,10-28-2026,1:00pm,Low,,-0.2%,https://www.forexfactory.com/calendar/495-ch-cb-leading-index-mm
+BOC Monetary Policy Report,CAD,10-28-2026,1:45pm,High,,,https://www.forexfactory.com/calendar/414-ca-boc-monetary-policy-report
+BOC Rate Statement,CAD,10-28-2026,1:45pm,High,,,https://www.forexfactory.com/calendar/14-ca-boc-rate-statement
+Overnight Rate,CAD,10-28-2026,1:45pm,High,2.50%,2.25%,https://www.forexfactory.com/calendar/13-ca-overnight-rate
+BOC Press Conference,CAD,10-28-2026,2:30pm,High,,,https://www.forexfactory.com/calendar/471-ca-boc-press-conference
+Crude Oil Inventories,USD,10-28-2026,2:30pm,Low,0.1M,-3.1M,https://www.forexfactory.com/calendar/10-us-crude-oil-inventories
+Federal Funds Rate,USD,10-28-2026,6:00pm,High,4.00%,4.00%,https://www.forexfactory.com/calendar/1-us-federal-funds-rate
+FOMC Statement,USD,10-28-2026,6:00pm,High,,,https://www.forexfactory.com/calendar/4-us-fomc-statement
+FOMC Press Conference,USD,10-28-2026,6:30pm,High,,,https://www.forexfactory.com/calendar/512-us-fomc-press-conference
+ANZ Business Confidence,NZD,10-29-2026,12:00am,Low,,51.9,https://www.forexfactory.com/calendar/319-nz-anz-business-confidence
+Import Prices q/q,AUD,10-29-2026,12:30am,Low,1.3%,5.7%,https://www.forexfactory.com/calendar/258-au-import-prices-qq
+Consumer Confidence,JPY,10-29-2026,5:00am,Low,35.1,35.4,https://www.forexfactory.com/calendar/212-jn-consumer-confidence
+Italian Monthly Unemployment Rate,EUR,10-29-2026,9:00am,Low,6.2%,6.2%,https://www.forexfactory.com/calendar/486-it-monthly-unemployment-rate
+M4 Money Supply m/m,GBP,10-29-2026,9:30am,Low,0.3%,0.4%,https://www.forexfactory.com/calendar/348-uk-m4-money-supply-mm
+Mortgage Approvals,GBP,10-29-2026,9:30am,Low,54K,55K,https://www.forexfactory.com/calendar/287-uk-mortgage-approvals
+Net Lending to Individuals m/m,GBP,10-29-2026,9:30am,Low,6.2B,6.9B,https://www.forexfactory.com/calendar/343-uk-net-lending-to-individuals-mm
+Italian 10-y Bond Auction,EUR,10-29-2026,9:33am,Low,,4.58|1.6,https://www.forexfactory.com/calendar/524-it-10-y-bond-auction
+Advance GDP q/q,USD,10-29-2026,12:30pm,High,3.2%,1.5%,https://www.forexfactory.com/calendar/2-us-advance-gdp-qq
+Core PCE Price Index m/m,USD,10-29-2026,12:30pm,High,0.3%,0.2%,https://www.forexfactory.com/calendar/85-us-core-pce-price-index-mm
+Advance GDP Price Index q/q,USD,10-29-2026,12:30pm,Medium,3.2%,6.2%,https://www.forexfactory.com/calendar/3-us-advance-gdp-price-index-qq
+Unemployment Claims,USD,10-29-2026,12:30pm,Medium,198K,194K,https://www.forexfactory.com/calendar/11-us-unemployment-claims
+Personal Income m/m,USD,10-29-2026,12:30pm,Low,0.3%,0.2%,https://www.forexfactory.com/calendar/360-us-personal-income-mm
+Personal Spending m/m,USD,10-29-2026,12:30pm,Low,0.6%,0.9%,https://www.forexfactory.com/calendar/356-us-personal-spending-mm
+Gov Council Member Gravelle Speaks,CAD,10-29-2026,12:50pm,Low,,,https://www.forexfactory.com/calendar/835-ca-gov-council-member-gravelle-speaks
+Main Refinancing Rate,EUR,10-29-2026,1:15pm,High,2.65%,2.65%,https://www.forexfactory.com/calendar/12-ez-main-refinancing-rate
+Monetary Policy Statement,EUR,10-29-2026,1:15pm,High,,,https://www.forexfactory.com/calendar/825-ez-monetary-policy-statement
+ECB Press Conference,EUR,10-29-2026,1:45pm,High,,,https://www.forexfactory.com/calendar/7-ez-ecb-press-conference
+Natural Gas Storage,USD,10-29-2026,2:30pm,Low,75B,77B,https://www.forexfactory.com/calendar/26-us-natural-gas-storage
+Gov Council Member Vincent Speaks,CAD,10-29-2026,3:30pm,Low,,,https://www.forexfactory.com/calendar/896-ca-gov-council-member-vincent-speaks
+Gov Board Member Tschudin Speaks,CHF,10-29-2026,5:30pm,Low,,,https://www.forexfactory.com/calendar/914-sz-gov-board-member-tschudin-speaks
+Tokyo Core CPI y/y,JPY,10-29-2026,11:30pm,Medium,2.6%,2.7%,https://www.forexfactory.com/calendar/175-jn-tokyo-core-cpi-yy
+Unemployment Rate,JPY,10-29-2026,11:30pm,Low,2.5%,2.5%,https://www.forexfactory.com/calendar/63-jn-unemployment-rate
+Prelim Industrial Production m/m,JPY,10-29-2026,11:50pm,Low,1.2%,-1.7%,https://www.forexfactory.com/calendar/225-jn-prelim-industrial-production-mm
+Retail Sales y/y,JPY,10-29-2026,11:50pm,Low,3.3%,2.7%,https://www.forexfactory.com/calendar/115-jn-retail-sales-yy
+PPI q/q,AUD,10-30-2026,12:30am,Low,1.0%,1.3%,https://www.forexfactory.com/calendar/97-au-ppi-qq
+Private Sector Credit m/m,AUD,10-30-2026,12:30am,Low,0.5%,0.6%,https://www.forexfactory.com/calendar/344-au-private-sector-credit-mm
+BOJ Policy Rate,JPY,10-30-2026,2:30am,High,<1.25%,<1.25%,https://www.forexfactory.com/calendar/641-jn-boj-policy-rate
+Monetary Policy Statement,JPY,10-30-2026,2:30am,High,,,https://www.forexfactory.com/calendar/371-jn-monetary-policy-statement
+BOJ Outlook Report,JPY,10-30-2026,2:31am,High,,,https://www.forexfactory.com/calendar/426-jn-boj-outlook-report
+Housing Starts y/y,JPY,10-30-2026,5:00am,Low,2.7%,6.1%,https://www.forexfactory.com/calendar/228-jn-housing-starts-yy
+BOJ Press Conference,JPY,10-30-2026,5:30am,High,,,https://www.forexfactory.com/calendar/20-jn-boj-press-conference
+French Consumer Spending m/m,EUR,10-30-2026,6:30am,Low,0.1%,-0.5%,https://www.forexfactory.com/calendar/357-fr-consumer-spending-mm
+French Flash GDP q/q,EUR,10-30-2026,6:30am,Low,0.1%,0.2%,https://www.forexfactory.com/calendar/675-fr-flash-gdp-qq
+German Import Prices m/m,EUR,10-30-2026,7:00am,Low,1.9%,1.0%,https://www.forexfactory.com/calendar/257-ge-import-prices-mm
+Nationwide HPI m/m,GBP,10-30-2026,7:00am,Low,-0.2%,-0.2%,https://www.forexfactory.com/calendar/242-uk-nationwide-hpi-mm
+German Prelim CPI m/m,EUR,10-30-2026,7:29am,Medium,0.1%,0.6%,https://www.forexfactory.com/calendar/169-ge-prelim-cpi-mm
+French Prelim CPI m/m,EUR,10-30-2026,7:45am,Low,0.2%,-0.3%,https://www.forexfactory.com/calendar/556-fr-prelim-cpi-mm
+French Prelim Private Payrolls q/q,EUR,10-30-2026,7:45am,Low,-0.1%,-0.1%,https://www.forexfactory.com/calendar/70-fr-prelim-private-payrolls-qq
+KOF Economic Barometer,CHF,10-30-2026,8:00am,Low,108.1,109.1,https://www.forexfactory.com/calendar/301-sz-kof-economic-barometer
+Spanish Flash CPI y/y,EUR,10-30-2026,8:00am,Low,4.9%,4.9%,https://www.forexfactory.com/calendar/592-sp-flash-cpi-yy
+Spanish Flash GDP q/q,EUR,10-30-2026,8:00am,Low,0.6%,0.7%,https://www.forexfactory.com/calendar/555-sp-flash-gdp-qq
+German Unemployment Change,EUR,10-30-2026,8:55am,Low,5K,12K,https://www.forexfactory.com/calendar/60-ge-unemployment-change
+German Prelim GDP q/q,EUR,10-30-2026,9:00am,Medium,0.1%,0.2%,https://www.forexfactory.com/calendar/38-ge-prelim-gdp-qq
+Italian Prelim GDP q/q,EUR,10-30-2026,9:00am,Low,0.1%,0.2%,https://www.forexfactory.com/calendar/40-it-prelim-gdp-qq
+Italian Prelim CPI m/m,EUR,10-30-2026,10:00am,Low,0.1%,0.7%,https://www.forexfactory.com/calendar/172-it-prelim-cpi-mm
+Prelim Flash GDP q/q,EUR,10-30-2026,10:00am,Low,0.2%,0.4%,https://www.forexfactory.com/calendar/638-ez-prelim-flash-gdp-qq
+Unemployment Rate,EUR,10-30-2026,10:00am,Low,6.4%,6.4%,https://www.forexfactory.com/calendar/59-ez-unemployment-rate
+GDP m/m,CAD,10-30-2026,12:30pm,Medium,0.2%,0.0%,https://www.forexfactory.com/calendar/29-ca-gdp-mm
+Employment Cost Index q/q,USD,10-30-2026,12:30pm,Medium,0.8%,0.9%,https://www.forexfactory.com/calendar/179-us-employment-cost-index-qq
+Chicago PMI,USD,10-30-2026,1:45pm,Low,55.8,58.8,https://www.forexfactory.com/calendar/189-us-chicago-pmi
+FOMC Member Daly Speaks,USD,10-30-2026,4:00pm,Low,,,https://www.forexfactory.com/calendar/807-us-fomc-member-daly-speaks
+FOMC Member Musalem Speaks,USD,10-30-2026,4:30pm,Low,,,https://www.forexfactory.com/calendar/911-us-fomc-member-musalem-speaks
+Manufacturing PMI,CNY,10-31-2026,1:30am,Low,49.9,50.1,https://www.forexfactory.com/calendar/449-ch-manufacturing-pmi
+Non-Manufacturing PMI,CNY,10-31-2026,1:30am,Low,50.0,50.2,https://www.forexfactory.com/calendar/520-ch-non-manufacturing-pmi
