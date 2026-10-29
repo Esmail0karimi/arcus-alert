@@ -99,6 +99,7 @@ function App() {
     [editLinePrice, setEditLinePrice] = useState(""),
     [editLineColor, setEditLineColor] = useState("#39c9c2"),
     [editLineWidth, setEditLineWidth] = useState(2),
+    [editLineText, setEditLineText] = useState(""),
     [favName, setFavName] = useState(() => localStorage.getItem("arcus.favName") || "Favorites"),
     [flags, setFlags] = useState<Record<string, string>>(() => {
       try {
@@ -1996,6 +1997,7 @@ function App() {
     setEditLinePrice(String(d.points[0]?.price ?? ""));
     setEditLineColor(d.color || d.points[0]?.color || "#39c9c2");
     setEditLineWidth(d.width || d.points[0]?.width || 2);
+    setEditLineText((d as any).text || "");
   };
   const saveDrawingEdit = () => {
     const price = Number(editLinePrice);
@@ -2007,6 +2009,7 @@ function App() {
               ...d,
               color: editLineColor,
               width: editLineWidth,
+              text: editLineText.trim() || undefined,
               points: d.points.map((p, i) =>
                 i === 0 ? { ...p, price, color: editLineColor, width: editLineWidth } : p,
               ),
@@ -3057,6 +3060,22 @@ function App() {
                                 drawingMoved.current = false;
                               }}
                             />
+                            {(d as any).text && (
+                              <text
+                                x="10"
+                                y={a.y - 6}
+                                fill={d.color || d.points[0]?.color || "#39c9c2"}
+                                fontSize="13"
+                                fontWeight="700"
+                                fontFamily="system-ui,sans-serif"
+                                paintOrder="stroke"
+                                stroke="#050d1a"
+                                strokeWidth="3"
+                                style={{ pointerEvents: "none" }}
+                              >
+                                {(d as any).text}
+                              </text>
+                            )}
                             </g>
                           );
                         }
@@ -3121,7 +3140,7 @@ function App() {
                             ⧉ Copy
                           </button>
                           <button
-                            title="Edit price / colour"
+                            title="Edit text / price / colour"
                             onClick={() => {
                               openDrawingEditor(d);
                               setSelectedLine(null);
@@ -3167,6 +3186,16 @@ function App() {
                         <b>Edit horizontal line</b>
                         <button onClick={() => setEditingDrawing(null)}>×</button>
                       </div>
+                      <label>
+                        Text (shown next to the line)
+                        <input
+                          type="text"
+                          maxLength={120}
+                          placeholder="e.g. Support, Target 1…"
+                          value={editLineText}
+                          onChange={(e) => setEditLineText(e.target.value)}
+                        />
+                      </label>
                       <label>
                         Price
                         <input
