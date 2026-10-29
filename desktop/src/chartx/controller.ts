@@ -1161,13 +1161,14 @@ export class ChartX {
   /** Style changes become the default for the next shape of the same kind (kept until you change it again). */
   private remember(sh: Shape) {
     const d = load<Record<string, Partial<Shape>>>("arcus.chartx.kdef.v1", {});
-    const { id, kind, pts, locked, ...style } = sh as any;
+    const { id, kind, pts, locked, note, ...style } = sh as any; // the text is per line: a new line always starts empty
     d[sh.kind] = style;
     save("arcus.chartx.kdef.v1", d);
   }
   private newShape(id: string, kind: Kind, pts: P[]): Shape {
     const d = load<Record<string, Partial<Shape>>>("arcus.chartx.kdef.v1", {})[kind] || {};
-    return { color: DEF_COLOR[kind], width: kind === "trend" || kind === "arrow" ? 1.5 : 2, ...d, id, kind, pts } as Shape;
+    const { note: _n, ...dd } = d as any;
+    return { color: DEF_COLOR[kind], width: kind === "trend" || kind === "arrow" ? 1.5 : 2, ...dd, id, kind, pts } as Shape;
   }
   private lockAll = load<boolean>("arcus.chartx.lockall.v1", false);
   private lockBtn = h("button", "", "🔓");

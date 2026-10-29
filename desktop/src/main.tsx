@@ -3046,10 +3046,11 @@ function App() {
                               y1={a.y}
                               y2={a.y}
                               stroke="transparent"
-                              strokeWidth={16}
+                              strokeWidth={22}
                               style={{ pointerEvents: "stroke", cursor: "ns-resize" }}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
+                                setSelectedLine(d.id); // select right away, so the edit / delete bar always appears
                                 drawingDrag.current = d.id;
                                 drawingMoved.current = false;
                                 e.currentTarget.setPointerCapture(e.pointerId);
@@ -3088,8 +3089,13 @@ function App() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!drawingMoved.current) setSelectedLine(d.id);
+                                setSelectedLine(d.id);
                                 drawingMoved.current = false;
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                openDrawingEditor(d);
+                                setSelectedLine(null);
                               }}
                             />
                             {(d as any).text && (
