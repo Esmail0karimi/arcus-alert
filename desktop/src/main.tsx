@@ -1127,7 +1127,7 @@ function App() {
     });
   }, []);
   useEffect(() => {
-    if (!symbol && symbols.length) setSymbol(symbols[0]);
+    if (!symbol && symbols.length) setSymbol(favorites.find((f) => symbols.includes(f)) || symbols[0]);
   }, [symbols, symbol]);
   useEffect(() => {
     chartSymbolRef.current = symbol;
@@ -3754,7 +3754,18 @@ function App() {
       )}
       <nav>
         {TABS.map((t, i) => (
-          <button className={tab === t ? "active" : ""} onClick={() => setTab(t)} key={t}>
+          <button
+            className={tab === t ? "active" : ""}
+            onClick={() => {
+              // entering the chart from the tab bar starts on the first symbol saved in Favorites
+              if (t === "Chart" && tab !== "Chart" && favorites.length) {
+                setWatchGroup("Favorites");
+                setSymbol(favorites[0]);
+              }
+              setTab(t);
+            }}
+            key={t}
+          >
             <span>{["▦", "☆", "⌁", "◔", "⌕", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
