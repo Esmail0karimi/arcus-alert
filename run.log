@@ -1,31 +1,31 @@
    3s ForexFactory nextweek HTTP 404
+  73s   fallback probe: TSLA nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"TSLA Earnings Date","announcement":"Earnings announcement* for TSLA: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
   73s   fallback probe: NFLX nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"NFLX Earnings Date","announcement":"Earnings announcement* for NFLX: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  73s   fallback probe: SPY nasdaq: {"data":null,"message":null,"status":{"rCode":400,"bCodeMessage":[{"code":1001,"errorMessage":"Symbol not exists."}],"developerMessage":null}}
   73s   fallback probe: NFLX finviz: >Earnings Oct 20 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  73s   fallback probe: META nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"META Earnings Date","announcement":"Earnings announcement* for META: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  73s   fallback probe: META finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  73s   fallback probe: TSLA finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   73s   fallback probe: SPY finviz: 
+  73s   fallback probe: TSLA finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   73s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  73s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
   73s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  73s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
   73s   fallback probe: BRKB fromFinviz error: HTTP 404
   73s   fallback probe: BRK fromFinviz error: HTTP 404
   73s   fallback probe: BRKB fromSA error: HTTP 404
-  73s earnings-date fallback: 18/65 tracked stocks found
+  73s earnings-date fallback: 24/71 tracked stocks found
   73s details: 791 companies, refreshing 110
- 198s details written 110, empty 0
- 199s news.json: 879 events, 492 company files
+ 187s details written 110, empty 0
+ 188s news.json: 879 events, 492 company files
 [
- {
-  "name": "SEC EDGAR",
-  "ok": true,
-  "note": "10430 companies"
- },
  {
   "name": "Fed calendar",
   "ok": true,
   "note": "9 meetings (official)",
   "n": 9
+ },
+ {
+  "name": "SEC EDGAR",
+  "ok": true,
+  "note": "10430 companies"
  },
  {
   "name": "Treasury yields",
@@ -41,8 +41,8 @@
  {
   "name": "Nasdaq earnings",
   "ok": true,
-  "note": "775 reports in 56 days",
-  "n": 775
+  "note": "781 reports in 57 days",
+  "n": 781
  },
  {
   "name": "Nasdaq analysts",
@@ -71,19 +71,19 @@
  {
   "name": "FXStreet actuals",
   "ok": true,
-  "note": "16 released numbers filled in (486 events checked)",
-  "n": 16
+  "note": "17 released numbers filled in (544 events checked)",
+  "n": 17
  },
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "4 write-ups for 43 recent events",
+  "note": "4 write-ups for 44 recent events",
   "n": 4
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "27 reported companies summarised",
-  "n": 27
+  "note": "32 reported companies summarised",
+  "n": 32
  }
 ]
