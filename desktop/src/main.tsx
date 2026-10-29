@@ -894,6 +894,8 @@ function App() {
     let flushTimer: number | undefined;
     const updateLiveChartCandle = (marketName: string, price: number, time: number) => {
       if (!series.current || marketName.toUpperCase() !== String(chartSymbolRef.current || "").toUpperCase()) return;
+      const nowS = Date.now() / 1000;
+      if (!Number.isFinite(time) || Math.abs(time - nowS) > 90) time = nowS; // a feed clock that is off must not freeze the candle
       const span = TF_SEC[chartTfRef.current] || 900;
       const anchor = liveBarRef.current?.bar.time ?? chartX.current?.lastCandleTime();
       if (!anchor) return; // candles are still loading; the loader applies the latest tick itself
@@ -1428,6 +1430,7 @@ function App() {
                 .filter((c: any, i: number, a: any[]) => i === 0 || c.time > a[i - 1].time);
               if (fast.length && !cancelled && !fullDone && series.current && chartApi.current) {
                 series.current.setData(fast);
+                chartX.current?.setSpan(TF_SEC[requestTf] || 0);
                 chartX.current?.setCandles(fast, requestSymbol);
                 const sp = spanByTf[requestTf] || 900,
                   lastFast = fast[fast.length - 1];
@@ -1559,6 +1562,7 @@ function App() {
         if (!activeSeries || !activeChart) return;
         fullDone = true;
         activeSeries.setData(candles);
+        chartX.current?.setSpan(TF_SEC[requestTf] || 0);
         chartX.current?.setCandles(candles, requestSymbol);
         chartX.current?.setSource("Candles: " + (srcLabel || ex?.label || "Arcus"));
         const span = TF_SEC[requestTf] || 900,
@@ -1584,6 +1588,9 @@ function App() {
         requestAnimationFrame(() => {
           if (!cancelled) refit(activeChart, fastShown && candles.length > 250 ? candles.length : 0);
         });
+        const gaps = candles.slice(-30).map((x: any, i: number, arr: any[]) => (i ? x.time - arr[i - 1].time : 0)).filter((g: number) => g > 0).sort((p: number, q: number) => p - q);
+        const dataSpan = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+        if (dataSpan > span * 1.5) candleNote[requestSymbol] = "⚠ this source only has " + (dataSpan >= 86400 ? "daily" : Math.round(dataSpan / 60) + "-minute") + " candles for " + requestTf + " (live candles still follow " + requestTf + ")";
         setChartStatus(
           requestSymbol + " · " + requestTf + " · " + candles.length + " candles · live WebSocket" +
             (candleNote[requestSymbol] ? " · " + candleNote[requestSymbol] : ""),

@@ -856,6 +856,14 @@ export class ChartX {
     const isPos = k === "long" || k === "short";
     const isFib = k === "fibret" || k === "fibext";
     if (!isPos) rows.push(col(isFib ? "Trend line colour" : "Colour", sh.color, (s2, v) => (s2.color = v)));
+    const noteIn = h("input");
+    noteIn.type = "text";
+    noteIn.placeholder = "Text next to the line…";
+    noteIn.maxLength = 120;
+    noteIn.value = sh.note || "";
+    noteIn.oninput = () => upd((s2) => (s2.note = noteIn.value));
+    rows.push(this.row("Text", noteIn));
+    rows.push(num("Text size", sh.noteSize ?? 12, 8, 40, 1, (s2, v) => (s2.noteSize = v)));
     rows.push(num("Width", sh.width, 0.5, 8, 0.5, (s2, v) => (s2.width = v)));
     rows.push(this.row("Locked", this.checkIn(!!sh.locked, (v) => { const s2 = cur(); if (s2) { s2.locked = v; this.persistShapes(); this.lastSig = ""; } })));
     rows.push(this.row("Style", this.selIn(STYLE, sh.style || "solid", (v) => upd((s2) => (s2.style = v as LineStyle)))));

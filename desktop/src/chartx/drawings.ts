@@ -9,7 +9,7 @@ export type Shape = {
   id: string; kind: Kind; pts: P[]; color: string; width: number;
   style?: LineStyle; fill?: string; fillOp?: number; extL?: boolean; extR?: boolean;
   levels?: Level[]; bg?: boolean; showTrend?: boolean; showPrice?: boolean; showLvl?: boolean; mid?: boolean; rev?: boolean;
-  locked?: boolean; labels?: boolean; pc?: string; sc?: string; acct?: number; riskP?: number;
+  note?: string; noteSize?: number; locked?: boolean; labels?: boolean; pc?: string; sc?: string; acct?: number; riskP?: number;
 };
 export const DASH: Record<LineStyle, string> = { solid: "", dashed: "7 5", dotted: "1.5 4" };
 export const defLevels = (kind: Kind): Level[] =>
@@ -244,6 +244,21 @@ export function build(s: Shape, env: Env): Built | null {
       out.mid = { x: cx, y: E.y };
       break;
     }
+  }
+  if (s.note) {
+    // the user's own text, drawn next to the line; it is attached to the price/time points, so it stays with the line on every timeframe
+    const sz = s.noteSize || 12;
+    let nx = A.x + 6, ny = A.y - 6, anc = "start";
+    if (s.kind === "hray") nx = Math.max(6, Math.min(env.w - 8, A.x + 6));
+    else if (s.kind === "vline") { nx = A.x + 5; ny = 16; }
+    else if (s.kind === "trend" || s.kind === "arrow" || s.kind === "channel" || s.kind === "measure") { nx = out.mid.x; ny = out.mid.y - 8; anc = "middle"; }
+    const t = text(nx, ny, s.note, s.color, anc);
+    t.setAttribute("font-size", String(sz));
+    t.setAttribute("font-weight", "600");
+    t.setAttribute("paint-order", "stroke");
+    t.setAttribute("stroke", "#0a1220");
+    t.setAttribute("stroke-width", "3");
+    out.els.push(t);
   }
   if (sel && !s.locked) for (const hd of out.handles) out.els.push(svgEl("circle", { cx: hd.x, cy: hd.y, r: env.selected ? 5.5 : 3.5, fill: "#fff", stroke: col, "stroke-width": 2 }));
   else if (s.kind === "trend") for (const hd of out.handles) out.els.push(svgEl("circle", { cx: hd.x, cy: hd.y, r: 3, fill: col }));
