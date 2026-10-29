@@ -583,3 +583,43 @@ nav button span{filter:saturate(1.1)}
 .nt-row{transition:background .14s}.nt-row:hover{background:#0f2840}
 .cx-panel,.cx-pop{border-radius:12px;box-shadow:0 18px 44px #000b}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ===== 3D buttons: lit top edge, solid "thickness" underneath, real press-down ===== */
+:root{--btn-hi:#ffffff26;--btn-edge:#06111e;--btn-drop:#01060d99}
+header button:not(.connection button):not(.connection),.header-actions button,.chartbar button,.heading button,.formcard button,.history-button,.history-panel>.history-heading button,.alertrow button,.marketrow button,.watch-head button,.indicator-settings-button,.chart-symbol-trigger,.secondary,.danger,.cx-btn,.stop-alarm{
+  position:relative;border:1px solid #2c4d70;border-top-color:#4a769f;
+  background:linear-gradient(180deg,#1a3a58 0%,#122b44 48%,#0e2238 100%);
+  box-shadow:inset 0 1px 0 var(--btn-hi),inset 0 -2px 4px #00000040,0 3px 0 var(--btn-edge),0 6px 12px var(--btn-drop);
+  transform:translateY(0);transition:transform .09s ease-out,box-shadow .09s ease-out,filter .15s,background .15s}
+header button:not(.connection button):not(.connection):hover,.header-actions button:hover,.chartbar button:hover,.heading button:hover,.formcard button:hover,.history-button:hover,.alertrow button:hover,.marketrow button:hover,.watch-head button:hover,.chart-symbol-trigger:hover,.secondary:hover,.cx-btn:hover{
+  filter:brightness(1.14);background:linear-gradient(180deg,#20486c 0%,#16344f 48%,#112841 100%);transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 #ffffff33,inset 0 -2px 4px #00000040,0 4px 0 var(--btn-edge),0 9px 16px var(--btn-drop)}
+header button:not(.connection button):not(.connection):active,.header-actions button:active,.chartbar button:active,.heading button:active,.formcard button:active,.history-button:active,.alertrow button:active,.marketrow button:active,.watch-head button:active,.chart-symbol-trigger:active,.secondary:active,.danger:active,.cx-btn:active,.stop-alarm:active{
+  transform:translateY(3px);filter:brightness(.97);
+  box-shadow:inset 0 2px 6px #00000066,0 0 0 var(--btn-edge),0 1px 2px var(--btn-drop)}
+/* coloured, glossy primary buttons */
+.primary,.watch-detail button,.chart-crosshair-add{
+  border:1px solid #5ff5e4;border-top-color:#aefaf1;color:#02161c;font-weight:800;
+  background:linear-gradient(180deg,#43f1de 0%,#19d6c6 46%,#0fb3b9 100%);
+  box-shadow:inset 0 1px 0 #ffffffaa,inset 0 -3px 6px #00606a55,0 4px 0 #087884,0 9px 18px #0a9aa966;
+  text-shadow:0 1px 0 #ffffff55;transition:transform .09s ease-out,box-shadow .09s ease-out,filter .15s}
+.primary:hover,.watch-detail button:hover,.chart-crosshair-add:hover{filter:brightness(1.08) saturate(1.1);transform:translateY(-1px);background:linear-gradient(180deg,#5af5e4 0%,#27e0d0 46%,#16bfc4 100%);box-shadow:inset 0 1px 0 #ffffffbb,inset 0 -3px 6px #00606a55,0 5px 0 #087884,0 12px 22px #0a9aa977}
+.primary:active,.watch-detail button:active,.chart-crosshair-add:active{transform:translateY(4px);box-shadow:inset 0 2px 6px #00505a88,0 0 0 #087884,0 1px 3px #0a9aa955}
+.danger{background:linear-gradient(180deg,#6a2a3c 0%,#4d1f2d 50%,#3b1823 100%);border-color:#9a4559;border-top-color:#c06277;box-shadow:inset 0 1px 0 #ffffff26,0 3px 0 #1d0a11,0 6px 12px var(--btn-drop)}
+/* round floating button: a glossy sphere */
+.chart-fab{background:radial-gradient(circle at 35% 28%,#8ffbee 0,#1fdccb 38%,#0b9fae 100%);border:1px solid #7ff7ea;
+  box-shadow:inset 0 2px 3px #ffffffcc,inset 0 -6px 10px #00505a66,0 6px 0 #077480,0 14px 26px #0a9aa977;transition:transform .09s ease-out,box-shadow .09s ease-out}
+.chart-fab:hover{transform:translateY(-2px);filter:none}
+.chart-fab:active{transform:translateY(5px);box-shadow:inset 0 2px 8px #00505aaa,0 1px 0 #077480,0 3px 8px #0a9aa955}
+.stop-alarm{background:linear-gradient(180deg,#d8475d,#b52d43 55%,#8d1f33);border-color:#ff8d9d;box-shadow:inset 0 1px 0 #ffffff55,0 4px 0 #5a1020,0 10px 22px #b52d4366}
+/* bottom tabs: raised keys, the active one is pressed in and lit */
+nav button{border:1px solid transparent;transition:transform .09s,box-shadow .09s,background .15s,color .15s}
+nav button:hover{transform:translateY(-1px);background:linear-gradient(180deg,#112a42,#0b2036);box-shadow:inset 0 1px 0 #ffffff14,0 2px 0 #04101c}
+nav button:active{transform:translateY(2px)}
+nav button.active{border-color:#1f5a73;border-top-color:#2c8aa3;background:linear-gradient(180deg,#0b2538,#0f3a54);
+  box-shadow:inset 0 3px 8px #00000066,inset 0 -1px 0 #19e3cf33,0 0 18px #19e3cf26}
+nav button.active span{filter:drop-shadow(0 0 6px #19e3cfaa)}
+/* filter chips on the Market screen */
+.cat-chip,.market-tabs button,.chips button{box-shadow:inset 0 1px 0 #ffffff1f,0 2px 0 #04101c}
+@media (hover:none){header button:not(.connection button):not(.connection):hover,.chartbar button:hover,.primary:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){button,nav button{transition:none!important}button:active{transform:none!important}}
