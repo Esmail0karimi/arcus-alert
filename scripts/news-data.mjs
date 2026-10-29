@@ -271,8 +271,9 @@ async function earningsCalendar() {
     }
     if (!r || !r.mo) return;
     const day = `${r.y}-${String(r.mo).padStart(2, "0")}-${String(r.d).padStart(2, "0")}`;
-    const hh = r.tm === "amc" ? 16 : r.tm === "bmo" ? 8 : 12;
-    const t = etToUtc(r.y, r.mo, r.d, hh, hh === 12 ? 0 : 5);
+    // the calendar only says "after close" / "before open", never the minute: use the EARLIEST usual moment (16:00 ET after the close, 07:00 ET before the open) so the countdown never ends after the release
+    const hh = r.tm === "amc" ? 16 : r.tm === "bmo" ? 7 : 12;
+    const t = etToUtc(r.y, r.mo, r.d, hh, 0);
     if (t < nowMs - 14 * 864e5) return; // a report from the last two weeks still shows (as already reported)
     calRows.push({ sym, day, t, tm: r.tm, cap: MEGA.has(sym) ? 3e11 : 5e10, name: secMap.get(sym)?.name ? titleCase(secMap.get(sym).name) : sym, fq: "", eps: "", n: 0, lyEps: "", lyDate: "", estimated: r.src });
     fb++;
@@ -284,7 +285,7 @@ async function earningsCalendar() {
       id: "er" + r.sym + r.day, t: r.t, title: (r.name ? r.name.replace(/\s+(Inc\.?|Corporation|Corp\.?|Company|Ltd\.?|Limited|Class [A-C].*)$/i, "") : r.sym) + " earnings report",
       impact: r.cap >= 2e11 ? "High" : r.cap >= 3e10 ? "Medium" : "Low", kind: "earnings", symbol: r.sym, scope: "symbol", scopeText: "Only " + r.sym,
       forecast: r.eps || undefined, previous: r.lyEps || undefined,
-      extra: (r.tm === "amc" ? "After market close" : r.tm === "bmo" ? "Before market open" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : "") + (r.estimated ? " · expected date (" + r.estimated + "), not yet confirmed by the company" : ""),
+      extra: (r.tm === "amc" ? "After market close (about 4:00 PM ET, exact minute not published)" : r.tm === "bmo" ? "Before market open (usually 6–8 AM ET, exact minute not published)" : "Time not announced") + (r.fq ? " · quarter " + r.fq : "") + (r.n ? " · " + r.n + " analysts" : "") + (r.estimated ? " · expected date (" + r.estimated + "), not yet confirmed by the company" : ""),
       source: "Nasdaq",
     });
   }
