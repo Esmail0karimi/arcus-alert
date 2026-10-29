@@ -8,7 +8,7 @@ import { fetchEvents } from "./events";
 import { SessionBar } from "./sessions";
 import { IpBadge } from "./ipbadge";
 import { News } from "./news";
-import { ReportHost } from "./report";
+import { ReportHost, openReport as openReportExt } from "./report";
 import { Screener } from "./screener";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
@@ -50,6 +50,21 @@ declare global {
     arcusDesktop: any;
   }
 }
+/** ?embed=news or ?embed=report&sym=META: the Android app opens these screens without the header and tab bar. */
+const EMBED = (() => {
+  try {
+    return new URLSearchParams(location.search).get("embed") || "";
+  } catch {
+    return "";
+  }
+})();
+const EMBED_SYM = (() => {
+  try {
+    return (new URLSearchParams(location.search).get("sym") || "").toUpperCase();
+  } catch {
+    return "";
+  }
+})();
 const TABS = ["Market", "Watchlist", "Chart", "News", "Screener", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
@@ -138,7 +153,7 @@ function App() {
         return false;
       }
     });
-  const [tab, setTab] = useState("Market"),
+  const [tab, setTab] = useState(EMBED ? "News" : "Market"),
     [prices, setPrices] = useState<Record<string, Price>>({}),
     [status, setStatus] = useState("Connecting to Arcus…"),
     [exMsg, setExMsg] = useState<Record<string, string>>({}),
@@ -1623,6 +1638,12 @@ function App() {
     const sec = TF_SEC[tf] || 0;
     chartX.current?.setSpan(sec);
   }, [tab, tf, symbol]);
+  useEffect(() => {
+    if (EMBED === "report" && EMBED_SYM) {
+      const t = window.setTimeout(() => openReportExt({ symbol: EMBED_SYM }), 400);
+      return () => window.clearTimeout(t);
+    }
+  }, []);
   const [evTick, setEvTick] = useState(0);
   useEffect(() => {
     const cx = chartX.current;
@@ -2355,7 +2376,7 @@ function App() {
   const panelItems = query.trim() ? filtered : wlTabItems;
   watchNavRef.current = panelItems;
   return (
-    <div className="app">
+    <div className={"app" + (EMBED ? " embed" : "")}>
       {infoSym && (
         <AssetInfo
           symbol={infoSym}
@@ -2427,6 +2448,7 @@ function App() {
           </div>
         </>
       )}
+      {!EMBED && (
       <header className={tab === "Chart" && !hdrFull ? "slim" : ""}>
         <div className="brand" title="ARCUS ALERT">
           <div className="mark"><img src="./icon.svg" alt="Arcus" /></div>
@@ -2534,6 +2556,7 @@ function App() {
           )}
         </div>
       </header>
+      )}
       {tab !== "Chart" && <SessionBar notifPerm={window.arcusDesktop?.isDesktop ? "granted" : notifPerm} onEnable={enableBrowserNotifications} />}
       {alertBanners.length > 0 && (
         <div className="alert-toasts">
@@ -3806,6 +3829,7 @@ function App() {
           </section>
         </div>
       )}
+      {!EMBED && (
       <nav>
         {TABS.map((t, i) => (
           <button
@@ -3825,6 +3849,7 @@ function App() {
           </button>
         ))}
       </nav>
+      )}
     </div>
   );
 }

@@ -21,6 +21,13 @@ android {
         targetSdk 35
         versionCode 2
         versionName '1.1'
+        // Experiment builds (branch experiment/qfex) get their own app id and name, so they never replace the published app.
+        def isTestBuild = (System.getenv('GITHUB_REF_NAME') ?: '') == 'experiment/qfex'
+        if (isTestBuild) { applicationIdSuffix '.test'; versionNameSuffix '-test' }
+        manifestPlaceholders = [appLabel: isTestBuild ? 'Arcus Alert Test' : 'Arcus Alert']
+        // Where the News / company-report screens (the web app in embed mode) are loaded from.
+        def webBase = System.getenv('ARCUS_WEB_BASE') ?: (isTestBuild ? 'https://esmail0karimi.github.io/arcus-alert/qfex-test/' : 'https://esmail0karimi.github.io/arcus-alert/')
+        buildConfigField 'String', 'WEB_BASE', '"' + webBase + '"'
     }
     buildFeatures { buildConfig true }
     signingConfigs {

@@ -90,6 +90,21 @@ public class ProChartView extends WebView {
         runChartJs("setDrawingTool(" + JSONObject.quote(tool) + ");");
     }
     public void clearDrawings() { runChartJs("clearDrawings();"); }
+    /** Seconds per candle of the selected timeframe, so the countdown to the candle close follows the timeframe. */
+    public void setTimeframe(long seconds) { runChartJs("setTimeframe(" + seconds + ");"); }
+    private void askNote(final int index) {
+        try {
+            final android.widget.EditText input = new android.widget.EditText(getContext());
+            input.setSingleLine(true);
+            input.setHint("Text next to this line (optional)");
+            new android.app.AlertDialog.Builder(getContext())
+                    .setTitle("Add text")
+                    .setView(input)
+                    .setPositiveButton("Save", (d, w) -> runChartJs("setNote(" + index + "," + JSONObject.quote(input.getText().toString().trim()) + ");"))
+                    .setNegativeButton("Skip", null)
+                    .show();
+        } catch (Exception ignored) { }
+    }
 
     public void resetView() { runChartJs("fitContent();"); }
     public void zoomHorizontal(float factor) { runChartJs("zoomTime(" + factor + ");"); }
@@ -111,6 +126,7 @@ public class ProChartView extends WebView {
         @JavascriptInterface public void onAlertSelected(final int index) {
             post(() -> { if (alertDragListener != null) alertDragListener.onSelected(index); });
         }
+        @JavascriptInterface public void onDrawn(final int index) { post(() -> askNote(index)); }
         @JavascriptInterface public void onChartSwipe(final int direction) {
             post(() -> { if (chartSwipeListener != null) chartSwipeListener.onSwipe(direction); });
         }
@@ -134,11 +150,12 @@ public class ProChartView extends WebView {
 .alertTag{position:absolute;right:2px;top:1px;background:#245b87;color:#fff;border-radius:4px;padding:3px 5px;font-size:9px}.newAlertLine{position:absolute;left:0;right:0;height:30px;transform:translateY(-15px);pointer-events:none;z-index:9}.newAlertLine:before{content:'';position:absolute;left:0;right:0;top:14px;border-top:1px solid #f6c65b}.newAlertTag{position:absolute;right:34px;top:2px;background:#8a6822;color:#fff;border-radius:4px;padding:4px 6px;font-size:9px;font-weight:bold}.pricePickPlus{position:absolute;right:3px;top:0;width:28px;height:28px;border:0;border-radius:6px;background:#f6c65b;color:#17202d;font-size:22px;font-weight:bold;line-height:26px;padding:0;pointer-events:auto;touch-action:manipulation}
 #crossPlus{display:none!important;position:absolute;right:4px;width:25px;height:25px;border:0;border-radius:50%;background:#34d399;color:#071b17;font-size:20px;font-weight:bold;z-index:8;padding:0}
 #legend{position:absolute;left:5px;top:4px;z-index:6;font-size:9px;color:#d6e2f2;background:#0d1726cc;padding:4px 6px;border-radius:4px;pointer-events:none}
+#cd{position:absolute;right:0;z-index:7;display:none;min-width:46px;text-align:center;font:600 10px Arial,sans-serif;color:#fff;padding:2px 3px;border-radius:0 0 3px 3px;pointer-events:none}
 #status{position:absolute;left:8px;bottom:4px;z-index:8;color:#8fa3bd;font-size:9px;pointer-events:none}\n#tvCredit{position:absolute;right:7px;bottom:4px;z-index:8;color:#71849d;font-size:9px;text-decoration:none;background:#090f1bcc;padding:2px 4px;border-radius:3px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
 </head><body><div id="root"><div id="hud">Arcus Pro Chart · waiting for market data</div><div id="symbolTag"></div>
-<div id="mainWrap"><div id="main"></div><div id="overlay"><div id="legend"></div><canvas id="drawCanvas"></canvas><div id="alertLayer"></div><button id="crossPlus">+</button><div id="status"></div><a id="tvCredit" href="#" onclick="if(window.ArcusNative)ArcusNative.openAttribution();return false;">Charting by TradingView</a></div></div></div>
+<div id="mainWrap"><div id="main"></div><div id="overlay"><div id="legend"></div><canvas id="drawCanvas"></canvas><div id="alertLayer"></div><button id="crossPlus">+</button><div id="cd"></div><div id="status"></div><a id="tvCredit" href="#" onclick="if(window.ArcusNative)ArcusNative.openAttribution();return false;">Charting by TradingView</a></div></div></div>
 <script>
 (function(){
 const hud=document.getElementById('hud'),mainEl=document.getElementById('main'),wrap=document.getElementById('mainWrap');
@@ -152,6 +169,12 @@ function resize(){chart.applyOptions({width:mainEl.clientWidth,height:mainEl.cli
 new ResizeObserver(resize).observe(wrap);
 function setCandles(data){raw=Array.isArray(data)?data:[];if(chartType==='line')candle.setData(raw.map(x=>({time:x.time,value:x.close})));else candle.setData(raw);chart.timeScale().fitContent();hud.textContent=raw.length?('O '+fmt(raw[raw.length-1].open)+'  H '+fmt(raw[raw.length-1].high)+'  L '+fmt(raw[raw.length-1].low)+'  C '+fmt(raw[raw.length-1].close)):'No candles';redrawAlerts();redrawDrawings();}
 function fmt(v){return Number(v).toPrecision(7);}
+let tfSpan=0;const cdEl=document.getElementById('cd');
+function setTimeframe(sec){tfSpan=Number(sec)||0;tickCd();}
+function dataSpan(){if(raw.length<2)return 0;let g=[];for(let i=Math.max(1,raw.length-20);i<raw.length;i++){let d=raw[i].time-raw[i-1].time;if(d>0)g.push(d);}g.sort((a,b)=>a-b);return g.length?g[Math.floor(g.length/2)]:0;}
+function tickCd(){if(!raw.length){cdEl.style.display='none';return;}let last=raw[raw.length-1],span=tfSpan||dataSpan();let y=candle.priceToCoordinate(last.close);if(!span||y===null){cdEl.style.display='none';return;}let now=Date.now()/1000,left=last.time+span-now;if(left<0)left=span-((now-last.time)%span);let d=Math.floor(left/86400),h=Math.floor((left%86400)/3600),m=Math.floor((left%3600)/60),s=Math.floor(left%60),p=n=>String(n).padStart(2,'0');cdEl.textContent=(d?d+'d ':'')+(d||h?p(h)+':':'')+p(m)+':'+p(s);cdEl.style.background=last.close>=last.open?'#34d399':'#f87171';cdEl.style.color='#06130f';cdEl.style.display='block';cdEl.style.top=Math.min(y+10,wrap.clientHeight-40)+'px';}
+setInterval(tickCd,1000);
+function setNote(i,t){if(drawings[i]){drawings[i].note=t||undefined;saveDrawings();redrawDrawings();}}
 function setAlerts(values){alerts=Array.isArray(values)?values:[];redrawAlerts();}
 function redrawAlerts(){alertLayer.querySelectorAll('.alertLine').forEach(line=>line.remove());alerts.forEach((price,i)=>{let y=candle.priceToCoordinate(price);if(y===null)return;let line=document.createElement('div');line.className='alertLine';line.style.top=y+'px';line.dataset.index=i;let tag=document.createElement('span');tag.className='alertTag';tag.textContent=fmt(price);line.appendChild(tag);let startY=0,moved=false;line.addEventListener('pointerdown',e=>{dragAlert=i;startY=e.clientY;moved=false;line.dataset.price=String(price);try{line.setPointerCapture(e.pointerId);}catch(ignore){}e.preventDefault();});line.addEventListener('pointermove',e=>{if(dragAlert!==i)return;let rect=wrap.getBoundingClientRect(),localY=Math.max(0,Math.min(wrap.clientHeight,e.clientY-rect.top)),p=candle.coordinateToPrice(localY);if(Math.abs(e.clientY-startY)>4)moved=true;if(p!==null){line.style.top=localY+'px';tag.textContent=fmt(p);line.dataset.price=String(p);}});line.addEventListener('pointerup',e=>{if(dragAlert!==i)return;let p=Number(line.dataset.price);if(moved&&p>0&&window.ArcusNative)ArcusNative.onAlertMoved(i,p);else if(!moved&&window.ArcusNative)ArcusNative.onAlertSelected(i);dragAlert=-1;});line.addEventListener('pointercancel',()=>{if(dragAlert===i)dragAlert=-1;});alertLayer.appendChild(line);});if(pickerLine&&pickedPrice>0){let pickerY=candle.priceToCoordinate(pickedPrice);if(pickerY!==null)pickerLine.style.top=pickerY+'px';}}
 function clearPricePicker(){if(pickerLine){pickerLine.remove();pickerLine=null;}pickedPrice=0;}
@@ -164,10 +187,11 @@ function clearDrawings(){drawings=[];draft=null;saveDrawings();redrawDrawings();
 function pointAt(e){let r=wrap.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;return{time:chart.timeScale().coordinateToTime(x),price:candle.coordinateToPrice(y),x,y};}
 function saveDrawings(){try{localStorage.setItem('arcus-draw-'+symbol,JSON.stringify(drawings));}catch(e){}}
 function redrawDrawings(){if(!ctx||!canvas.width)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.save();ctx.scale(devicePixelRatio,devicePixelRatio);drawings.forEach(d=>paintDrawing(d));if(draft)paintDrawing(draft);ctx.restore();}
-function paintDrawing(d){if(!d||!d.t1)return;let x1=chart.timeScale().timeToCoordinate(d.t1),y1=candle.priceToCoordinate(d.p1);if(x1===null||y1===null)return;let x2=d.t2?chart.timeScale().timeToCoordinate(d.t2):wrap.clientWidth,y2=d.p2===undefined?y1:candle.priceToCoordinate(d.p2);if(x2===null)x2=wrap.clientWidth;if(y2===null)y2=y1;ctx.strokeStyle='#f6c65b';ctx.fillStyle='#f6c65b22';ctx.lineWidth=1.5;ctx.beginPath();if(d.type==='hline'||d.type==='ray'){ctx.moveTo(d.type==='ray'?x1:0,y1);ctx.lineTo(wrap.clientWidth,y1);}else if(d.type==='rectangle'){ctx.rect(x1,y1,x2-x1,y2-y1);ctx.fill();}else if(d.type==='fib'){let levels=[0,.236,.382,.5,.618,.786,1];levels.forEach(v=>{let y=y1+(y2-y1)*v;ctx.moveTo(x1,y);ctx.lineTo(x2,y);});}else{ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);}ctx.stroke();}
+function paintDrawing(d){if(!d||!d.t1)return;let x1=chart.timeScale().timeToCoordinate(d.t1),y1=candle.priceToCoordinate(d.p1);if(x1===null||y1===null)return;let x2=d.t2?chart.timeScale().timeToCoordinate(d.t2):wrap.clientWidth,y2=d.p2===undefined?y1:candle.priceToCoordinate(d.p2);if(x2===null)x2=wrap.clientWidth;if(y2===null)y2=y1;if(d.type==='measure'){paintMeasure(d,x1,y1,x2,y2);return;}ctx.strokeStyle='#f6c65b';ctx.fillStyle='#f6c65b22';ctx.lineWidth=1.5;ctx.beginPath();if(d.type==='hline'||d.type==='ray'){ctx.moveTo(d.type==='ray'?x1:0,y1);ctx.lineTo(wrap.clientWidth,y1);}else if(d.type==='rectangle'){ctx.rect(x1,y1,x2-x1,y2-y1);ctx.fill();}else if(d.type==='fib'){let levels=[0,.236,.382,.5,.618,.786,1];levels.forEach(v=>{let y=y1+(y2-y1)*v;ctx.moveTo(x1,y);ctx.lineTo(x2,y);});}else{ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);}ctx.stroke();if(d.note){ctx.save();ctx.font='bold 11px Arial';ctx.fillStyle='#f6c65b';ctx.strokeStyle='#090f1b';ctx.lineWidth=3;let tx=Math.max(6,Math.min(x1,x2)+6);ctx.strokeText(d.note,tx,y1-6);ctx.fillText(d.note,tx,y1-6);ctx.restore();}}
+function paintMeasure(d,x1,y1,x2,y2){let pc=d.p1?((d.p2-d.p1)/d.p1)*100:0,col=pc>=0?'#34d399':'#f87171';ctx.save();ctx.strokeStyle=col;ctx.fillStyle=col+'22';ctx.lineWidth=1.5;ctx.beginPath();ctx.rect(Math.min(x1,x2),Math.min(y1,y2),Math.abs(x2-x1),Math.abs(y2-y1));ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();let secs=Math.abs((d.t2||d.t1)-d.t1),dur=secs>=86400?(secs/86400).toFixed(1)+'d':secs>=3600?Math.floor(secs/3600)+'h '+Math.round((secs%3600)/60)+'m':Math.round(secs/60)+'m';let l1=(pc>=0?'+':'')+pc.toFixed(2)+'%  ('+(d.p2-d.p1>=0?'+':'')+fmt(d.p2-d.p1)+')',l2=dur;ctx.font='bold 11px Arial';let w=Math.max(ctx.measureText(l1).width,ctx.measureText(l2).width)+14,bx=(x1+x2)/2-w/2,by=Math.min(y1,y2)-40;if(by<2)by=Math.max(y1,y2)+6;ctx.fillStyle=col;ctx.fillRect(bx,by,w,32);ctx.fillStyle='#06130f';ctx.textAlign='center';ctx.fillText(l1,bx+w/2,by+14);ctx.fillText(l2,bx+w/2,by+27);ctx.restore();}
 canvas.addEventListener('pointerdown',e=>{if(!drawTool)return;let p=pointAt(e);if(p.time===null||p.price===null)return;draft={type:drawTool,t1:p.time,p1:p.price,t2:p.time,p2:p.price};canvas.setPointerCapture(e.pointerId);redrawDrawings();});
 canvas.addEventListener('pointermove',e=>{if(!draft)return;let p=pointAt(e);if(p.time!==null&&p.price!==null){draft.t2=p.time;draft.p2=p.price;redrawDrawings();}});
-canvas.addEventListener('pointerup',()=>{if(draft){drawings.push(draft);draft=null;saveDrawings();redrawDrawings();}});
+canvas.addEventListener('pointerup',()=>{if(draft){let made=draft;drawings.push(draft);draft=null;saveDrawings();redrawDrawings();if(made.type!=='measure'&&window.ArcusNative&&ArcusNative.onDrawn)ArcusNative.onDrawn(drawings.length-1);}});
 chart.subscribeCrosshairMove(param=>{if(!param||!param.point)return;let d=param.seriesData.get(candle);if(d&&d.open!==undefined)hud.textContent='O '+fmt(d.open)+'  H '+fmt(d.high)+'  L '+fmt(d.low)+'  C '+fmt(d.close);});
 wrap.addEventListener('pointerdown',e=>{if(drawTool||e.target.closest('.alertLine')||e.target.closest('.pricePickPlus'))return;clearTimeout(pressTimer);pressOrigin={x:e.clientX,y:e.clientY};pickerActive=false;pickerPointer=e.pointerId;let rect=wrap.getBoundingClientRect();let y=e.clientY-rect.top;pressTimer=setTimeout(()=>{if(!pressOrigin||pickerPointer!==e.pointerId)return;pickerActive=true;chart.applyOptions({handleScroll:false,handleScale:false});try{wrap.setPointerCapture(e.pointerId);}catch(ignore){}showPricePicker(y);},450);});
 // Track the active pointer at the document level so chart/canvas child handlers
@@ -178,7 +202,7 @@ document.addEventListener('pointerup',finishPriceHold,true);document.addEventLis
 
 // Native Lightweight Charts touch gestures provide direct chart dragging and pinch zoom.
 chart.timeScale().subscribeVisibleTimeRangeChange(()=>{redrawDrawings();redrawAlerts();});
-window.ArcusChart={setCandles,setAlerts,setSymbol,setChartType,setDrawingTool,clearDrawings,focusAlert:(price)=>{let y=candle.priceToCoordinate(price);if(y!==null){let line=document.createElement('div');line.className='alertLine';line.style.top=y+'px';line.style.pointerEvents='none';line.style.zIndex='12';line.style.height='3px';line.style.borderTop='2px solid #f6c65b';let tag=document.createElement('span');tag.className='alertTag';tag.style.background='#8a6822';tag.textContent='TRIGGERED '+fmt(price);line.appendChild(tag);alertLayer.appendChild(line);setTimeout(()=>line.remove(),8000);}chart.timeScale().scrollToRealTime();},fitContent:()=>{chart.priceScale('right').applyOptions({autoScale:true});chart.timeScale().fitContent();},zoomTime:f=>{let r=chart.timeScale().getVisibleLogicalRange();if(r){let mid=(r.from+r.to)/2,span=(r.to-r.from)*f;chart.timeScale().setVisibleLogicalRange({from:mid-span/2,to:mid+span/2});}},zoomPrice:f=>{let s=chart.priceScale('right');s.applyOptions({autoScale:true});},};
+window.ArcusChart={setTimeframe,setNote,setCandles,setAlerts,setSymbol,setChartType,setDrawingTool,clearDrawings,focusAlert:(price)=>{let y=candle.priceToCoordinate(price);if(y!==null){let line=document.createElement('div');line.className='alertLine';line.style.top=y+'px';line.style.pointerEvents='none';line.style.zIndex='12';line.style.height='3px';line.style.borderTop='2px solid #f6c65b';let tag=document.createElement('span');tag.className='alertTag';tag.style.background='#8a6822';tag.textContent='TRIGGERED '+fmt(price);line.appendChild(tag);alertLayer.appendChild(line);setTimeout(()=>line.remove(),8000);}chart.timeScale().scrollToRealTime();},fitContent:()=>{chart.priceScale('right').applyOptions({autoScale:true});chart.timeScale().fitContent();},zoomTime:f=>{let r=chart.timeScale().getVisibleLogicalRange();if(r){let mid=(r.from+r.to)/2,span=(r.to-r.from)*f;chart.timeScale().setVisibleLogicalRange({from:mid-span/2,to:mid+span/2});}},zoomPrice:f=>{let s=chart.priceScale('right');s.applyOptions({autoScale:true});},};
 resize();
 })();
 </script></body></html>

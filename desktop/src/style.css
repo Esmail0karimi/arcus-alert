@@ -625,3 +625,6 @@ nav button.active span{filter:drop-shadow(0 0 6px #19e3cfaa)}
 @media(prefers-reduced-motion:reduce){button,nav button{transition:none!important}button:active{transform:none!important}}
 
 .line-actions .line-text-in{width:130px;padding:4px 8px;font-size:12px;border-radius:6px}
+
+/* Android embed mode: News / report only */
+.app.embed main{padding:10px 10px 24px;width:100%;max-width:none}.app.embed .chart-fab{display:none}
