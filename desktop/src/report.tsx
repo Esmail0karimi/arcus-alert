@@ -146,6 +146,10 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
   // a report from the last days: its real numbers are already in the history
   const rep0 = hist[0];
   const reportedNow = !!(rep0 && t && t < Date.now() && rep0.reported && Math.abs(Date.parse(rep0.reported + "T21:00:00Z") - t) < 4 * 864e5);
+  // numbers the collector already found for this report (used when the history file lags behind)
+  const evEps = !reportedNow && p.ev?.actual ? num(p.ev.actual) : null;
+  const evRevM = !reportedNow ? (p.ev?.notes || []).join(" ").match(/Revenue \$([\d.,]+)\s*([BMK])/i) : null;
+  const evRev = evRevM ? parseFloat(evRevM[1].replace(/,/g, "")) * ({ B: 1, M: 1e-3, K: 1e-6 } as any)[evRevM[2].toUpperCase()] : null;
   const S = useMemo(() => {
     if (!c) return null;
     if (!reportedNow) return scenarios(c, mega, fa);
@@ -156,7 +160,7 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
   const [h1, h0] = reportedNow ? [hist[2], hist[1]] : [hist[1], hist[0]];
   const q = reportedNow ? rep0.period : nx.fiscalQuarter || c?.forecast?.quarterly?.[0]?.period || T("next quarter", "فصل بعد");
   // verdict once the user types the real numbers
-  const aE = reportedNow ? num(rep0.epsActual) : num(actEps), aR = reportedNow ? (rep0.revenue != null ? rep0.revenue / 1000 : null) : num(actRev);
+  const aE = reportedNow ? num(rep0.epsActual) : evEps ?? num(actEps), aR = reportedNow ? (rep0.revenue != null ? rep0.revenue / 1000 : null) : evRev ?? num(actRev);
   const verdict = (() => {
     if (!S) return null;
     const out: { key: "low" | "inline" | "high"; text: string }[] = [];
@@ -246,6 +250,8 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
                 {quarters.map((x, i) => cell(x.d?.revenue != null ? <>{money(x.d.revenue)}<small>{pct(num(x.d.revenueYoY))} {T("YoY", "سالانه")}</small></> : "—", "act"))}
                 {reportedNow ? (
                   cell(rep0.revenue != null ? <>{money(rep0.revenue)}<small>{pct(num(rep0.revenueYoY))} {T("YoY", "سالانه")}</small></> : "—", "act")
+                ) : evRev != null ? (
+                  cell(money(evRev * 1000), "act")
                 ) : (
                   <td className="empty">
                     <input inputMode="decimal" placeholder={T("$ billions", "میلیارد دلار")} value={actRev} onChange={(e) => setActRev(e.target.value)} />
@@ -283,6 +289,8 @@ function CompanyReport(p: { sym: string; ev?: NewsEv; onClose: () => void; onOpe
                 {quarters.map((x, i) => cell(x.d ? usd(num(x.d.epsActual)) : "—", "act"))}
                 {reportedNow ? (
                   cell(usd(num(rep0.epsActual)), "act")
+                ) : evEps != null ? (
+                  cell(usd(evEps), "act")
                 ) : (
                   <td className="empty">
                     <input inputMode="decimal" placeholder={T("$ per share", "دلار به‌ازای سهم")} value={actEps} onChange={(e) => setActEps(e.target.value)} />
