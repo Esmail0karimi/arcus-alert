@@ -130,7 +130,14 @@ function App() {
     [flagFilter, setFlagFilter] = useState(""),
     [infoSym, setInfoSym] = useState<string | null>(null),
     [listMenu, setListMenu] = useState<{ sym: string; x: number; y: number } | null>(null),
-    [watchGroup, setWatchGroup] = useState("Favorites");
+    [watchGroup, setWatchGroup] = useState("Favorites"),
+    [favHidden, setFavHidden] = useState(() => {
+      try {
+        return localStorage.getItem("arcus.favHidden") === "1";
+      } catch {
+        return false;
+      }
+    });
   const [tab, setTab] = useState("Market"),
     [prices, setPrices] = useState<Record<string, Price>>({}),
     [status, setStatus] = useState("Connecting to Arcus…"),
@@ -2176,10 +2183,16 @@ function App() {
   const FLAG_NAMES: Record<string, string> = { "#f23645": "Red", "#ff9800": "Orange", "#f2c94c": "Yellow", "#089981": "Green", "#4aa3ff": "Blue", "#b388ff": "Purple", "#ff6fae": "Pink" };
   const flagged = (c: string) => Object.keys(flags).filter((k) => flags[k] === c);
   const flagGroups = Object.keys(FLAG_NAMES).filter((c) => flagged(c).length).map((c) => "flag:" + c);
+  const hasOther = wlists.length > 0 || flagGroups.length > 0;
+  const favShown = !favHidden || !hasOther; // the Favorites list can be deleted once another list exists
   const curGroup =
-    (watchGroup.startsWith("wl:") && wlists.some((l) => "wl:" + l.id === watchGroup)) || flagGroups.includes(watchGroup)
+    (watchGroup === "Favorites" && favShown) || (watchGroup.startsWith("wl:") && wlists.some((l) => "wl:" + l.id === watchGroup)) || flagGroups.includes(watchGroup)
       ? watchGroup
-      : "Favorites";
+      : favShown
+        ? "Favorites"
+        : wlists.length
+          ? "wl:" + wlists[0].id
+          : flagGroups[0];
   const flagColorOf = (g: string) => (g.startsWith("flag:") ? g.slice(5) : "");
   const activeList = curGroup.startsWith("wl:") ? wlists.find((l) => "wl:" + l.id === curGroup) : undefined;
   const groupItems = (g: string): string[] =>
@@ -2212,8 +2225,27 @@ function App() {
       if (!window.confirm('Delete watchlist "' + activeList.name + '"?')) return;
       setWlists((v) => v.filter((l) => l.id !== activeList.id));
       setWatchGroup("Favorites");
-    } else if (favorites.length && window.confirm("Remove every symbol from " + favName + "?")) setFavorites([]);
+    } else if (hasOther) {
+      if (!window.confirm('Delete the list "' + favName + '" with its ' + favorites.length + " symbols?")) return;
+      setFavorites([]);
+      setFavHidden(true);
+      try {
+        localStorage.setItem("arcus.favHidden", "1");
+      } catch {}
+      setWatchGroup(wlists.length ? "wl:" + wlists[0].id : flagGroups[0]);
+    } else if (favorites.length) {
+      if (window.confirm("Remove every symbol from " + favName + "?\n(Create another list first if you want to delete " + favName + " itself.)")) setFavorites([]);
+    }
   };
+  useEffect(() => {
+    // starring a symbol brings the Favorites list back
+    if (favorites.length && favHidden) {
+      setFavHidden(false);
+      try {
+        localStorage.removeItem("arcus.favHidden");
+      } catch {}
+    }
+  }, [favorites, favHidden]);
   const toggleInList = (id: string, sym: string) =>
     setWlists((v) =>
       v.map((l) => (l.id === id ? { ...l, items: l.items.includes(sym) ? l.items.filter((x) => x !== sym) : [...l.items, sym] } : l)),
@@ -2228,7 +2260,7 @@ function App() {
         })
       : (g === "Favorites" ? toggleFav(sym) : toggleInList(g.slice(3), sym));
   const inAnyList = (sym: string) => favorites.includes(sym) || wlists.some((l) => l.items.includes(sym));
-  const allGroups = ["Favorites", ...wlists.map((l) => "wl:" + l.id), ...flagGroups];
+  const allGroups = [...(favShown ? ["Favorites"] : []), ...wlists.map((l) => "wl:" + l.id), ...flagGroups];
   const orderedGroups = [...allGroups].sort((x, y) => {
     const ix = listOrder.indexOf(x),
       iy = listOrder.indexOf(y);
@@ -2314,7 +2346,7 @@ function App() {
       <button title="Rename" onClick={renameList}>
         ✎
       </button>
-      <button title={activeList ? "Delete this list" : "Clear this list"} onClick={deleteList}>
+      <button title={activeList || (curGroup === "Favorites" && hasOther) ? "Delete this list" : "Clear this list"} onClick={deleteList}>
         🗑
       </button>
     </div>
