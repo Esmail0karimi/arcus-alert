@@ -1,20 +1,20 @@
    3s ForexFactory nextweek HTTP 404
-  68s   fallback probe: SPY nasdaq: {"data":null,"message":null,"status":{"rCode":400,"bCodeMessage":[{"code":1001,"errorMessage":"Symbol not exists."}],"developerMessage":null}}
-  68s   fallback probe: NFLX nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"NFLX Earnings Date","announcement":"Earnings announcement* for NFLX: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  68s   fallback probe: META nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"META Earnings Date","announcement":"Earnings announcement* for META: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  68s   fallback probe: SPY finviz: 
-  68s   fallback probe: NFLX finviz: >Earnings Oct 20 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  68s   fallback probe: META finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  68s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  68s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  68s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  68s   fallback probe: BRK fromFinviz error: HTTP 404
-  68s   fallback probe: BRKB fromFinviz error: HTTP 404
-  68s   fallback probe: BRK fromSA error: HTTP 404
-  68s earnings-date fallback: 21/71 tracked stocks found
-  68s details: 793 companies, refreshing 110
- 185s details written 110, empty 0
- 186s news.json: 878 events, 494 company files
+  65s   fallback probe: META nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"META Earnings Date","announcement":"Earnings announcement* for META: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  65s   fallback probe: SPY nasdaq: {"data":null,"message":null,"status":{"rCode":400,"bCodeMessage":[{"code":1001,"errorMessage":"Symbol not exists."}],"developerMessage":null}}
+  65s   fallback probe: META finviz: >Earnings Oct 21 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  65s   fallback probe: SPY finviz: 
+  65s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  65s   fallback probe: NFLX finviz: >Earnings Oct 20 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  65s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  65s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  65s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  65s   fallback probe: BRKB fromFinviz error: HTTP 404
+  65s   fallback probe: BRK fromFinviz error: HTTP 404
+  65s   fallback probe: BRKB fromSA error: HTTP 404
+  65s earnings-date fallback: 21/71 tracked stocks found
+  65s details: 798 companies, refreshing 110
+ 179s details written 110, empty 0
+ 180s news.json: 883 events, 496 company files
 [
  {
   "name": "Fed calendar",
@@ -23,14 +23,14 @@
   "n": 9
  },
  {
-  "name": "Treasury yields",
-  "ok": true,
-  "note": "curve of 2026-10-28"
- },
- {
   "name": "SEC EDGAR",
   "ok": true,
   "note": "10430 companies"
+ },
+ {
+  "name": "Treasury yields",
+  "ok": true,
+  "note": "curve of 2026-10-28"
  },
  {
   "name": "ForexFactory",
@@ -41,8 +41,8 @@
  {
   "name": "Nasdaq earnings",
   "ok": true,
-  "note": "780 reports in 57 days",
-  "n": 780
+  "note": "785 reports in 57 days",
+  "n": 785
  },
  {
   "name": "Nasdaq analysts",
@@ -71,19 +71,19 @@
  {
   "name": "FXStreet actuals",
   "ok": true,
-  "note": "25 released numbers filled in (544 events checked)",
-  "n": 25
+  "note": "26 released numbers filled in (544 events checked)",
+  "n": 26
  },
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "5 write-ups for 60 recent events",
-  "n": 5
+  "note": "6 write-ups for 64 recent events",
+  "n": 6
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "61 reported companies summarised",
-  "n": 61
+  "note": "44 reported companies summarised",
+  "n": 44
  }
 ]
