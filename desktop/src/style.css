@@ -623,3 +623,5 @@ nav button.active span{filter:drop-shadow(0 0 6px #19e3cfaa)}
 .cat-chip,.market-tabs button,.chips button{box-shadow:inset 0 1px 0 #ffffff1f,0 2px 0 #04101c}
 @media (hover:none){header button:not(.connection button):not(.connection):hover,.chartbar button:hover,.primary:hover{transform:none}}
 @media(prefers-reduced-motion:reduce){button,nav button{transition:none!important}button:active{transform:none!important}}
+
+.line-actions .line-text-in{width:130px;padding:4px 8px;font-size:12px;border-radius:6px}

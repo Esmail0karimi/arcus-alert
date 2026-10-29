@@ -3174,6 +3174,22 @@ function App() {
                               );
                             }}
                           />
+                          <input
+                            type="text"
+                            className="line-text-in"
+                            title="Text next to this line"
+                            placeholder="Text…"
+                            maxLength={120}
+                            value={(d as any).text || ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setDrawings((all) => all.map((x) => (x.id === d.id ? ({ ...x, text: v || undefined } as any) : x)));
+                            }}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            }}
+                          />
                           <button title="Copy this line" onClick={() => copyLine(d.id)}>
                             ⧉ Copy
                           </button>
