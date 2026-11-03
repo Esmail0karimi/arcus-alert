@@ -1657,6 +1657,11 @@ function App() {
     const cx = chartX.current;
     if (tab !== "Chart" || !cx || !symbol) return;
     cx.onEventsToggle = () => setEvTick((n) => n + 1);
+    cx.extCount = () => latestCloudState.current.drawings.filter((d: any) => (!d.symbol || d.symbol === symbol) && d.tool === "hline").length;
+    cx.extClear = () => {
+      setSelectedLine(null);
+      setDrawings((v) => v.filter((d: any) => !((!d.symbol || d.symbol === symbol) && d.tool === "hline")));
+    };
     const evBase = assetBase(dn(symbol));
     const CRYPTO_BASES = /^(BTC|ETH|SOL|XRP|DOGE|BNB|ADA|AVAX|LINK|DOT|MATIC|POL|LTC|BCH|TRX|TON|SUI|APT|ARB|OP|NEAR|ATOM|UNI|AAVE|SHIB|PEPE|WIF|HYPE|XLM|ETC|FIL|INJ|TIA|SEI|ENA|WLD|JUP|ONDO|TAO|PENDLE|BONK|FET|RENDER|ICP|HBAR|ALGO|VET|MKR|LDO|CRV|SNX|COMP|RUNE|FTM|S|KAS|XMR|ZEC|DASH|EOS|NEO|IOTA|XTZ|MANA|SAND|AXS|GALA|APE|IMX)$/;
     const eligible = catOfSymbol(symbol) !== "Crypto" || (/^QFEX:/i.test(symbol) && !CRYPTO_BASES.test(evBase));

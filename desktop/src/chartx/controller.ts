@@ -132,6 +132,9 @@ export class ChartX {
   private evOn = load<boolean>("arcus.chartx.events.v1", true);
   private evSig = "";
   onEventsToggle: ((on: boolean) => void) | null = null;
+  /** The app's own horizontal lines live outside this module: how many on this symbol, and a way to delete them. */
+  extCount: (() => number) | null = null;
+  extClear: (() => void) | null = null;
   isEventsOn() {
     return this.evOn;
   }
@@ -655,7 +658,7 @@ export class ChartX {
     };
     this.railClear.title = "Delete all drawings and text notes on this symbol";
     this.railClear.onclick = () => {
-      const n = this.shapes.length + this.notes.count();
+      const n = this.shapes.length + this.notes.count() + (this.extCount?.() || 0);
       if (!n) return;
       if (!window.confirm("Delete all " + n + " drawings and notes on " + this.symbol.replace(/^[A-Z]+:/, "") + "? (Ctrl+Z undoes it)")) return;
       const before = this.cloneShapes();
@@ -663,6 +666,7 @@ export class ChartX {
       this.record(before);
       this.persistShapes();
       this.notes.clearAll();
+      this.extClear?.();
       this.selected = null;
       this.draft = null;
       this.lastSig = "";
@@ -679,6 +683,8 @@ export class ChartX {
         this.toggleFav("hline");
       };
       hb.append(st);
+      const firstTool = this.toolBtns.values().next().value as HTMLElement | undefined;
+      if (firstTool && firstTool.parentElement === rail) rail!.insertBefore(hb, firstTool);
       this.extObs = new MutationObserver(() => {
         const b = this.favBtns.get("hline");
         if (b) b.classList.toggle("selected", hb.classList.contains("selected"));
