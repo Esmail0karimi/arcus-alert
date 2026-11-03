@@ -1,7 +1,7 @@
 /* Order book tab: resting orders from the big exchanges, summed into price buckets.
    Pick a symbol, then switch the timeframe to zoom the price window and see where the large orders sit. */
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Bucket, EXCHANGES, ExState, buildLadder, loadBooks } from "./orderbook";
+import { Bucket, EXCHANGES, ExState, buildLadder, loadBooks, loadSymbols } from "./orderbook";
 
 const TFS: { id: string; pct: number; hint: string }[] = [
   { id: "1m", pct: 0.2, hint: "±0.2% around the price" },
@@ -42,6 +42,18 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
   const [updated, setUpdated] = useState(0);
   const [auto, setAuto] = useState(true);
   const [tick, setTick] = useState(0);
+  const [all, setAll] = useState<string[]>([]);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    const c = new AbortController();
+    loadSymbols(c.signal).then(setAll);
+    return () => c.abort();
+  }, []);
+  const coins = useMemo(() => {
+    const seen = new Set<string>(), out: string[] = [];
+    for (const s of [...all, ...p.bases]) if (!seen.has(s)) { seen.add(s); out.push(s); }
+    return out;
+  }, [all, p.bases]);
   const pct = TFS.find((t) => t.id === tf)?.pct || 1;
   const ids = useMemo(() => EXCHANGES.map((e) => e.id).filter((i) => !off.includes(i)), [off]);
   const seq = useRef(0);
@@ -111,7 +123,8 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
       <span className="ob-val">{b.total ? money(b.total) : ""}</span>
     </div>
   );
-  const quick = ["BTC", "ETH", "SOL", "XRP", "DOGE", "HYPE"];
+  const quick = (all.length ? all.slice(0, 14) : ["BTC", "ETH", "SOL", "XRP", "DOGE", "HYPE"]).filter((q) => q !== base).slice(0, 13);
+  const shownCoins = showAll ? coins.filter((c) => !typed || typed === base || c.includes(typed)) : [];
   return (
     <div className="ob-tab">
       <div className="heading">
@@ -137,13 +150,15 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           }}
         >
           <input list="ob-bases" value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase())} onFocus={(e) => e.currentTarget.select()} placeholder="Symbol, e.g. BTC" aria-label="Symbol" />
-          <datalist id="ob-bases">{p.bases.slice(0, 400).map((b) => <option key={b} value={b} />)}</datalist>
+          <datalist id="ob-bases">{coins.map((b) => <option key={b} value={b} />)}</datalist>
           <button type="submit" className="secondary">Go</button>
         </form>
         <div className="ob-quick">
+          <button className="secondary on" title="Selected symbol">{base}</button>
           {quick.map((q) => (
-            <button key={q} className={"secondary" + (q === base ? " on" : "")} onClick={() => pick(q)}>{q}</button>
+            <button key={q} className="secondary" onClick={() => pick(q)}>{q}</button>
           ))}
+          <button className={"secondary" + (showAll ? " on" : "")} onClick={() => setShowAll(!showAll)} title="Browse every coin">All coins ({coins.length || "…"})</button>
         </div>
         <div className="ob-tfs" role="tablist">
           {TFS.map((t) => (
@@ -152,6 +167,13 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           <small>±{pct}%</small>
         </div>
       </div>
+      {showAll && (
+        <div className="ob-all">
+          {shownCoins.length ? shownCoins.map((c) => (
+            <button key={c} className={c === base ? "on" : ""} onClick={() => { pick(c); setShowAll(false); }}>{c}</button>
+          )) : <span className="muted">No coin matches “{typed}”.</span>}
+        </div>
+      )}
       <div className="ob-ex">
         {EXCHANGES.map((e) => {
           const s = states.find((x) => x.id === e.id);

@@ -165,3 +165,23 @@ export function buildLadder(books: Book[], rangePct: number, n = 30): Ladder | n
   const maxTotal = Math.max(1, ...bids.map((b) => b.total), ...asks.map((b) => b.total));
   return { mid, bids, asks, maxTotal, coverage, bidSum: bids.reduce((s, b) => s + b.total, 0), askSum: asks.reduce((s, b) => s + b.total, 0) };
 }
+
+/** Every coin the exchanges list, most-traded first (Binance volume order, then Hyperliquid and Lighter extras). */
+export async function loadSymbols(signal?: AbortSignal): Promise<string[]> {
+  const t = (p: Promise<string[]>) => Promise.race([p.catch(() => [] as string[]), new Promise<string[]>((r) => window.setTimeout(() => r([]), 8000))]);
+  const [bn, hl, lt] = await Promise.all([
+    t(getJson("https://fapi.binance.com/fapi/v1/ticker/24hr", signal).then((j: any[]) =>
+      j.filter((x) => /USDT$/.test(x.symbol)).sort((a, b) => num(b.quoteVolume) - num(a.quoteVolume)).map((x) => String(x.symbol).replace(/USDT$/, "")),
+    )),
+    t(getJson("https://api.hyperliquid.xyz/info", signal, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "meta" }) }).then((j: any) =>
+      (j?.universe || []).map((u: any) => String(u.name).replace(/^k/, "")),
+    )),
+    t(getJson("https://mainnet.zklighter.elliot.ai/api/v1/orderBooks", signal).then((j: any) => (j?.order_books || j?.orderBooks || []).map((o: any) => String(o.symbol).toUpperCase()))),
+  ]);
+  const seen = new Set<string>(), out: string[] = [];
+  for (const s of [...bn, ...hl, ...lt]) {
+    const v = s.toUpperCase().replace(/^1000(000)?/, "");
+    if (/^[A-Z0-9]{2,12}$/.test(v) && !seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out;
+}
