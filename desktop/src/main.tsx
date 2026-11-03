@@ -9,7 +9,7 @@ import { SessionBar } from "./sessions";
 import { IpBadge } from "./ipbadge";
 import { News } from "./news";
 import { ReportHost, openReport as openReportExt } from "./report";
-import { Screener } from "./screener";
+import { OrderBook } from "./obtab";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -65,7 +65,7 @@ const EMBED_SYM = (() => {
     return "";
   }
 })();
-const TABS = ["Market", "Watchlist", "Chart", "News", "Screener", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -510,10 +510,7 @@ function App() {
       setTab("Chart");
     }
   };
-  const screenerItems = useMemo(
-    () => symbols.map((x) => ({ sym: x, name: dn(x), base: assetBase(dn(x)), change: prices[x]?.change24h ?? null, price: prices[x]?.price })),
-    [symbols, prices],
-  );
+  const obBases = useMemo(() => Array.from(new Set<string>(symbols.map((x) => String(assetBase(dn(x)))))).filter((b) => /^[A-Z0-9]{2,10}$/.test(b)).sort(), [symbols]);
   useEffect(
     () =>
       onAuthStateChanged(auth, (next) => {
@@ -2721,15 +2718,7 @@ function App() {
           </>
         )}
         {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
-        {tab === "Screener" && (
-          <Screener
-            items={screenerItems}
-            onOpen={(sym) => {
-              setSymbol(sym);
-              setTab("Chart");
-            }}
-          />
-        )}
+        {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         {tab === "Watchlist" && (
@@ -3896,7 +3885,7 @@ function App() {
             }}
             key={t}
           >
-            <span>{["▦", "☆", "⌁", "◔", "⌕", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "≡", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
