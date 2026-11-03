@@ -171,10 +171,11 @@ function App() {
     [tfMenu, setTfMenu] = useState(false),
     [tfFavs, setTfFavs] = useState<string[]>(() => {
       try {
-        const v = JSON.parse(localStorage.getItem("arcus.tfFavs.v1") || "[]");
+        const raw = localStorage.getItem("arcus.tfFavs.v1");
+        const v = raw == null ? ["1m", "5m", "15m", "1h", "4h", "1d"] : JSON.parse(raw);
         return Array.isArray(v) ? v : [];
       } catch {
-        return [];
+        return ["1m", "5m", "15m", "1h", "4h", "1d"];
       }
     }),
     [levels, setLevels] = useState<Level[]>(() => {
@@ -3878,7 +3879,7 @@ function App() {
         </div>
       )}
       {!EMBED && (
-      <nav>
+      <nav className={tab === "Chart" && !hdrFull ? "compact" : ""}>
         {TABS.map((t, i) => (
           <button
             className={tab === t ? "active" : ""}
