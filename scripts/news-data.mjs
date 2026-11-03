@@ -223,8 +223,8 @@ async function earningsCalendar() {
       if (cap < 1e10 && !coreTickers.includes(sym)) continue;
       const [y, mo, d] = day.split("-").map(Number);
       const tm = String(r.time || "");
-      const hh = /after/i.test(tm) ? 16 : /pre|before/i.test(tm) ? 8 : 12;
-      const t = etToUtc(y, mo, d, hh, hh === 12 ? 0 : 5);
+      const hh = /after/i.test(tm) ? 16 : /pre|before/i.test(tm) ? 7 : 12;
+      const t = etToUtc(y, mo, d, hh, 0); // earliest usual moment; refined later from the company's past filing times
       calRows.push({ sym, day, t, tm: /after/i.test(tm) ? "amc" : /pre|before/i.test(tm) ? "bmo" : "", cap, name: r.name, fq: r.fiscalQuarterEnding, eps: r.epsForecast, n: r.noOfEsts, lyEps: r.lastYearEPS, lyDate: r.lastYearRptDt });
     }
   });
