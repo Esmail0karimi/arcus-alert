@@ -101,9 +101,11 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
       <span className="ob-dist">{dist(b)}</span>
       <span className="ob-bar">
         <span className="ob-fill" style={{ width: (b.total / lad!.maxTotal) * 100 + "%" }}>
-          {EXCHANGES.filter((e) => b.by[e.id]).map((e) => (
-            <i key={e.id} style={{ flex: b.by[e.id], background: e.color }} />
-          ))}
+          <span className="ob-split">
+            {EXCHANGES.filter((e) => b.by[e.id]).map((e) => (
+              <i key={e.id} style={{ flex: b.by[e.id], background: e.color }} />
+            ))}
+          </span>
         </span>
       </span>
       <span className="ob-val">{b.total ? money(b.total) : ""}</span>
@@ -155,10 +157,10 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           const s = states.find((x) => x.id === e.id);
           const isOff = off.includes(e.id);
           return (
-            <button key={e.id} className={"ob-chip" + (isOff ? " off" : s && !s.ok ? " bad" : "")} onClick={() => toggle(e.id)} title={isOff ? "Click to include" : s && !s.ok ? s.msg || "unavailable" : "Click to hide"}>
+            <button key={e.id} className={"ob-chip" + (isOff ? " off" : s && !s.ok ? " bad" : "")} onClick={() => toggle(e.id)} title={isOff ? "Click to include" : s && !s.ok ? s.msg || "unavailable" : "Click to hide. “depth” = how far from the price this exchange's order book reaches (not an error)."}>
               <i style={{ background: e.color }} />
               {e.label}
-              <small>{isOff ? "off" : s ? (s.ok ? (lad ? "±" + lad.coverage[e.id]?.toFixed(lad.coverage[e.id] < 1 ? 2 : 1) + "%" : "ok") : s.msg || "n/a") : "…"}</small>
+              <small>{isOff ? "off" : s ? (s.ok ? (lad ? "depth " + (lad.coverage[e.id] > 50 ? ">50" : lad.coverage[e.id]?.toFixed(lad.coverage[e.id] < 1 ? 2 : 1)) + "%" : "ok") : s.msg || "n/a") : "…"}</small>
             </button>
           );
         })}

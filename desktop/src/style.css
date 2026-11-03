@@ -671,3 +671,11 @@ main.chart-wide{padding:3px 6px 2px!important}
 .ob-walls{border:1px solid #1c3048;border-radius:12px;padding:10px 12px;background:#08172a}.ob-walls h3{margin:0 0 8px;font-size:13px}
 .ob-wall{display:flex;flex-direction:column;padding:5px 8px;border-left:3px solid;margin-bottom:6px;background:#0c1f35;border-radius:4px;font-size:12px}.ob-wall.bid{border-color:#3ddc97}.ob-wall.ask{border-color:#ff6b6b}.ob-wall span{color:#9fb4cc}.ob-wall em{font-style:normal;color:#6f86a3}
 .ob-note{font-size:11px;line-height:1.5}
+
+/* order book: sells red, buys green; exchange split is a thin strip at the bottom of each bar */
+.ob-bar{height:13px}
+.ob-fill{position:relative;display:block;opacity:1;border-radius:2px;overflow:hidden}
+.ob-row.ask .ob-fill{background:linear-gradient(90deg,rgba(255,92,92,.55),#ff5c5c)}
+.ob-row.bid .ob-fill{background:linear-gradient(90deg,rgba(61,220,151,.55),#3ddc97)}
+.ob-split{position:absolute;left:0;right:0;bottom:0;height:3px;display:flex}.ob-split i{display:block;height:100%}
+.ob-row.wall .ob-fill{box-shadow:0 0 0 1px #f2c94c}
