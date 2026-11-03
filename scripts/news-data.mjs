@@ -14,7 +14,7 @@ const PREV = process.env.PREV_DIR || ""; // checkout of the news-data branch (to
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const SEC_UA = "ArcusAlert research contact karimiesmail37@gmail.com";
 const NQ = { "User-Agent": UA, Accept: "application/json, text/plain, */*", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" };
-const DETAIL_V = 3; // bump to force every company file to be rebuilt
+const DETAIL_V = 4; // bump to force every company file to be rebuilt
 const MAX_DETAIL = Number(process.env.MAX_DETAIL || 110);
 const T0 = Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -414,10 +414,21 @@ async function secDetail(sym, d) {
   const list = [];
   for (let i = 0; i < r.form.length && list.length < 14; i++) {
     if (!/^(8-K|10-Q|10-K|6-K|20-F)$/.test(r.form[i])) continue;
-    list.push({ form: r.form[i], date: r.filingDate[i], items: r.items?.[i] || "", acc: r.accessionNumber[i], doc: r.primaryDocument[i] });
+    list.push({ form: r.form[i], date: r.filingDate[i], items: r.items?.[i] || "", acc: r.accessionNumber[i], doc: r.primaryDocument[i], at: r.acceptanceDateTime?.[i] || "" });
   }
   d.filings = list.slice(0, 8).map((f) => ({ form: f.form, date: f.date, items: f.items, url: `https://www.sec.gov/Archives/edgar/data/${Number(c.cik)}/${f.acc.replace(/-/g, "")}/${f.doc}` }));
   d.sources.push("SEC EDGAR filings");
+  // when this company usually publishes: the New York clock time of its last earnings 8-Ks (the calendar only says "after close" / "before open")
+  const rel = list
+    .filter((f) => f.form === "8-K" && /2\.02/.test(f.items) && f.at)
+    .slice(0, 4)
+    .map((f) => {
+      const ms = Date.parse(f.at);
+      return Number.isFinite(ms) ? ((Math.floor(ms / 60000) + etOffsetMin(ms)) % 1440 + 1440) % 1440 : NaN;
+    })
+    .filter((m) => Number.isFinite(m))
+    .sort((a, b) => a - b);
+  if (rel.length) d.releaseEt = { min: Math.floor(rel[Math.floor(rel.length / 2)] / 5) * 5, n: rel.length };
   // guidance: the latest results press release (8-K item 2.02, exhibit 99.1)
   const er = list.find((f) => f.form === "8-K" && /2\.02/.test(f.items));
   if (!er) return;
@@ -769,6 +780,27 @@ for (const f of fs.readdirSync(path.join(OUT, "earn"))) {
   const p = path.join(OUT, "earn", f);
   try {
     if (Date.now() - JSON.parse(fs.readFileSync(p, "utf8")).at > 10 * 864e5) fs.unlinkSync(p);
+  } catch {}
+}
+// earnings time: use the company's usual release minute (from its past 8-K filings) instead of a fixed guess
+for (const e of events) {
+  if (e.kind !== "earnings" || !e.symbol) continue;
+  try {
+    const f = path.join(OUT, "earn", e.symbol + ".json");
+    const dd = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : null;
+    const m = dd?.releaseEt?.min;
+    const amc = /After market close/.test(e.extra || ""), bmo = /Before market open/.test(e.extra || "");
+    if (m == null || !((amc && m >= 960 && m <= 1110) || (bmo && m >= 330 && m <= 570))) continue;
+    const day = e.id.slice(-10);
+    const [y, mo, d2] = day.split("-").map(Number);
+    const t = etToUtc(y, mo, d2, Math.floor(m / 60), m % 60);
+    const hh12 = ((Math.floor(m / 60) + 11) % 12) + 1, ap = m >= 720 ? "PM" : "AM", clock = hh12 + ":" + String(m % 60).padStart(2, "0") + " " + ap;
+    e.t = t;
+    e.extra = e.extra.replace(/\((about 4:00 PM ET|usually 6–8 AM ET), exact minute not published\)/, "(usually about " + clock + " ET, from its past filings)");
+    if (dd.next) {
+      dd.next.t = t;
+      fs.writeFileSync(f, JSON.stringify(dd));
+    }
   } catch {}
 }
 // drop duplicates (the Fed page entry wins over built-in/ForexFactory ones on the same day)
