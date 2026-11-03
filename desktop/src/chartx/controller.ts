@@ -405,7 +405,17 @@ export class ChartX {
     const last = c[c.length - 1];
     if (t > last.time) {
       const span = this.span || (c.length > 1 ? c[c.length - 1].time - c[c.length - 2].time : 900);
-      return ts.logicalToCoordinate((c.length - 1 + (t - last.time) / span) as any);
+      const lg = c.length - 1 + (t - last.time) / Math.max(1, span);
+      // fractional logical indexes are not reliable in every chart build: interpolate between two whole ones
+      let x: number | null = null;
+      if (Number.isFinite(lg) && lg < 1e6) {
+        const i0 = Math.floor(lg);
+        const a0 = ts.logicalToCoordinate(i0 as any) as number | null;
+        const a1 = ts.logicalToCoordinate((i0 + 1) as any) as number | null;
+        if (a0 != null && a1 != null && Number.isFinite(a0) && Number.isFinite(a1)) x = a0 + (lg - i0) * (a1 - a0);
+      }
+      // far in the future (or not representable): park it beyond the right edge so the "E in Nd" pill still works
+      return x != null && Number.isFinite(x) ? x : this.host.clientWidth + 1e4;
     }
     if (t < c[0].time) return null;
     let lo = 0, hi = c.length - 1;
@@ -471,7 +481,7 @@ export class ChartX {
         continue;
       }
       box.style.display = "block";
-      box.style.left = x + "px";
+      box.style.left = Math.round(x) + "px";
       box.style.height = hh + "px";
     }
     this.stagger();
