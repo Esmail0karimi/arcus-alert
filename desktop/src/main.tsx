@@ -115,6 +115,13 @@ function App() {
     [editLineColor, setEditLineColor] = useState("#39c9c2"),
     [editLineWidth, setEditLineWidth] = useState(2),
     [editLineText, setEditLineText] = useState(""),
+    [lineBarPos, setLineBarPos] = useState<{ l: number; t: number } | null>(() => {
+      try {
+        return JSON.parse(localStorage.getItem("arcus.lineBar.pos") || "null");
+      } catch {
+        return null;
+      }
+    }),
     [favName, setFavName] = useState(() => localStorage.getItem("arcus.favName") || "Favorites"),
     [flags, setFlags] = useState<Record<string, string>>(() => {
       try {
@@ -3179,9 +3186,50 @@ function App() {
                       return (
                         <div
                           className="line-actions"
-                          style={{ top: Math.max(4, Number(y) - 15) }}
+                          style={lineBarPos ? { left: lineBarPos.l, top: lineBarPos.t, right: "auto" } : { top: 8 }}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
+                          <span
+                            className="line-grip"
+                            title="Drag to move this bar"
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              const bar = e.currentTarget.parentElement as HTMLElement,
+                                host = bar.offsetParent as HTMLElement | null;
+                              if (!host) return;
+                              const hr = host.getBoundingClientRect(),
+                                br = bar.getBoundingClientRect(),
+                                dx = e.clientX - br.left,
+                                dy = e.clientY - br.top;
+                              const grip = e.currentTarget;
+                              grip.setPointerCapture(e.pointerId);
+                              const move = (ev: PointerEvent) => {
+                                const l = Math.max(0, Math.min(hr.width - br.width, ev.clientX - hr.left - dx));
+                                const t = Math.max(0, Math.min(hr.height - br.height, ev.clientY - hr.top - dy));
+                                setLineBarPos({ l, t });
+                              };
+                              const up = () => {
+                                grip.removeEventListener("pointermove", move);
+                                grip.removeEventListener("pointerup", up);
+                                setLineBarPos((p) => {
+                                  try {
+                                    if (p) localStorage.setItem("arcus.lineBar.pos", JSON.stringify(p));
+                                  } catch {}
+                                  return p;
+                                });
+                              };
+                              grip.addEventListener("pointermove", move);
+                              grip.addEventListener("pointerup", up);
+                            }}
+                            onDoubleClick={() => {
+                              setLineBarPos(null);
+                              try {
+                                localStorage.removeItem("arcus.lineBar.pos");
+                              } catch {}
+                            }}
+                          >
+                            ⠿
+                          </span>
                           <input
                             type="color"
                             title="Line colour"

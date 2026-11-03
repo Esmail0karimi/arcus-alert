@@ -136,3 +136,5 @@
 .cx-evlist-d{flex:0 0 58px;color:#8aa0bb}.cx-evlist-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .cx-evpop-rep{display:block;margin:6px 0 2px;background:#12364a;border:1px solid #00c9b5;color:#00dcd2;border-radius:8px;padding:4px 10px;font:600 11px system-ui,sans-serif;cursor:pointer}.cx-evpop-rep:hover{background:#0f4a52}
+
+.cx-grip{cursor:grab;color:#8aa3be;padding:0 5px;font-size:15px;user-select:none;touch-action:none}.cx-phead{cursor:grab}

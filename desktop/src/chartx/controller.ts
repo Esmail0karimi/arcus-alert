@@ -28,6 +28,35 @@ const DEF_PREFS: Prefs = {
   rsi: { on: false, period: 14, color: "#b388ff", h: 1 },
   vol: { on: false },
 };
+/** Lets the user drag `el` by `handle` inside `host`; `onMoved` receives the final left/top. */
+function makeDraggable(el: HTMLElement, handle: HTMLElement, host: HTMLElement, onMoved: (l: number, t: number) => void) {
+  handle.style.cursor = "grab";
+  handle.style.touchAction = "none";
+  handle.addEventListener("pointerdown", (e: PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button,input,select")) return;
+    e.preventDefault();
+    const hr = host.getBoundingClientRect(),
+      er = el.getBoundingClientRect(),
+      dx = e.clientX - er.left,
+      dy = e.clientY - er.top;
+    handle.setPointerCapture(e.pointerId);
+    let l = er.left - hr.left, t = er.top - hr.top;
+    const move = (ev: PointerEvent) => {
+      l = Math.max(0, Math.min(hr.width - er.width, ev.clientX - hr.left - dx));
+      t = Math.max(0, Math.min(hr.height - er.height, ev.clientY - hr.top - dy));
+      el.style.right = "auto";
+      el.style.left = l + "px";
+      el.style.top = t + "px";
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      onMoved(l, t);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  });
+}
 const DEF_COLOR: Record<Kind, string> = { trend: "#4aa3ff", arrow: "#4aa3ff", vline: "#4aa3ff", hray: "#4aa3ff", channel: "#4aa3ff", fibret: "#f2b84b", fibext: "#b388ff", rect: "#4aa3ff", long: "#089981", short: "#f23645", measure: "#4aa3ff" };
 const migrate = (raw: any[]): Shape[] =>
   raw
@@ -693,7 +722,19 @@ export class ChartX {
       this.persistShapes();
       this.lastSig = "";
     };
-    this.pop.append(this.popColor, this.popWidth, this.lockBtn, gearBtn, del);
+    const popGrip = h("span", "cx-grip", "⠿");
+    popGrip.title = "Drag to move; double-click to snap back to the line";
+    popGrip.ondblclick = () => {
+      this.popPos = null;
+      save("arcus.chartx.poppos.v1", null);
+      this.pop.style.right = "";
+      this.pop.style.left = "";
+    };
+    makeDraggable(this.pop, popGrip, this.host, (l, t) => {
+      this.popPos = { l, t };
+      save("arcus.chartx.poppos.v1", this.popPos);
+    });
+    this.pop.append(popGrip, this.popColor, this.popWidth, this.lockBtn, gearBtn, del);
     this.pop.style.display = "none";
     stop(this.pop);
     this.panel.style.display = "none";
@@ -755,12 +796,16 @@ export class ChartX {
     const close = h("button", "cx-x", "✕");
     close.onclick = () => this.hidePanel();
     head.append(h("b", "", title), close);
+    makeDraggable(p, head, this.host, (l, t) => {
+      this.panelPos = { l, t };
+      save("arcus.chartx.panelpos.v1", this.panelPos);
+    });
     p.append(head, ...rows);
     if (foot) p.append(foot);
     p.style.display = "block";
     const W = 250, H = Math.min(p.offsetHeight || 260, this.host.clientHeight - 8);
-    p.style.left = Math.max(4, Math.min(x, this.host.clientWidth - W - 4)) + "px";
-    p.style.top = Math.max(4, Math.min(y, this.host.clientHeight - H - 4)) + "px";
+    p.style.left = Math.max(4, Math.min(this.panelPos ? this.panelPos.l : x, this.host.clientWidth - W - 4)) + "px";
+    p.style.top = Math.max(4, Math.min(this.panelPos ? this.panelPos.t : y, this.host.clientHeight - H - 4)) + "px";
   }
 
   private openThemePanel(x: number, y: number) {
@@ -1170,6 +1215,8 @@ export class ChartX {
     const { note: _n, ...dd } = d as any;
     return { color: DEF_COLOR[kind], width: kind === "trend" || kind === "arrow" ? 1.5 : 2, ...dd, id, kind, pts } as Shape;
   }
+  private panelPos: { l: number; t: number } | null = load<{ l: number; t: number } | null>("arcus.chartx.panelpos.v1", null);
+  private popPos: { l: number; t: number } | null = load<{ l: number; t: number } | null>("arcus.chartx.poppos.v1", null);
   private lockAll = load<boolean>("arcus.chartx.lockall.v1", false);
   private lockBtn = h("button", "", "🔓");
 
@@ -1531,7 +1578,12 @@ export class ChartX {
       this.built.set(s.id, b);
       if (s.id === this.selected) {
         this.pop.style.display = "flex";
-        this.pop.style.top = Math.max(4, b.mid.y - 36) + "px";
+        if (this.popPos) {
+          // the user moved the bar: it stays where it was put
+          this.pop.style.right = "auto";
+          this.pop.style.left = Math.min(this.popPos.l, Math.max(0, this.host.clientWidth - this.pop.offsetWidth)) + "px";
+          this.pop.style.top = Math.min(this.popPos.t, Math.max(0, this.host.clientHeight - 40)) + "px";
+        } else this.pop.style.top = Math.max(4, b.mid.y - 36) + "px";
       }
     }
     if (this.draft)

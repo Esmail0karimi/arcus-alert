@@ -628,3 +628,5 @@ nav button.active span{filter:drop-shadow(0 0 6px #19e3cfaa)}
 
 /* Android embed mode: News / report only */
 .app.embed main{padding:10px 10px 24px;width:100%;max-width:none}.app.embed .chart-fab{display:none}
+
+.line-actions .line-grip{cursor:grab;color:#8aa3be;padding:2px 5px;font-size:15px;line-height:24px;user-select:none;touch-action:none}.line-actions .line-grip:active{cursor:grabbing}
