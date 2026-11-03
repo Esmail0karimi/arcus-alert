@@ -75,12 +75,18 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
   }, [res, now]);
   const byDay = useMemo(() => {
     const m = new Map<string, NewsEv[]>();
-    for (const e of shown) {
+    // upcoming first (soonest on top), already-passed ones go to the end (most recent first)
+    const ordered = [...shown].sort((x, y) => {
+      const px = x.t < now ? 1 : 0, py = y.t < now ? 1 : 0;
+      if (px !== py) return px - py;
+      return px ? y.t - x.t : x.t - y.t;
+    });
+    for (const e of ordered) {
       const k = new Date(e.t).toLocaleDateString(dloc(fa), { weekday: "long", month: "short", day: "numeric" });
       (m.get(k) || m.set(k, []).get(k)!).push(e);
     }
     return [...m.entries()];
-  }, [shown, fa]);
+  }, [shown, fa, now]);
   const todayKey = new Date(now).toLocaleDateString(dloc(fa), { weekday: "long", month: "short", day: "numeric" });
   const CURS = ["all", "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "CNY"];
   const dir = (e: NewsEv) => {
