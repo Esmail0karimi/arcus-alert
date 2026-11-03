@@ -102,26 +102,36 @@ async function arcus(base: string, signal?: AbortSignal) {
   throw new Error(last?.message?.includes("HTTP 404") ? "no public order book endpoint" : "not reachable");
 }
 
-export async function loadBooks(base: string, rangePct: number, ids: string[], signal?: AbortSignal): Promise<ExState[]> {
-  const run = async (ex: (typeof EXCHANGES)[number]): Promise<ExState> => {
+/** Loads every exchange on its own: each one has a timeout and reports as soon as it answers, so one slow exchange never blocks the rest. */
+export function loadBooks(base: string, rangePct: number, ids: string[], onState: (s: ExState) => void, signal?: AbortSignal, timeoutMs = 8000): Promise<void> {
+  const run = async (ex: (typeof EXCHANGES)[number]) => {
+    const ctl = new AbortController();
+    const onAbort = () => ctl.abort();
+    signal?.addEventListener("abort", onAbort);
+    let timedOut = false;
+    const timer = window.setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
     try {
       let b: { bids: Level[]; asks: Level[] };
-      if (ex.id === "binance") b = await binance(base, signal);
-      else if (ex.id === "binanceperp") b = await binancePerp(base, signal);
-      else if (ex.id === "coinbase") b = await coinbase(base, signal);
-      else if (ex.id === "hl") b = await hyperliquid(base, rangePct, signal);
-      else if (ex.id === "lighter") b = await lighter(base, signal);
-      else b = await arcus(base, signal);
+      if (ex.id === "binance") b = await binance(base, ctl.signal);
+      else if (ex.id === "binanceperp") b = await binancePerp(base, ctl.signal);
+      else if (ex.id === "coinbase") b = await coinbase(base, ctl.signal);
+      else if (ex.id === "hl") b = await hyperliquid(base, rangePct, ctl.signal);
+      else if (ex.id === "lighter") b = await lighter(base, ctl.signal);
+      else b = await arcus(base, ctl.signal);
       if (!b.bids.length && !b.asks.length) throw new Error("empty");
       b.bids.sort((x, y) => y[0] - x[0]);
       b.asks.sort((x, y) => x[0] - y[0]);
-      return { id: ex.id, label: ex.label, color: ex.color, ok: true, msg: "", book: { id: ex.id, label: ex.label, color: ex.color, ...b, at: Date.now() } };
+      if (!signal?.aborted) onState({ id: ex.id, label: ex.label, color: ex.color, ok: true, msg: "", book: { id: ex.id, label: ex.label, color: ex.color, ...b, at: Date.now() } });
     } catch (e: any) {
+      if (signal?.aborted) return;
       const m = String(e?.message || e);
-      return { id: ex.id, label: ex.label, color: ex.color, ok: false, msg: /abort/i.test(m) ? "" : /HTTP 4(00|51)/.test(m) ? "no such market" : m.slice(0, 40) };
+      onState({ id: ex.id, label: ex.label, color: ex.color, ok: false, msg: timedOut ? "no answer (blocked?)" : /HTTP 4(00|51)/.test(m) ? "no such market" : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "blocked / unreachable" : m.slice(0, 40) });
+    } finally {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     }
   };
-  return Promise.all(EXCHANGES.filter((x) => ids.includes(x.id)).map(run));
+  return Promise.all(EXCHANGES.filter((x) => ids.includes(x.id)).map(run)).then(() => undefined);
 }
 
 export type Bucket = { lo: number; hi: number; mid: number; by: Record<string, number>; total: number };

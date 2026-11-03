@@ -50,13 +50,13 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
     const ctl = new AbortController();
     const n = ++seq.current;
     setBusy(true);
-    loadBooks(base, pct, ids, ctl.signal)
-      .then((r) => {
-        if (n !== seq.current) return;
-        setStates(r);
-        setUpdated(Date.now());
-      })
-      .finally(() => n === seq.current && setBusy(false));
+    // keep what is already on screen while refreshing; each exchange replaces its own entry the moment it answers
+    setStates((cur) => cur.filter((s) => ids.includes(s.id)));
+    loadBooks(base, pct, ids, (s) => {
+      if (n !== seq.current) return;
+      setStates((cur) => [...cur.filter((x) => x.id !== s.id), s]);
+      setUpdated(Date.now());
+    }, ctl.signal).finally(() => n === seq.current && setBusy(false));
     return () => ctl.abort();
   }, [base, pct, ids, tick]);
   useEffect(() => {
