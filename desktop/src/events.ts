@@ -5,7 +5,7 @@ import { findAsset } from "./assetinfo";
 import { loadCompany, loadHosted } from "./newsdata";
 import type { ReportReq } from "./report";
 
-export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split" | "macro"; report?: ReportReq; title: string; detail?: string; url?: string; source?: string; future: boolean };
+export type Ev = { id: string; t: number; kind: "earnings" | "news" | "dividend" | "split" | "macro"; report?: ReportReq; title: string; detail?: string; url?: string; source?: string; future: boolean; impact?: "High" | "Medium" | "Low" };
 
 export type EvResult = { list: Ev[]; failed: number; total: number; names: string[] };
 const cache = new Map<string, { at: number; v: EvResult }>();
@@ -26,13 +26,38 @@ const jget = async (url: string, signal?: AbortSignal) => {
   }
 };
 
+const macroImpact = (e: { impact?: string }): "High" | "Medium" | "Low" => (e.impact === "High" ? "High" : e.impact === "Medium" ? "Medium" : "Low");
+/** Market-wide releases, plus currency releases for the currencies the symbol is made of (USD for stocks, indices and crypto). */
+const macroRelevant = (e: { scope?: string; currency?: string; impact?: string }, base: string) => {
+  if (e.impact === "Holiday") return false;
+  if (e.scope === "all") return true;
+  const cur = e.currency || "";
+  return !!cur && (cur === "USD" || base.toUpperCase().includes(cur));
+};
+/** Macro events only (crypto and other symbols that have no company news). */
+export async function fetchMacroEvents(base: string, signal?: AbortSignal): Promise<EvResult> {
+  const out: Ev[] = [];
+  let failed = 0;
+  try {
+    const h = await loadHosted(signal);
+    const now = Date.now();
+    for (const e of h.events) {
+      if (e.kind !== "macro" || !macroRelevant(e, base) || e.t < now - 90 * 864e5) continue;
+      const t = Math.floor(e.t / 1000);
+      out.push({ id: "macro" + t + e.title.slice(0, 12), t, kind: "macro", impact: macroImpact(e), title: e.title, detail: (e.scope === "all" ? "Affects all markets" : e.scopeText || "") + (e.forecast ? " · forecast " + e.forecast : "") + (e.previous ? " · previous " + e.previous : ""), source: e.source, report: { evId: e.id }, future: e.t > now });
+    }
+  } catch {
+    failed = 1;
+  }
+  return { list: out, failed, total: 1, names: failed ? ["News data"] : [] };
+}
 export async function fetchEvents(base: string, signal?: AbortSignal, name?: string): Promise<EvResult> {
   const hit = cache.get(base);
   if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
   const sym = yfSym(base);
   const now = Date.now() / 1000;
   const out: Ev[] = [];
-  const add = (e: Omit<Ev, "future" | "id">) => out.push({ ...e, id: e.kind + e.t + e.title.slice(0, 12), future: e.t > now });
+  const add = (e: Omit<Ev, "future" | "id">) => out.push({ impact: e.kind === "earnings" ? "Medium" : "Low", ...e, id: e.kind + e.t + e.title.slice(0, 12), future: e.t > now });
   const jobs: Promise<void>[] = [];
   const jobNames: string[] = [];
 
@@ -46,10 +71,10 @@ export async function fetchEvents(base: string, signal?: AbortSignal, name?: str
       const rep: ReportReq = { symbol: base };
       for (const e of h.events) {
         if (e.kind === "earnings" && e.symbol === base) {
-          add({ t: Math.floor(e.t / 1000), kind: "earnings", title: e.t > nowMs ? "Earnings report" : "Earnings report (today/just now)", detail: [e.forecast ? "Analysts expect EPS " + e.forecast : "", e.extra || ""].filter(Boolean).join(" · "), source: e.source, report: rep });
+          add({ impact: e.impact === "High" ? "High" : "Medium", t: Math.floor(e.t / 1000), kind: "earnings", title: e.t > nowMs ? "Earnings report" : "Earnings report (today/just now)", detail: [e.forecast ? "Analysts expect EPS " + e.forecast : "", e.extra || ""].filter(Boolean).join(" · "), source: e.source, report: rep });
           gotHosted = true;
-        } else if (e.kind === "macro" && e.impact === "High" && e.scope === "all" && e.t > nowMs - 90 * 864e5) {
-          add({ t: Math.floor(e.t / 1000), kind: "macro", title: e.title, detail: "Affects all markets" + (e.forecast ? " · forecast " + e.forecast : "") + (e.previous ? " · previous " + e.previous : ""), source: e.source, report: { evId: e.id } });
+        } else if (e.kind === "macro" && macroRelevant(e, base) && e.t > nowMs - 90 * 864e5) {
+          add({ impact: macroImpact(e), t: Math.floor(e.t / 1000), kind: "macro", title: e.title, detail: (e.scope === "all" ? "Affects all markets" : e.scopeText || "") + (e.forecast ? " · forecast " + e.forecast : "") + (e.previous ? " · previous " + e.previous : ""), source: e.source, report: { evId: e.id } });
           gotHosted = true;
         }
       }

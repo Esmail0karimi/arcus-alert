@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { createRoot } from "react-dom/client";
 import { createChart, CandlestickSeries, CrosshairMode } from "lightweight-charts";
 import { attachChartX, type ChartX } from "./chartx/controller";
-import { fetchEvents } from "./events";
+import { fetchEvents, fetchMacroEvents } from "./events";
 import { SessionBar } from "./sessions";
 import { IpBadge } from "./ipbadge";
 import { News } from "./news";
@@ -1665,17 +1665,15 @@ function App() {
       cx.setEventsStatus("off");
       return;
     }
-    if (!eligible) {
-      cx.setEvents([]);
-      cx.setEventsStatus("not available for crypto");
-      return;
-    }
     const ctl = new AbortController();
     cx.setEvents([]);
     cx.setEventsStatus("loading…");
-    findAsset(evBase, ctl.signal)
-      .catch(() => null)
-      .then((info) => fetchEvents(evBase, ctl.signal, info?.who?.name || info?.title))
+    (eligible
+      ? findAsset(evBase, ctl.signal)
+          .catch(() => null)
+          .then((info) => fetchEvents(evBase, ctl.signal, info?.who?.name || info?.title))
+      : fetchMacroEvents(evBase, ctl.signal)
+    )
       .then((r) => {
         if (ctl.signal.aborted) return;
         chartX.current?.setEvents(r.list);

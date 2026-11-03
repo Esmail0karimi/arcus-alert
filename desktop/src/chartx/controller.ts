@@ -119,6 +119,16 @@ export class ChartX {
   private evLayer = h("div", "cx-evlayer");
   private evPop = h("div", "cx-evpop");
   private evs: Ev[] = [];
+  private evAll: Ev[] = [];
+  private evImp = load<Record<string, boolean>>("arcus.chartx.evimp.v1", { High: true, Medium: true, Low: true });
+  private applyEvFilter() {
+    this.evs = this.evAll.filter((e) => this.evImp[e.impact || "Low"] !== false);
+    this.evSig = "";
+    this.evEls.clear();
+    this.evLayer.replaceChildren();
+    this.evBtn.dataset.n = "";
+    this.evPop.style.display = "none";
+  }
   private evOn = load<boolean>("arcus.chartx.events.v1", true);
   private evSig = "";
   onEventsToggle: ((on: boolean) => void) | null = null;
@@ -382,9 +392,8 @@ export class ChartX {
     if (this.evStatusEl) this.evStatusEl.textContent = t ? " · " + t : "";
   }
   setEvents(list: Ev[]) {
-    this.evs = list;
-    this.evSig = "";
-    this.evPop.style.display = "none";
+    this.evAll = list;
+    this.applyEvFilter();
   }
   private evX(t: number): number | null {
     const c = this.candles;
@@ -435,7 +444,7 @@ export class ChartX {
     const maxX = w - (this.chart.priceScale("right").width() || 60);
     if (!this.evEls.size) {
       for (const e of this.evs) {
-        const box = h("div", "cx-ev " + e.kind + (e.future ? " future" : ""));
+        const box = h("div", "cx-ev " + e.kind + " imp-" + (e.impact || "Low") + (e.future ? " future" : ""));
         const dot = h("button", "cx-ev-dot", e.kind === "earnings" ? "E" : e.kind === "news" ? "N" : e.kind === "macro" ? "M" : e.kind === "dividend" ? "$" : "S");
         dot.title = (e.future ? "Upcoming · " : "") + e.title;
         dot.onclick = (ev) => {
@@ -1123,6 +1132,22 @@ export class ChartX {
       this.evStatusEl = st;
       row.append(cb, nm, st);
       this.indMenu.append(row);
+      const imp = h("div", "cx-ind-row cx-imp-row");
+      imp.append(h("span", "cx-imp-l", "Show importance:"));
+      for (const k of ["High", "Medium", "Low"]) {
+        const lab = h("label", "cx-imp " + k);
+        const ck = document.createElement("input");
+        ck.type = "checkbox";
+        ck.checked = this.evImp[k] !== false;
+        ck.onchange = () => {
+          this.evImp = { ...this.evImp, [k]: ck.checked };
+          save("arcus.chartx.evimp.v1", this.evImp);
+          this.applyEvFilter();
+        };
+        lab.append(ck, document.createTextNode(" " + k));
+        imp.append(lab);
+      }
+      this.indMenu.append(imp);
     }
     const defs: ["sma" | "rsi" | "vol", string][] = [["sma", "SMA (moving average)"], ["rsi", "RSI"], ["vol", "Volume"]];
     for (const [k, label] of defs) {

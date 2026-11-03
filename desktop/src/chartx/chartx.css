@@ -114,10 +114,12 @@
 
 .cx-evlayer{position:absolute;inset:0;z-index:7;pointer-events:none;overflow:hidden}
 .cx-ev{position:absolute;top:0;width:0}
-.cx-ev-line{position:absolute;left:0;top:0;bottom:0;border-left:1px dashed rgba(170,190,215,.45)}
+.cx-ev-line{position:absolute;left:0;top:0;bottom:0;width:0;border-left:1px solid rgba(170,190,215,.5);opacity:.85}
+.cx-ev.imp-High .cx-ev-line{border-left-color:rgba(255,92,92,.8)}.cx-ev.imp-Medium .cx-ev-line{border-left-color:rgba(242,170,60,.7)}.cx-ev.imp-Low .cx-ev-line{border-left-color:rgba(150,170,195,.45)}
+.cx-imp-row{display:flex;gap:10px;align-items:center;padding:2px 8px 6px 28px;font-size:11px;color:#b8c9dc}.cx-imp{cursor:pointer;display:inline-flex;align-items:center;gap:3px}.cx-imp.High{color:#ff8a8a}.cx-imp.Medium{color:#f2b84c}.cx-imp.Low{color:#9db2c9}.cx-imp-l{color:#8aa0bb}
 .cx-ev.future .cx-ev-line{border-left-color:rgba(242,201,76,.6)}
 .cx-ev-dot{position:absolute;left:-8px;top:4px;width:16px;height:16px;border-radius:50%;border:0;padding:0;font:700 9px/16px system-ui,sans-serif;color:#06121f;text-align:center;cursor:pointer;pointer-events:auto;box-shadow:0 0 0 2px rgba(7,22,41,.8)}
-.cx-ev.earnings .cx-ev-dot{background:#f2c94c}.cx-ev.news .cx-ev-dot{background:#4aa3ff}.cx-ev.dividend .cx-ev-dot{background:#3ddc97}.cx-ev.split .cx-ev-dot{background:#b388ff}.cx-ev.macro .cx-ev-dot{background:#ff6b6b}.cx-ev.macro .cx-ev-line{border-left-color:rgba(255,107,107,.45)}
+.cx-ev.earnings .cx-ev-dot{background:#f2c94c}.cx-ev.news .cx-ev-dot{background:#4aa3ff}.cx-ev.dividend .cx-ev-dot{background:#3ddc97}.cx-ev.split .cx-ev-dot{background:#b388ff}.cx-ev.macro .cx-ev-dot{background:#ff6b6b}
 .cx-ev.future .cx-ev-dot{box-shadow:0 0 0 2px rgba(7,22,41,.8),0 0 8px 2px rgba(242,201,76,.55)}
 .cx-ev-dot:hover{transform:scale(1.2)}
 .cx-evpop{position:absolute;z-index:14;display:none;width:270px;max-width:calc(100% - 12px);padding:9px 11px;background:#0b1a2e;border:1px solid #2a4560;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);font:12px/1.45 system-ui,sans-serif;color:#cfe0f2}
