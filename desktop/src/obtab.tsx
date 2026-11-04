@@ -28,7 +28,7 @@ const write = (k: string, v: string) => {
 
 export function OrderBook(p: { bases: string[]; initial?: string }) {
   const [base, setBase] = useState(() => read("arcus.ob.base", p.initial || "BTC").toUpperCase());
-  const [typed, setTyped] = useState(base);
+  const [q, setQ] = useState("");
   const [tf, setTf] = useState(() => read("arcus.ob.tf", "15m"));
   const [off, setOff] = useState<string[]>(() => {
     try {
@@ -43,7 +43,6 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
   const [auto, setAuto] = useState(true);
   const [tick, setTick] = useState(0);
   const [all, setAll] = useState<string[]>([]);
-  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     const c = new AbortController();
     loadSymbols(c.signal).then(setAll);
@@ -92,7 +91,7 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
     const v = b.trim().toUpperCase().replace(/[-/ ]?(USD|USDT|PERP)$/, "");
     if (!v) return;
     setBase(v);
-    setTyped(v);
+    setQ("");
     write("arcus.ob.base", v);
   };
   const setFrame = (t: string) => {
@@ -123,8 +122,7 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
       <span className="ob-val">{b.total ? money(b.total) : ""}</span>
     </div>
   );
-  const quick = (all.length ? all.slice(0, 14) : ["BTC", "ETH", "SOL", "XRP", "DOGE", "HYPE"]).filter((q) => q !== base).slice(0, 13);
-  const shownCoins = showAll ? coins.filter((c) => !typed || typed === base || c.includes(typed)) : [];
+  const shownCoins = useMemo(() => (q ? coins.filter((c) => c.includes(q)).sort((x, y) => (x.startsWith(q) ? 0 : 1) - (y.startsWith(q) ? 0 : 1)) : coins), [coins, q]);
   return (
     <div className="ob-tab">
       <div className="heading">
@@ -141,39 +139,41 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           </button>
         </div>
       </div>
-      <div className="ob-controls">
-        <form
-          className="ob-sym"
-          onSubmit={(e) => {
-            e.preventDefault();
-            pick(typed);
-          }}
-        >
-          <input list="ob-bases" value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase())} onFocus={(e) => e.currentTarget.select()} placeholder="Symbol, e.g. BTC" aria-label="Symbol" />
-          <datalist id="ob-bases">{coins.map((b) => <option key={b} value={b} />)}</datalist>
-          <button type="submit" className="secondary">Go</button>
-        </form>
-        <div className="ob-quick">
-          <button className="secondary on" title="Selected symbol">{base}</button>
-          {quick.map((q) => (
-            <button key={q} className="secondary" onClick={() => pick(q)}>{q}</button>
-          ))}
-          <button className={"secondary" + (showAll ? " on" : "")} onClick={() => setShowAll(!showAll)} title="Browse every coin">All coins ({coins.length || "…"})</button>
-        </div>
-        <div className="ob-tfs" role="tablist">
-          {TFS.map((t) => (
-            <button key={t.id} className={tf === t.id ? "on" : ""} onClick={() => setFrame(t.id)} title={t.hint}>{t.id}</button>
-          ))}
-          <small>±{pct}%</small>
-        </div>
-      </div>
-      {showAll && (
-        <div className="ob-all">
-          {shownCoins.length ? shownCoins.map((c) => (
-            <button key={c} className={c === base ? "on" : ""} onClick={() => { pick(c); setShowAll(false); }}>{c}</button>
-          )) : <span className="muted">No coin matches “{typed}”.</span>}
-        </div>
-      )}
+      <div className="ob-shell">
+        <aside className="ob-coins" aria-label="Coins">
+          <div className="ob-search">
+            <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M13 13l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && shownCoins.length) pick(shownCoins.find((c) => c === q) || shownCoins[0]);
+                if (e.key === "Escape") setQ("");
+              }}
+              placeholder="Search coin…"
+              aria-label="Search coin"
+              spellCheck={false}
+            />
+            {q && <button className="ob-clear" onClick={() => setQ("")} aria-label="Clear search">✕</button>}
+          </div>
+          <div className="ob-count">{shownCoins.length} {q ? "matches" : "coins"}{!all.length ? " · loading list…" : ""}</div>
+          <div className="ob-list" role="listbox">
+            {shownCoins.map((c) => (
+              <button key={c} role="option" aria-selected={c === base} className={"ob-coin" + (c === base ? " on" : "")} onClick={() => pick(c)}>
+                <i className="ob-av" style={{ background: "hsl(" + ((c.charCodeAt(0) * 37 + (c.charCodeAt(1) || 0) * 17) % 360) + " 55% 38%)" }}>{c.slice(0, 2)}</i>
+                <span>{c}</span>
+              </button>
+            ))}
+            {!shownCoins.length && <div className="ob-none">No coin matches “{q}”.<br /><button className="secondary" onClick={() => pick(q)}>Try “{q}” anyway</button></div>}
+          </div>
+        </aside>
+        <div className="ob-content">
+          <div className="ob-tfs" role="tablist" aria-label="Timeframe">
+            {TFS.map((t) => (
+              <button key={t.id} role="tab" aria-selected={tf === t.id} className={tf === t.id ? "on" : ""} onClick={() => setFrame(t.id)} title={t.hint}>{t.id}</button>
+            ))}
+            <small>window ±{pct}% around the price</small>
+          </div>
       <div className="ob-ex">
         {EXCHANGES.map((e) => {
           const s = states.find((x) => x.id === e.id);
@@ -217,6 +217,8 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           </aside>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
