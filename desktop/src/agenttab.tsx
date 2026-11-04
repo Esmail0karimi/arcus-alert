@@ -7,6 +7,7 @@ import { loadSymbols } from "./orderbook";
 import { Hit, Match, STRATEGIES, matchesFor, scan } from "./strategies";
 import { VoiceControl, speak } from "./voice";
 import { getAvatar, openAvatarSetup } from "./avatar";
+import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
 type Rule = { id: string; base: string; tf: string; min: number; minScore: number };
@@ -39,7 +40,7 @@ const sendNotification = (title: string, body: string, tag: string) => {
   } catch {}
 };
 
-export function AgentTab(p: { bases: string[] }) {
+export function AgentTab(p: { bases: string[]; tfNow?: string; onOpenChart?: (base: string, tf: string, setup: SetupLines | null) => boolean }) {
   const fa = useLang() === "fa";
   const T = (en: string, f: string) => (fa ? f : en);
   const L = (x: Bi) => (fa ? x.fa : x.en);
@@ -57,6 +58,7 @@ export function AgentTab(p: { bases: string[] }) {
   const [stratSel, setStratSel] = useState("all");
   const [sideSel, setSideSel] = useState<"both" | "long" | "short">("both");
   const [busy, setBusy] = useState(false);
+  const [openMsg, setOpenMsg] = useState("");
   const [failed, setFailed] = useState<string[]>([]);
   const fired = useRef<Record<string, number>>(jget("arcus.ag.fired.v1", {}));
   const dataRef = useRef(data);
@@ -411,6 +413,7 @@ export function AgentTab(p: { bases: string[] }) {
             </div>
           );
         })()}
+        {openMsg && <div className="ag-warn">{T("“" + openMsg + "” is not in this app's symbol list, so its chart cannot open here.", "«" + openMsg + "» در فهرست نمادهای این اپ نیست و چارتش اینجا باز نمی‌شود.")}</div>}
         {!flat.length && <div className="empty">{loaded < universe.length ? T("Scanning… results appear as coins load.", "در حال اسکن… نتایج با لود شدن ارزها می‌آید.") : T("No coin matches this right now. Momentum setups are selective; try another timeframe or the Top 60 scan.", "فعلاً ارزی با این شرایط نیست. ستاپ‌های مومنتوم گزینشی‌اند؛ تایم‌فریم دیگر یا اسکن ۶۰ ارز برتر را امتحان کن.")}</div>}
         <div className="ag-hits">
           {flat.map(({ h, m }) => {
@@ -432,7 +435,13 @@ export function AgentTab(p: { bases: string[] }) {
                   <div className="t"><dt>2R</dt><dd>{fmtPrice(m.t[1])}</dd></div>
                   <div className="t"><dt>3R</dt><dd>{fmtPrice(m.t[2])}</dd></div>
                 </dl>
-                <button className="secondary" onClick={() => (inList ? (setSel(h.base), window.scrollTo({ top: 0, behavior: "smooth" })) : setWatch([...watch, h.base]))}>{inList ? T("Open analysis ▸", "باز کردن تحلیل ▸") : T("＋ Add to my list", "＋ افزودن به فهرست من")}</button>
+                <div className="ag-hitbtns">
+                  <button onClick={() => {
+                    const okOpen = p.onOpenChart?.(h.base, tf, { base: h.base, tf, side: m.side, sid: m.sid, entry: m.entry, stop: m.stop, t: m.t });
+                    setOpenMsg(okOpen === false ? h.base : "");
+                  }}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
+                  {!inList && <button className="secondary" onClick={() => setWatch([...watch, h.base])}>＋ {T("Watch", "دنبال کن")}</button>}
+                </div>
               </article>
             );
           })}

@@ -14,6 +14,7 @@ import { FA_NAME } from "./agent";
 import { AgentTab } from "./agenttab";
 import { VoiceControl, speak } from "./voice";
 import { AvatarHead } from "./avatar";
+import { AnalysisPanel, type SetupLines } from "./analysispanel";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -1661,6 +1662,51 @@ function App() {
     }
   }, []);
   const [evTick, setEvTick] = useState(0);
+  const [anOpen, setAnOpen] = useState(false);
+  const [setupLines, setSetupLines] = useState<SetupLines | null>(null);
+  const openFromAgent = (base: string, frame: string, setup: SetupLines | null): boolean => {
+    const hit = symbols.find((x) => assetBase(dn(x)) === base);
+    if (!hit) return false;
+    setSymbol(hit);
+    if (TF_LIST.includes(frame)) setTf(frame);
+    setSetupLines(setup);
+    setAnOpen(true);
+    setTab("Chart");
+    return true;
+  };
+  useEffect(() => {
+    if (setupLines && symbol && assetBase(dn(symbol)) !== setupLines.base) setSetupLines(null);
+  }, [symbol, setupLines]);
+  // draw the opened setup (entry, stop, 1R/2R/3R) as price lines on the chart
+  useEffect(() => {
+    if (!setupLines || tab !== "Chart") return;
+    const made: any[] = [];
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const s = series.current;
+      if (!s) {
+        if (++tries > 30) window.clearInterval(id);
+        return;
+      }
+      window.clearInterval(id);
+      const add = (price: number, color: string, title: string) => {
+        try {
+          made.push(s.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title }));
+        } catch {}
+      };
+      add(setupLines.entry, "#00dcd2", "Entry");
+      add(setupLines.stop, "#ff5c5c", "Stop");
+      setupLines.t.forEach((v, i) => add(v, "#3ddc97", i + 1 + "R"));
+    }, 300);
+    return () => {
+      window.clearInterval(id);
+      for (const l of made) {
+        try {
+          series.current?.removePriceLine(l);
+        } catch {}
+      }
+    };
+  }, [setupLines, symbol, tf, tab]);
   useEffect(() => {
     const cx = chartX.current;
     if (tab !== "Chart" || !cx || !symbol) return;
@@ -2731,7 +2777,7 @@ function App() {
         )}
         {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        {tab === "Agent" && <AgentTab bases={obBases} />}
+        {tab === "Agent" && <AgentTab bases={obBases} tfNow={tf} onOpenChart={openFromAgent} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />
@@ -2933,6 +2979,9 @@ function App() {
                 ))}
               </div>
               <span className="ind-slot fs-keep" />
+              <button className={"secondary fs-keep an-btn" + (anOpen ? " on" : "")} title="The Agent's analysis of this coin and timeframe" onClick={() => setAnOpen(!anOpen)}>
+                🧠 Analysis
+              </button>
               <button
                 className="secondary drawer-toggle fs-keep"
                 title="Full screen chart (Esc to exit). Type a timeframe like 15 and press Enter."
@@ -2984,6 +3033,9 @@ function App() {
                 </select>
               </aside>
               <section className="chart-center">
+                {anOpen && symbol && (
+                  <AnalysisPanel base={assetBase(dn(symbol))} tf={tf} tradfi={catOfSymbol(symbol) !== "Crypto"} setup={setupLines} onClose={() => setAnOpen(false)} onTf={setTf} />
+                )}
                 {tfBuffer && (
                   <div className="tf-input">
                     {tfBuffer} <small>↵ Enter</small>
