@@ -10,6 +10,7 @@ import { IpBadge } from "./ipbadge";
 import { News } from "./news";
 import { ReportHost, openReport as openReportExt } from "./report";
 import { OrderBook } from "./obtab";
+import { AgentTab } from "./agenttab";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -65,7 +66,7 @@ const EMBED_SYM = (() => {
     return "";
   }
 })();
-const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -2719,6 +2720,7 @@ function App() {
         )}
         {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
+        {tab === "Agent" && <AgentTab bases={obBases} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         {tab === "Watchlist" && (
@@ -3885,7 +3887,7 @@ function App() {
             }}
             key={t}
           >
-            <span>{["▦", "☆", "⌁", "◔", "≡", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
