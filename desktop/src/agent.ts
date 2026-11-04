@@ -34,16 +34,17 @@ export type Analysis = {
   bear: Bi;
   risks: Bi[];
   plan: Bi;
+  why: Bi[];
   confirmations: number;
 };
 
-const ema = (v: number[], n: number) => {
+export const ema = (v: number[], n: number) => {
   const k = 2 / (n + 1);
   const out: number[] = [];
   v.forEach((x, i) => out.push(i ? x * k + out[i - 1] * (1 - k) : x));
   return out;
 };
-const rsiOf = (c: number[], n = 14) => {
+export const rsiOf = (c: number[], n = 14) => {
   if (c.length <= n) return 50;
   let g = 0, l = 0;
   for (let i = 1; i <= n; i++) {
@@ -58,7 +59,7 @@ const rsiOf = (c: number[], n = 14) => {
   }
   return l === 0 ? 100 : 100 - 100 / (1 + g / l);
 };
-const atrOf = (r: QCandle[], n = 14) => {
+export const atrOf = (r: QCandle[], n = 14) => {
   if (r.length < 2) return 0;
   const tr = r.map((x, i) => (i ? Math.max(x.high - x.low, Math.abs(x.high - r[i - 1].close), Math.abs(x.low - r[i - 1].close)) : x.high - x.low));
   let a = tr.slice(1, n + 1).reduce((s, v) => s + v, 0) / Math.min(n, tr.length - 1);
@@ -208,7 +209,17 @@ export function analyze(base: string, tf: string, rows: QCandle[], nowMs = Date.
       ? b("If the candle closes near its low" + (sup ? " and below " + fmt(sup) : "") + ", the structure stays bearish. If it recovers most of its loss before the close, the low becomes a lower wick and the signal weakens.", "اگر کندل نزدیک کفش" + (sup ? " و زیر " + fmt(sup) : "") + " ببندد، ساختار نزولی می‌ماند. اگر پیش از بسته‌شدن بیشتر ضررش را جبران کند، کف به سایه‌ی پایینی تبدیل می‌شود و سیگنال ضعیف می‌شود.")
       : b("Wait for a close beyond " + (sup ? fmt(sup) : "the recent low") + " or " + (res ? fmt(res) : "the recent high") + " before acting.", "منتظر بسته‌شدن کندل بیرون از " + (sup ? fmt(sup) : "کف اخیر") + " یا " + (res ? fmt(res) : "سقف اخیر") + " بمان.");
 
-  return { base, tf, price, score, bias, label, setup, headline, closeAt, forming, candle: cd, ind: { ema20: E20, ema50: E50, rsi, hist: H, atr, roc }, res, sup, structure, candleLines, patterns, bull, bear, risks, plan, confirmations };
+  const why: Bi[] = [];
+  const sgn = bias === "bear" ? -1 : 1;
+  if (bias !== "flat") {
+    if ((price - E20) * sgn > 0 && (E20 - E50) * sgn > 0) why.push(sgn > 0 ? b("price is above EMA20 and EMA50 (trend up)", "قیمت بالای EMA20 و EMA50 است (روند صعودی)") : b("price is below EMA20 and EMA50 (trend down)", "قیمت زیر EMA20 و EMA50 است (روند نزولی)"));
+    if (H * sgn > 0) why.push(sgn > 0 ? b("MACD momentum is positive" + (H > H1 ? " and rising" : ""), "مومنتوم MACD مثبت است" + (H > H1 ? " و در حال رشد" : "")) : b("MACD momentum is negative" + (H < H1 ? " and falling" : ""), "مومنتوم MACD منفی است" + (H < H1 ? " و در حال افت" : "")));
+    if ((rsi - 50) * sgn > 4) why.push(b("RSI is " + rsi.toFixed(0), "RSI برابر " + rsi.toFixed(0) + " است"));
+    if ((sgn > 0 && up) || (sgn < 0 && dn)) why.push(sgn > 0 ? b("highs and lows keep rising", "سقف و کف‌ها مدام بالاتر می‌روند") : b("highs and lows keep falling", "سقف و کف‌ها مدام پایین‌تر می‌روند"));
+    if ((closePos - 0.5) * sgn > 0.25) why.push(sgn > 0 ? b("the candle is trading near its high", "کندل نزدیک سقف خودش معامله می‌شود") : b("the candle is trading near its low", "کندل نزدیک کف خودش معامله می‌شود"));
+    if (volPace && volPace > 1.3) why.push(b("volume is " + volPace.toFixed(1) + "x its average", "حجم " + volPace.toFixed(1) + " برابر میانگین است"));
+  } else why.push(b("trend, momentum and candle do not agree with each other", "روند، مومنتوم و کندل با هم هم‌جهت نیستند"));
+  return { base, tf, price, score, bias, label, setup, headline, closeAt, forming, candle: cd, ind: { ema20: E20, ema50: E50, rsi, hist: H, atr, roc }, res, sup, structure, candleLines, patterns, bull, bear, risks, plan, why, confirmations };
 }
 
 export const left = (closeAt: number, now = Date.now()) => {

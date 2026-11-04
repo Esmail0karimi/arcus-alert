@@ -3,6 +3,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { externalCandles } from "./exchanges";
 import { Analysis, Bi, FA_NAME, TF_LIST, TF_SEC, analyze, fmtPrice, left } from "./agent";
 import { setLang, useLang } from "./lang";
+import { loadSymbols } from "./orderbook";
+import { Hit, Match, STRATEGIES, matchesFor, scan } from "./strategies";
+import { VoiceControl, speak } from "./voice";
 import type { QCandle } from "./qfex";
 
 type Rule = { id: string; base: string; tf: string; min: number; minScore: number };
@@ -19,21 +22,6 @@ const jget = <T,>(k: string, d: T): T => {
 const jset = (k: string, v: unknown) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
-  } catch {}
-};
-const beep = () => {
-  try {
-    const A = new (window.AudioContext || (window as any).webkitAudioContext)();
-    [0, 0.22].forEach((d) => {
-      const o = A.createOscillator(), g = A.createGain();
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.0001, A.currentTime + d);
-      g.gain.exponentialRampToValueAtTime(0.25, A.currentTime + d + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, A.currentTime + d + 0.18);
-      o.connect(g).connect(A.destination);
-      o.start(A.currentTime + d);
-      o.stop(A.currentTime + d + 0.2);
-    });
   } catch {}
 };
 const sendNotification = (title: string, body: string, tag: string) => {
@@ -63,6 +51,10 @@ export function AgentTab(p: { bases: string[] }) {
   const [now, setNow] = useState(Date.now());
   const [add, setAdd] = useState("");
   const [perm, setPerm] = useState<string>(() => ("Notification" in window ? Notification.permission : "unsupported"));
+  const [mode, setMode] = useState<string>(() => localStorage.getItem("arcus.ag.mode") || "list");
+  const [top, setTop] = useState<string[]>([]);
+  const [stratSel, setStratSel] = useState("all");
+  const [sideSel, setSideSel] = useState<"both" | "long" | "short">("both");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string[]>([]);
   const fired = useRef<Record<string, number>>(jget("arcus.ag.fired.v1", {}));
@@ -70,6 +62,20 @@ export function AgentTab(p: { bases: string[] }) {
   dataRef.current = data;
 
   useEffect(() => jset("arcus.ag.watch.v1", watch), [watch]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("arcus.ag.mode", mode);
+    } catch {}
+  }, [mode]);
+  useEffect(() => {
+    const c = new AbortController();
+    loadSymbols(c.signal).then((l) => setTop(l.filter((x) => !/^(USDC|USDT|DAI|FDUSD|TUSD|USDE|BUSD|USD1|PYUSD)$/.test(x)).slice(0, 80)));
+    return () => c.abort();
+  }, []);
+  const universe = useMemo(() => {
+    const n = mode === "60" ? 60 : mode === "30" ? 30 : 0;
+    return Array.from(new Set([...watch, ...top.slice(0, n)]));
+  }, [watch, top, mode]);
   useEffect(() => jset("arcus.ag.rules.v1", rules), [rules]);
   useEffect(() => jset("arcus.ag.hist.v1", hist), [hist]);
   useEffect(() => {
@@ -100,21 +106,23 @@ export function AgentTab(p: { bases: string[] }) {
     let alive = true;
     const run = async () => {
       setBusy(true);
-      const jobs: [string, string][] = watch.map((w) => [w, tf]);
+      const jobs: [string, string][] = universe.map((w) => [w, tf]);
       if (sel) for (const f of TF_LIST) if (f !== tf) jobs.push([sel, f]);
       const bad: string[] = [];
       let i = 0;
       const worker = async () => {
         while (alive && i < jobs.length) {
           const [b, f] = jobs[i++];
+          const age = Date.now() - (dataRef.current[b + "|" + f]?.at || 0);
+          if (age < (watch.includes(b) ? 25000 : 110000)) continue;
           try {
-            if (!(await load(b, f, ctl.signal)) && f === tf) bad.push(b);
+            if (!(await load(b, f, ctl.signal)) && f === tf && watch.includes(b)) bad.push(b);
           } catch {
-            if (f === tf) bad.push(b);
+            if (f === tf && watch.includes(b)) bad.push(b);
           }
         }
       };
-      await Promise.all([worker(), worker(), worker()]);
+      await Promise.all([worker(), worker(), worker(), worker()]);
       if (alive) {
         setFailed(bad);
         setBusy(false);
@@ -127,7 +135,7 @@ export function AgentTab(p: { bases: string[] }) {
       ctl.abort();
       window.clearInterval(id);
     };
-  }, [watch, tf, sel, load]);
+  }, [watch, universe, tf, sel, load]);
 
   const tick = Math.floor(now / 10000);
   const results = useMemo(() => {
@@ -140,6 +148,18 @@ export function AgentTab(p: { bases: string[] }) {
     return out.sort((x, y) => Math.abs(y.score) - Math.abs(x.score));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, watch, tf, tick]);
+  const hits: Hit[] = useMemo(
+    () => scan(universe, tf, (b) => data[b + "|" + tf]?.rows, Date.now()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, universe, tf, tick],
+  );
+  const loaded = universe.filter((u) => data[u + "|" + tf]).length;
+  const flat = useMemo(() => {
+    const out: { h: Hit; m: Match }[] = [];
+    for (const h of hits) for (const m of h.matches) if ((stratSel === "all" || m.sid === stratSel) && (sideSel === "both" || m.side === sideSel)) out.push({ h, m });
+    return out.sort((x, y) => y.m.q - x.m.q).slice(0, 40);
+  }, [hits, stratSel, sideSel]);
+  const countOf = (sid: string) => hits.reduce((n, h) => n + h.matches.filter((m) => sid === "all" || m.sid === sid).length, 0);
   const selected = sel || results[0]?.base || "";
   useEffect(() => {
     if (!sel && results[0]) setSel(results[0].base);
@@ -152,6 +172,42 @@ export function AgentTab(p: { bases: string[] }) {
   );
 
   // pre-close alerts: checked every few seconds while this page is open
+  const TF_SAY: Record<string, Bi> = {
+    "5m": { en: "5 minute", fa: "پنج دقیقه‌ای" }, "15m": { en: "15 minute", fa: "پانزده دقیقه‌ای" }, "1h": { en: "1 hour", fa: "یک ساعته" }, "4h": { en: "4 hour", fa: "چهار ساعته" }, "1d": { en: "daily", fa: "روزانه" },
+  };
+  const fire = useCallback(
+    async (base: string, frame: string, closeAt: number, key: string, minScore: number) => {
+      let rows = dataRef.current[base + "|" + frame]?.rows;
+      try {
+        const v = await load(base, frame);
+        if (v) rows = v.rows;
+      } catch {}
+      const a = rows ? analyze(base, frame, rows, Date.now()) : null;
+      if (!a || !rows || Math.abs(a.score) < minScore) return false;
+      const secs = Math.max(0, Math.round((closeAt - Date.now()) / 1000));
+      const mins = Math.max(1, Math.round(secs / 60));
+      const nmFa = FA_NAME[base] || base;
+      const tfs = TF_SAY[frame] || { en: frame, fa: frame };
+      const ms = matchesFor(rows, frame).slice(0, 2);
+      const stEn = ms.map((m) => STRATEGIES.find((x) => x.id === m.sid)!.name.en + " (" + m.side + ")").join(", ");
+      const stFa = ms.map((m) => STRATEGIES.find((x) => x.id === m.sid)!.name.fa + " (" + (m.side === "long" ? "خرید" : "فروش") + ")").join("، ");
+      const whyEn = a.why.slice(0, 3).map((x) => x.en).join("; ");
+      const whyFa = a.why.slice(0, 3).map((x) => x.fa).join("؛ ");
+      const titleEn = "⏰ " + base + " · " + frame + " candle closes in " + mins + " min";
+      const titleFa = "⏰ " + nmFa + " · " + mins + " دقیقه تا بسته‌شدن کندل " + frame;
+      const bodyEn = "Why: the " + frame + " candle is about to close.\n" + a.label.en + " (score " + a.score + ") — " + whyEn + ".\n" + (stEn ? "Strategy: " + stEn + ".\n" : "") + a.plan.en;
+      const bodyFa = "دلیل: کندل " + frame + " دارد بسته می‌شود.\n" + a.label.fa + " (امتیاز " + a.score + ") — " + whyFa + ".\n" + (stFa ? "استراتژی: " + stFa + ".\n" : "") + a.plan.fa;
+      const lang = localStorage.getItem("arcus.news.lang") === "fa";
+      sendNotification(lang ? titleFa : titleEn, lang ? bodyFa : bodyEn, "ag-" + key);
+      speak("agent", {
+        en: base + ". The " + tfs.en + " candle closes in " + mins + (mins === 1 ? " minute. " : " minutes. ") + a.label.en + ", score " + a.score + ". Because " + whyEn + ". " + (stEn ? "Strategy match: " + stEn + ". " : "") + a.plan.en,
+        fa: nmFa + ". " + mins + " دقیقه تا بسته شدن کندل " + tfs.fa + ". " + a.label.fa + "، امتیاز " + a.score + ". چون " + whyFa + ". " + (stFa ? "استراتژی: " + stFa + ". " : "") + a.plan.fa,
+      });
+      setHist((h) => [{ id: key, at: Date.now(), base, tf: frame, title: lang ? titleFa : titleEn, body: lang ? bodyFa : bodyEn, score: a.score }, ...h].slice(0, 40));
+      return true;
+    },
+    [load],
+  );
   useEffect(() => {
     const check = async () => {
       const t = Date.now();
@@ -169,28 +225,14 @@ export function AgentTab(p: { bases: string[] }) {
           const cut = t - 3 * 86400000;
           for (const k of Object.keys(fired.current)) if (fired.current[k] < cut) delete fired.current[k];
           jset("arcus.ag.fired.v1", fired.current);
-          let rows = dataRef.current[base + "|" + r.tf]?.rows;
-          try {
-            const v = await load(base, r.tf);
-            if (v) rows = v.rows;
-          } catch {}
-          const a = rows ? analyze(base, r.tf, rows, Date.now()) : null;
-          if (!a || (r.base === "*" && Math.abs(a.score) < r.minScore)) continue;
-          const mins = Math.max(1, Math.round((closeAt - Date.now()) / 60000));
-          const nm = FA_NAME[base] || base;
-          const lang = localStorage.getItem("arcus.news.lang") === "fa";
-          const title = lang ? nm + " · " + mins + " دقیقه تا بسته‌شدن کندل " + r.tf : base + " · " + r.tf + " candle closes in " + mins + " min";
-          const body = (lang ? a.label.fa + " (" + a.score + ")\n" + a.candleLines[0].fa + "\n" + a.plan.fa : a.label.en + " (" + a.score + ")\n" + a.candleLines[0].en + "\n" + a.plan.en);
-          sendNotification(title, body, "ag-" + key);
-          beep();
-          setHist((h) => [{ id: key, at: Date.now(), base, tf: r.tf, title, body, score: a.score }, ...h].slice(0, 40));
+          await fire(base, r.tf, closeAt, key, r.base === "*" ? r.minScore : 0);
         }
       }
     };
     const id = window.setInterval(check, 4000);
     check();
     return () => window.clearInterval(id);
-  }, [rules, watch, load]);
+  }, [rules, watch, fire]);
 
   const enableAlerts = async () => {
     if (!("Notification" in window)) return setPerm("unsupported");
@@ -236,6 +278,7 @@ export function AgentTab(p: { bases: string[] }) {
           <h1>{T("Setups & candle alerts", "فرصت‌ها و هشدار کندل")}</h1>
         </div>
         <div className="news-head-btns">
+          <VoiceControl chan="agent" label={T("Agent voice", "صدای ایجنت")} sample={{ en: "Bitcoin. The 4 hour candle closes in 2 minutes. Strong bullish momentum, score 68. Because price is above EMA20 and EMA50, and MACD momentum is positive.", fa: "بیت‌کوین. ۲ دقیقه تا بسته شدن کندل چهار ساعته. مومنتوم صعودی قوی، امتیاز ۶۸. چون قیمت بالای EMA20 و EMA50 است و مومنتوم MACD مثبت است." }} />
           <button className="secondary" onClick={() => setLang(fa ? "en" : "fa")} title="English / فارسی">{fa ? "EN" : "فا"}</button>
           <button className={"secondary" + (perm === "granted" ? " on" : "")} onClick={enableAlerts} disabled={perm === "granted" || perm === "unsupported"}>
             {perm === "granted" ? T("🔔 Alerts on", "🔔 هشدار فعال") : perm === "denied" ? T("Alerts blocked in browser", "هشدار در مرورگر مسدود است") : T("🔔 Enable alerts", "🔔 فعال‌سازی هشدار")}
@@ -329,6 +372,66 @@ export function AgentTab(p: { bases: string[] }) {
         )}
       </div>
 
+      <section className="ag-strat">
+        <div className="ag-sh">
+          <h3>{T("Momentum strategies", "استراتژی‌های مومنتوم")}</h3>
+          <div className="ag-seg" role="group" aria-label="Scan universe">
+            {[["list", T("My list", "فهرست من")], ["30", T("Top 30", "۳۰ ارز برتر")], ["60", T("Top 60", "۶۰ ارز برتر")]].map(([k, l]) => (
+              <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>
+            ))}
+          </div>
+          <span className="ag-stat">{T("Scanned", "اسکن‌شده")} {loaded}/{universe.length} · {tf}</span>
+        </div>
+        <div className="ag-schips">
+          <button className={stratSel === "all" ? "on" : ""} onClick={() => setStratSel("all")}>{T("All", "همه")} <i>{countOf("all")}</i></button>
+          {STRATEGIES.map((x) => (
+            <button key={x.id} className={stratSel === x.id ? "on" : ""} onClick={() => setStratSel(x.id)}>{L(x.name)} <i>{countOf(x.id)}</i></button>
+          ))}
+          <span className="ag-sidesel">
+            {(["both", "long", "short"] as const).map((k) => (
+              <button key={k} className={sideSel === k ? "on" : ""} onClick={() => setSideSel(k)}>{k === "both" ? T("Both", "هر دو") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
+            ))}
+          </span>
+        </div>
+        {stratSel !== "all" && (() => {
+          const x = STRATEGIES.find((v) => v.id === stratSel)!;
+          return (
+            <div className="ag-sinfo">
+              <p>{L(x.blurb)}</p>
+              <p><b>{T("Works when:", "کِی جواب می‌دهد:")}</b> {L(x.works)}</p>
+              <p><b>{T("Fails when:", "کِی شکست می‌خورد:")}</b> {L(x.fails)}</p>
+            </div>
+          );
+        })()}
+        {!flat.length && <div className="empty">{loaded < universe.length ? T("Scanning… results appear as coins load.", "در حال اسکن… نتایج با لود شدن ارزها می‌آید.") : T("No coin matches this right now. Momentum setups are selective; try another timeframe or the Top 60 scan.", "فعلاً ارزی با این شرایط نیست. ستاپ‌های مومنتوم گزینشی‌اند؛ تایم‌فریم دیگر یا اسکن ۶۰ ارز برتر را امتحان کن.")}</div>}
+        <div className="ag-hits">
+          {flat.map(({ h, m }) => {
+            const st = STRATEGIES.find((v) => v.id === m.sid)!;
+            const inList = watch.includes(h.base);
+            return (
+              <article key={h.base + m.sid + m.side} className={"ag-hit " + m.side}>
+                <header>
+                  <b>{nm(h.base)}</b>
+                  <span className={"ag-badge " + m.side}>{m.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
+                  <em>{L(st.name)}</em>
+                  <span className="ag-q" title={T("Setup quality", "کیفیت ستاپ")}><i style={{ width: m.q + "%" }} />{m.q}</span>
+                </header>
+                <ul>{m.why.map((x, i) => <li key={i}>{L(x)}</li>)}</ul>
+                <dl className="ag-lv">
+                  <div><dt>{T("Entry", "ورود")}</dt><dd>{fmtPrice(m.entry)}</dd></div>
+                  <div className="s"><dt>{T("Stop", "حدضرر")}</dt><dd>{fmtPrice(m.stop)} <small>{m.riskPct.toFixed(1)}%</small></dd></div>
+                  <div className="t"><dt>1R</dt><dd>{fmtPrice(m.t[0])}</dd></div>
+                  <div className="t"><dt>2R</dt><dd>{fmtPrice(m.t[1])}</dd></div>
+                  <div className="t"><dt>3R</dt><dd>{fmtPrice(m.t[2])}</dd></div>
+                </dl>
+                <button className="secondary" onClick={() => (inList ? (setSel(h.base), window.scrollTo({ top: 0, behavior: "smooth" })) : setWatch([...watch, h.base]))}>{inList ? T("Open analysis ▸", "باز کردن تحلیل ▸") : T("＋ Add to my list", "＋ افزودن به فهرست من")}</button>
+              </article>
+            );
+          })}
+        </div>
+        <p className="muted ag-foot">{T("R = the distance from entry to stop. Stops and targets are sized from the coin's average candle range (ATR), so they adapt to volatility. These are screening ideas, not signals to follow blindly: always check the chart and size your risk.", "R یعنی فاصله‌ی ورود تا حدضرر. حدضرر و اهداف از میانگین دامنه‌ی کندل (ATR) هر ارز ساخته می‌شوند و با نوسان تطبیق پیدا می‌کنند. اینها ایده‌ی غربالگری‌اند، نه سیگنالی که کورکورانه دنبال شود: همیشه چارت را ببین و ریسکت را کنترل کن.")}</p>
+      </section>
+
       <div className="ag-lower">
         <section className="ag-rules">
           <h3>{T("Pre-close alerts", "هشدار پیش از بسته‌شدن کندل")}</h3>
@@ -355,7 +458,8 @@ export function AgentTab(p: { bases: string[] }) {
               <button className="secondary" onClick={() => setRules(rules.filter((x) => x.id !== r.id))} aria-label="Delete rule">✕</button>
             </div>
           ))}
-          <button className="secondary" onClick={addRule}>＋ {T("Add alert", "افزودن هشدار")}</button>
+          <button className="secondary" onClick={addRule}>＋ {T("Add alert", "افزودن هشدار")}</button>{" "}
+          <button className="secondary" disabled={!detail} onClick={() => detail && fire(detail.base, detail.tf, detail.closeAt, "test" + Date.now(), 0)} title={T("Plays the real alert (sound, voice, notification) for the selected coin so you can hear what it says", "هشدار واقعی (صدا، گفتار، اعلان) را برای ارز انتخاب‌شده پخش می‌کند تا ببینی چه می‌گوید")}>▶ {T("Test alert now", "آزمایش هشدار")}</button>
         </section>
         <section className="ag-hist">
           <h3>{T("Recent alerts", "هشدارهای اخیر")}</h3>

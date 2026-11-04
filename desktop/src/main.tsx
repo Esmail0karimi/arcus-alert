@@ -10,7 +10,9 @@ import { IpBadge } from "./ipbadge";
 import { News } from "./news";
 import { ReportHost, openReport as openReportExt } from "./report";
 import { OrderBook } from "./obtab";
+import { FA_NAME } from "./agent";
 import { AgentTab } from "./agenttab";
+import { VoiceControl, speak } from "./voice";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -1189,6 +1191,13 @@ function App() {
       setLevels((v) => v.filter((l) => !fired.some((f) => f.id === l.id)));
       for (const f of fired) {
         setAlarmActive(true);
+        {
+          const nmEn = assetBase(dn(f.symbol)), nmFa = FA_NAME[nmEn] || nmEn;
+          speak("price", {
+            en: "Price alert. " + nmEn + " reached " + f.actual.toLocaleString("en-US", { maximumFractionDigits: 6 }) + ". Your level was " + f.price.toLocaleString("en-US", { maximumFractionDigits: 6 }) + ".",
+            fa: "هشدار قیمت. " + nmFa + " به " + f.actual.toLocaleString("en-US", { maximumFractionDigits: 6 }) + " رسید. سطح شما " + f.price.toLocaleString("en-US", { maximumFractionDigits: 6 }) + " بود.",
+          });
+        }
         const title = "Arcus Alert · " + f.symbol,
           body = "Target " + f.price.toLocaleString() + " · Current " + f.actual.toLocaleString();
         if (window.arcusDesktop?.isDesktop) {
@@ -2492,6 +2501,7 @@ function App() {
           })()}
         </div>
         <div className="header-actions">
+          <VoiceControl chan="price" label="Price alert voice" sample={{ en: "Price alert. Bitcoin reached 95,000. Your level was 95,000.", fa: "هشدار قیمت. بیت‌کوین به ۹۵٬۰۰۰ رسید. سطح شما ۹۵٬۰۰۰ بود." }} />
           <label className="sound-control" title="Notification sound">
             🔊
             <select
