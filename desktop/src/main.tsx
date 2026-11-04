@@ -13,6 +13,7 @@ import { OrderBook } from "./obtab";
 import { FA_NAME } from "./agent";
 import { AgentTab } from "./agenttab";
 import { VoiceControl, speak } from "./voice";
+import { AvatarHead } from "./avatar";
 import { categoryFromMarket, classifySymbol, subGroup, categoryLabel, type Category } from "./category";
 import { undoManager } from "./undo";
 import { AssetInfo, assetBase, findAsset } from "./assetinfo";
@@ -2733,6 +2734,7 @@ function App() {
         {tab === "Agent" && <AgentTab bases={obBases} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
+        <AvatarHead />
         {tab === "Watchlist" && (
           <>
             <div className="heading">
