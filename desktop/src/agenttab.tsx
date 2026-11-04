@@ -6,7 +6,6 @@ import { setLang, useLang } from "./lang";
 import { loadSymbols } from "./orderbook";
 import { Hit, Match, STRATEGIES, matchesFor, scan } from "./strategies";
 import { VoiceControl, speak } from "./voice";
-import { getAvatar, openAvatarSetup } from "./avatar";
 import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
@@ -290,13 +289,6 @@ export function AgentTab(p: { bases: string[]; tfNow?: string; onOpenChart?: (ba
       </div>
       <p className="ag-lead">{T("It reads trend, momentum and the shape of the forming candle for every coin you watch, ranks them, and tells you what to watch before the candle closes. Rule-based analysis, not financial advice.", "برای هر ارزی که دنبال می‌کنی روند، مومنتوم و شکل کندلِ در حال تشکیل را می‌خواند، رتبه‌بندی می‌کند و می‌گوید پیش از بسته‌شدن کندل به چه چیزی نگاه کنی. تحلیل قاعده‌محور است و توصیه‌ی مالی نیست.")}</p>
 
-      {!getAvatar() && (
-        <button className="ag-avcta" onClick={openAvatarSetup}>
-          <span aria-hidden="true">🧑‍💻</span>
-          <b>{T("Give your agent your face", "به ایجنتت صورت خودت را بده")}</b>
-          <small>{T("Upload one photo and a 3D head of you will speak the alerts at the top of the page. The photo stays in this browser.", "یک عکس بده تا سر سه‌بعدی خودت هشدارها را بالای صفحه بخواند. عکس فقط در همین مرورگر می‌ماند.")}</small>
-        </button>
-      )}
       <div className="ag-bar">
         <div className="ob-tfs" role="tablist" aria-label="Timeframe">
           {TF_LIST.map((f) => (

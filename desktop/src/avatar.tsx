@@ -1,30 +1,12 @@
-/* Talking 3D head. You give it one photo of yourself, frame your face and mark your mouth; it wraps the face on a curved
-   3D mesh (raw WebGL) that turns, breathes and opens its jaw while an alert is being spoken.
-   The photo is stored ONLY in this browser (localStorage) and is never uploaded anywhere. */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+/* The Agent's talking head: a fixed 3D trading robot (raw WebGL, no images, nothing to upload).
+   It breathes, follows the pointer, blinks, and while an alert is being spoken its mouth is a bar equaliser and its antenna flashes. */
+import React, { useEffect, useRef, useState } from "react";
 
-type PE = any;
-export type AvatarData = { img: string; mx: number; my: number };
-const KEY = "arcus.avatar.v1", POS = "arcus.avatar.pos.v1", MIN = "arcus.avatar.min.v1";
-export const getAvatar = (): AvatarData | null => {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) || "null");
-    return v && typeof v.img === "string" ? v : null;
-  } catch {
-    return null;
-  }
-};
-const saveAvatar = (d: AvatarData | null) => {
-  try {
-    if (d) localStorage.setItem(KEY, JSON.stringify(d));
-    else localStorage.removeItem(KEY);
-  } catch {}
-  window.dispatchEvent(new Event("arcus:avatar-changed"));
-};
-export const openAvatarSetup = () => window.dispatchEvent(new Event("arcus:avatar-setup"));
+const POS = "arcus.avatar.pos.v1", MIN = "arcus.avatar.min.v1";
 export type SpeakEvent = { on: boolean; text?: string };
 export const emitSpeaking = (d: SpeakEvent) => window.dispatchEvent(new CustomEvent("arcus:speaking", { detail: d }));
 export const emitPulse = () => window.dispatchEvent(new Event("arcus:pulse"));
+type PE = any;
 
 /* ---------------- tiny matrix helpers ---------------- */
 const persp = (f: number, a: number, n: number, fa: number) => {
@@ -39,98 +21,136 @@ const mul = (a: number[], b: number[]) => {
 const rotY = (t: number) => [Math.cos(t), 0, -Math.sin(t), 0, 0, 1, 0, 0, Math.sin(t), 0, Math.cos(t), 0, 0, 0, 0, 1];
 const rotX = (t: number) => [1, 0, 0, 0, 0, Math.cos(t), Math.sin(t), 0, 0, -Math.sin(t), Math.cos(t), 0, 0, 0, 0, 1];
 const trans = (x: number, y: number, z: number) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+const mat3 = (m: number[]) => [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]];
+
+/* ---------------- geometry: superellipsoids (box ↔ sphere ↔ cylinder) ---------------- */
+const sp = (x: number, e: number) => Math.sign(x) * Math.pow(Math.abs(x), e);
+function superellipsoid(e1: number, e2: number, nu = 36, nv = 24) {
+  const v: number[] = [], idx: number[] = [];
+  for (let j = 0; j <= nv; j++) {
+    const b = -Math.PI / 2 + (j / nv) * Math.PI;
+    for (let i = 0; i <= nu; i++) {
+      const a = -Math.PI + (i / nu) * Math.PI * 2;
+      const cb = Math.cos(b), sb = Math.sin(b), ca = Math.cos(a), sa = Math.sin(a);
+      const x = sp(cb, e1) * sp(ca, e2), y = sp(sb, e1), z = sp(cb, e1) * sp(sa, e2);
+      let nx = sp(cb, 2 - e1) * sp(ca, 2 - e2), ny = sp(sb, 2 - e1), nz = sp(cb, 2 - e1) * sp(sa, 2 - e2);
+      const l = Math.hypot(nx, ny, nz) || 1;
+      v.push(x, y, z, nx / l, ny / l, nz / l);
+    }
+  }
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+    const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  return { v: new Float32Array(v), idx: new Uint16Array(idx) };
+}
 
 const VS = `
 precision mediump float;
-attribute vec2 aPos; attribute vec2 aUv;
-uniform mat4 uMVP; uniform float uJaw; uniform vec2 uMouth;
-varying vec2 vUv; varying vec3 vN; varying vec2 vP0;
+attribute vec3 aPos; attribute vec3 aN;
+uniform mat4 uMVP; uniform mat3 uRot; uniform vec3 uOff; uniform vec3 uScl;
+varying vec3 vL; varying vec3 vN; varying vec3 vW;
 void main(){
-  vec2 p = aPos;
-  float r2 = p.x*p.x*0.82 + p.y*p.y*0.66;
-  float s = sqrt(max(0.04, 1.0 - r2));
-  float z = s * 0.62;
-  vec3 n = normalize(vec3(p.x*0.82*0.62/s, p.y*0.66*0.62/s, 1.0));
-  float below = smoothstep(uMouth.y + 0.04, uMouth.y - 0.34, p.y);
-  float side = 1.0 - smoothstep(0.30, 0.95, abs(p.x - uMouth.x));
-  float mv = uJaw * 0.2 * below * side;
-  p.y -= mv; z += mv * 0.25;
-  vUv = aUv; vN = n; vP0 = aPos;
-  gl_Position = uMVP * vec4(p, z, 1.0);
+  vec3 p = aPos * uScl + uOff;
+  vL = aPos;
+  vN = normalize(uRot * (aN / uScl));
+  vW = p;
+  gl_Position = uMVP * vec4(p, 1.0);
 }`;
 const FS = `
 precision mediump float;
-uniform sampler2D uTex; uniform float uJaw; uniform vec2 uMouth;
-varying vec2 vUv; varying vec3 vN; varying vec2 vP0;
+uniform int uMat; uniform float uJaw; uniform float uTime; uniform float uOpen; uniform float uTalk; uniform float uAmp;
+varying vec3 vL; varying vec3 vN; varying vec3 vW;
+float box(vec2 p, vec2 b, float r){ vec2 d = abs(p) - b + r; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r; }
 void main(){
-  vec4 c = texture2D(uTex, vUv);
-  float d = length(vec2(vP0.x * 0.97, vP0.y * 0.93));
-  float a = 1.0 - smoothstep(0.84, 1.0, d);
-  float l = 0.78 + 0.32 * dot(normalize(vN), normalize(vec3(-0.35, 0.45, 0.8)));
-  vec3 col = c.rgb * l;
-  vec2 q = vP0 - vec2(uMouth.x, uMouth.y - uJaw * 0.05);
-  float ry = 0.005 + uJaw * 0.074;
-  float e = length(vec2(q.x / 0.125, q.y / ry));
-  float cav = (1.0 - smoothstep(0.55, 1.0, e)) * smoothstep(0.05, 0.25, uJaw) * 0.92;
-  vec3 inner = mix(vec3(0.17, 0.05, 0.05), vec3(0.03, 0.008, 0.01), smoothstep(0.0, 0.8, 1.0 - e));
-  float teeth = smoothstep(0.35, 0.0, abs(q.y - ry * 0.55)) * smoothstep(0.9, 0.4, e) * smoothstep(0.25, 0.7, uJaw);
-  inner = mix(inner, vec3(0.78, 0.74, 0.68) * l, teeth * 0.3);
-  col = mix(col, inner, cav);
-  gl_FragColor = vec4(col * a, a);
+  vec3 N = normalize(vN);
+  vec3 L1 = normalize(vec3(-0.45, 0.65, 0.75)), L2 = normalize(vec3(0.7, -0.2, 0.4));
+  float dif = max(dot(N, L1), 0.0) * 0.8 + max(dot(N, L2), 0.0) * 0.25 + 0.22;
+  float rim = pow(1.0 - max(N.z, 0.0), 2.6);
+  float spec = pow(max(dot(reflect(-L1, N), vec3(0.0, 0.0, 1.0)), 0.0), 28.0);
+  vec3 col;
+  if (uMat == 1) {
+    // visor glass with eyes and an equaliser mouth
+    vec2 p = vL.xy;
+    col = mix(vec3(0.015, 0.04, 0.09), vec3(0.03, 0.11, 0.19), p.y * 0.5 + 0.5);
+    col *= 0.9 + 0.1 * sin(p.y * 80.0 + uTime * 2.0);
+    for (int s = 0; s < 2; s++) {
+      float sx = s == 0 ? -1.0 : 1.0;
+      vec2 q = p - vec2(sx * 0.42, 0.36);
+      float d = box(q, vec2(0.19, 0.15 * max(uOpen, 0.08)), 0.06);
+      col += vec3(0.05, 0.95, 0.9) * (smoothstep(0.012, -0.012, d) * 0.95 + exp(-max(d, 0.0) * 14.0) * 0.35);
+    }
+    float cell = floor((p.x + 0.76) / 0.19);
+    if (cell >= 0.0 && cell < 8.0) {
+      float cx = -0.76 + (cell + 0.5) * 0.19;
+      float h = 0.035 + uTalk * (0.05 + 0.34 * (0.5 + 0.5 * sin(uTime * (7.0 + cell * 2.3) + cell * 1.9)) * (0.45 + 0.55 * uAmp));
+      float d = box(vec2(p.x - cx, p.y + 0.46), vec2(0.062, h), 0.025);
+      vec3 bc = mod(cell, 3.0) == 2.0 ? vec3(1.0, 0.36, 0.36) : (cell < 4.0 ? vec3(0.2, 0.95, 0.55) : vec3(0.1, 0.9, 0.85));
+      col += bc * (smoothstep(0.01, -0.01, d) * 0.9 + exp(-max(d, 0.0) * 22.0) * 0.25);
+    }
+    col += vec3(0.5, 0.8, 1.0) * spec * 0.35 + rim * 0.25;
+  } else if (uMat == 3) {
+    float ring = 0.5 + 0.5 * sin(uTime * 3.0);
+    col = vec3(0.12, 0.16, 0.22) * dif + vec3(0.05, 0.9, 0.85) * (0.35 + 0.35 * ring) * smoothstep(0.55, 0.9, abs(vL.x));
+    col += rim * vec3(0.1, 0.5, 0.55);
+  } else if (uMat == 4) {
+    float f = uTalk > 0.5 ? 0.5 + 0.5 * sin(uTime * 14.0) : 0.5 + 0.5 * sin(uTime * 2.2);
+    vec3 a = mix(vec3(0.15, 0.95, 0.5), vec3(1.0, 0.3, 0.3), step(0.5, 0.5 + 0.5 * sin(uTime * (uTalk > 0.5 ? 6.0 : 0.9))));
+    col = a * (0.55 + 0.6 * f) + spec * 0.6;
+  } else {
+    col = vec3(0.17, 0.22, 0.31) * dif + vec3(0.62, 0.78, 0.95) * spec * 0.55 + rim * vec3(0.0, 0.45, 0.5);
+    float band = smoothstep(0.80, 0.86, vL.y) * (1.0 - smoothstep(0.93, 0.99, vL.y));
+    col = mix(col, vec3(0.05, 0.95, 0.85) * (0.8 + 0.2 * sin(uTime * 2.0)), band * step(0.0, vL.z + 0.7));
+    float seam = smoothstep(0.012, 0.0, abs(abs(vL.x) - 0.6)) * step(0.0, vL.y) * 0.18;
+    col -= seam;
+  }
+  gl_FragColor = vec4(col, 1.0);
 }`;
 
-function setupGl(canvas: HTMLCanvasElement, img: HTMLImageElement) {
-  const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: true });
+type Part = { vb: WebGLBuffer; ib: WebGLBuffer; n: number; mat: number; off: number[]; scl: number[] };
+function setupGl(canvas: HTMLCanvasElement) {
+  const gl = canvas.getContext("webgl", { alpha: true, antialias: true, depth: true, premultipliedAlpha: true });
   if (!gl) return null;
   const sh = (t: number, s: string) => {
     const o = gl.createShader(t)!;
     gl.shaderSource(o, s);
     gl.compileShader(o);
+    if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.warn("avatar shader:", gl.getShaderInfoLog(o));
     return o;
   };
   const pr = gl.createProgram()!;
   gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
   gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS));
   gl.linkProgram(pr);
-  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) console.warn("avatar shader:", gl.getProgramInfoLog(pr));
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) console.warn("avatar program:", gl.getProgramInfoLog(pr));
   gl.useProgram(pr);
-  const N = 44;
-  const v: number[] = [], idx: number[] = [];
-  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
-    const x = (i / N) * 2 - 1, y = 1 - (j / N) * 2;
-    v.push(x, y, i / N, j / N);
-  }
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1;
-    idx.push(a, c, b, b, c, d);
-  }
-  const vb = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
-  const ib = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(pr, "aPos"), aUv = gl.getAttribLocation(pr, "aUv");
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0);
-  gl.enableVertexAttribArray(aUv);
-  gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 16, 8);
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const mk = (e1: number, e2: number, mat: number, off: number[], scl: number[]): Part => {
+    const g = superellipsoid(e1, e2);
+    const vb = gl.createBuffer()!, ib = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, g.v, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.idx, gl.STATIC_DRAW);
+    return { vb, ib, n: g.idx.length, mat, off, scl };
+  };
+  const parts: Part[] = [
+    mk(0.3, 0.3, 0, [0, 0.05, 0], [1.0, 0.86, 0.9]), // head shell
+    mk(0.22, 0.22, 1, [0, 0.07, 0.8], [0.8, 0.6, 0.14]), // visor screen
+    mk(0.14, 1.0, 3, [-1.04, 0.05, 0], [0.13, 0.32, 0.32]), // left ear
+    mk(0.14, 1.0, 3, [1.04, 0.05, 0], [0.13, 0.32, 0.32]), // right ear
+    mk(0.2, 1.0, 0, [0, 1.17, 0], [0.045, 0.3, 0.045]), // antenna rod
+    mk(1.0, 1.0, 4, [0, 1.52, 0], [0.12, 0.12, 0.12]), // antenna tip
+    mk(0.2, 0.6, 0, [0, -0.95, 0], [0.42, 0.2, 0.42]), // neck
+  ];
+  gl.enable(gl.DEPTH_TEST);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const U = (n: string) => gl.getUniformLocation(pr, n);
-  return { gl, n: idx.length, mvp: U("uMVP"), jaw: U("uJaw"), mouth: U("uMouth") };
+  const loc = { aPos: gl.getAttribLocation(pr, "aPos"), aN: gl.getAttribLocation(pr, "aN"), mvp: U("uMVP"), rot: U("uRot"), off: U("uOff"), scl: U("uScl"), mat: U("uMat"), jaw: U("uJaw"), time: U("uTime"), open: U("uOpen"), talk: U("uTalk"), amp: U("uAmp") };
+  return { gl, parts, loc };
 }
 
 export function AvatarHead() {
-  const [data, setData] = useState<AvatarData | null>(() => getAvatar());
-  const [setup, setSetup] = useState(false);
   const [text, setText] = useState("");
   const [talking, setTalking] = useState(false);
   const [min, setMin] = useState(() => localStorage.getItem(MIN) === "1");
@@ -142,12 +162,14 @@ export function AvatarHead() {
     }
   });
   const cv = useRef<HTMLCanvasElement>(null);
-  const st = useRef({ talking: false, amp: 0, jaw: 0, mx: 0, my: 0, yaw: 0, pitch: 0 });
+  const st = useRef({ talking: false, amp: 0, talk: 0, mx: 0, my: 0, yaw: 0, pitch: 0 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   useEffect(() => {
-    const ch = () => setData(getAvatar());
-    const op = () => setSetup(true);
+    // an earlier version stored a photo of the user here; remove it
+    try {
+      localStorage.removeItem("arcus.avatar.v1");
+    } catch {}
     const sp = (e: Event) => {
       const d = (e as CustomEvent<SpeakEvent>).detail;
       st.current.talking = d.on;
@@ -160,14 +182,10 @@ export function AvatarHead() {
       st.current.mx = (e.clientX / window.innerWidth) * 2 - 1;
       st.current.my = (e.clientY / window.innerHeight) * 2 - 1;
     };
-    window.addEventListener("arcus:avatar-changed", ch);
-    window.addEventListener("arcus:avatar-setup", op);
     window.addEventListener("arcus:speaking", sp);
     window.addEventListener("arcus:pulse", pu);
     window.addEventListener("pointermove", mv);
     return () => {
-      window.removeEventListener("arcus:avatar-changed", ch);
-      window.removeEventListener("arcus:avatar-setup", op);
       window.removeEventListener("arcus:speaking", sp);
       window.removeEventListener("arcus:pulse", pu);
       window.removeEventListener("pointermove", mv);
@@ -175,46 +193,58 @@ export function AvatarHead() {
   }, []);
 
   useEffect(() => {
-    if (!data || min || !cv.current) return;
+    if (min || !cv.current) return;
     const canvas = cv.current;
+    const g = setupGl(canvas);
+    if (!g) return;
+    const { gl, parts, loc } = g;
     let raf = 0, alive = true;
-    const img = new Image();
-    img.onload = () => {
-      const g = setupGl(canvas, img);
-      if (!g || !alive) return;
-      const { gl } = g;
-      const mouth = [data.mx * 2 - 1, 1 - data.my * 2];
-      const t0 = performance.now();
-      let last = t0;
-      const frame = (now: number) => {
-        if (!alive) return;
-        raf = requestAnimationFrame(frame);
-        if (document.hidden) return;
-        const s = st.current, t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
-        last = now;
-        s.amp = Math.max(0, s.amp - dt * 3.2);
-        const talk = s.talking ? 0.35 + 0.65 * Math.abs(Math.sin(t * 11.5 + Math.sin(t * 3.1) * 2)) * (0.55 + 0.45 * Math.min(1, s.amp + 0.4)) : 0;
-        s.jaw += (talk - s.jaw) * Math.min(1, dt * 18);
-        s.yaw += (s.mx * 0.42 + Math.sin(t * 0.8) * 0.06 + (s.talking ? Math.sin(t * 2.3) * 0.08 : 0) - s.yaw) * Math.min(1, dt * 4);
-        s.pitch += (s.my * 0.22 + Math.sin(t * 1.1) * 0.03 + (s.talking ? Math.sin(t * 5) * 0.035 : 0) - s.pitch) * Math.min(1, dt * 4);
-        const breathe = 1 + Math.sin(t * 1.6) * 0.012;
-        const m = mul(persp(0.62, 1, 0.1, 20), mul(trans(0, 0, -3.3), mul(rotX(s.pitch), mul(rotY(s.yaw), [breathe, 0, 0, 0, 0, breathe, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))));
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.uniformMatrix4fv(g.mvp, false, new Float32Array(m));
-        gl.uniform1f(g.jaw, s.jaw);
-        gl.uniform2f(g.mouth, mouth[0], mouth[1]);
-        gl.drawElements(gl.TRIANGLES, g.n, gl.UNSIGNED_SHORT, 0);
-      };
+    const t0 = performance.now();
+    let last = t0;
+    const frame = (now: number) => {
+      if (!alive) return;
       raf = requestAnimationFrame(frame);
+      if (document.hidden) return;
+      const s = st.current, t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      s.amp = Math.max(0, s.amp - dt * 3.2);
+      s.talk += ((s.talking ? 1 : 0) - s.talk) * Math.min(1, dt * 14);
+      s.yaw += (s.mx * 0.5 + Math.sin(t * 0.7) * 0.07 + (s.talking ? Math.sin(t * 2.4) * 0.1 : 0) - s.yaw) * Math.min(1, dt * 4);
+      s.pitch += (s.my * 0.24 + Math.sin(t * 1.1) * 0.025 + (s.talking ? Math.sin(t * 6) * 0.04 : 0) - s.pitch) * Math.min(1, dt * 4);
+      const bp = t % 3.6, open = bp > 3.4 ? Math.abs((bp - 3.5) / 0.1) : 1;
+      const breathe = 1 + Math.sin(t * 1.6) * 0.01;
+      const rot = mul(rotX(s.pitch), rotY(s.yaw));
+      const model = mul(trans(0, -0.12 + Math.sin(t * 1.6) * 0.012, -5.1), mul(rot, [breathe, 0, 0, 0, 0, breathe, 0, 0, 0, 0, breathe, 0, 0, 0, 0, 1]));
+      const mvp = mul(persp(0.64, 1, 0.1, 30), model);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
+      gl.uniformMatrix3fv(loc.rot, false, new Float32Array(mat3(rot)));
+      gl.uniform1f(loc.time, t);
+      gl.uniform1f(loc.open, open);
+      gl.uniform1f(loc.talk, s.talk);
+      gl.uniform1f(loc.amp, s.amp);
+      gl.uniform1f(loc.jaw, s.talk);
+      for (const p of parts) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, p.vb);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.ib);
+        gl.enableVertexAttribArray(loc.aPos);
+        gl.vertexAttribPointer(loc.aPos, 3, gl.FLOAT, false, 24, 0);
+        gl.enableVertexAttribArray(loc.aN);
+        gl.vertexAttribPointer(loc.aN, 3, gl.FLOAT, false, 24, 12);
+        gl.uniform3fv(loc.off, p.off);
+        gl.uniform3fv(loc.scl, p.scl);
+        gl.uniform1i(loc.mat, p.mat);
+        gl.drawElements(gl.TRIANGLES, p.n, gl.UNSIGNED_SHORT, 0);
+      }
     };
-    img.src = data.img;
+    raf = requestAnimationFrame(frame);
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
     };
-  }, [data, min]);
+  }, [min]);
 
   const place = pos || { x: -1, y: 70 };
   const onDown = (e: PE) => {
@@ -244,135 +274,19 @@ export function AvatarHead() {
   };
 
   return (
-    <>
-      {data && (
-        <div
-          className={"av-wrap" + (talking ? " talking" : "") + (min ? " min" : "")}
-          style={place.x < 0 ? { top: place.y, right: 14 } : { top: place.y, left: place.x }}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          role="img"
-          aria-label="Talking agent"
-        >
-          {!min && <canvas ref={cv} width={300} height={300} className="av-cv" />}
-          {min && <img className="av-thumb" src={data.img} alt="" />}
-          <div className="av-btns">
-            <button onClick={toggleMin} title={min ? "Expand" : "Minimise"} aria-label="Minimise">{min ? "▢" : "–"}</button>
-            {!min && <button onClick={() => setSetup(true)} title="Change my photo" aria-label="Change photo">✎</button>}
-          </div>
-          {!min && text && <div className="av-say" dir="auto">{text}</div>}
-        </div>
-      )}
-      {setup && <AvatarSetup onClose={() => setSetup(false)} />}
-    </>
-  );
-}
-
-/* ---------------- photo framing dialog ---------------- */
-const S = 320;
-export function AvatarSetup({ onClose }: { onClose: () => void }) {
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
-  const [step, setStep] = useState<1 | 2>(1);
-  const [zoom, setZoom] = useState(1);
-  const [off, setOff] = useState({ x: 0, y: 0 });
-  const [mouth, setMouth] = useState<{ x: number; y: number } | null>(null);
-  const cv = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
-  const fa = localStorage.getItem("arcus.news.lang") === "fa";
-  const T = (en: string, f: string) => (fa ? f : en);
-
-  const base = img ? S / Math.min(img.width, img.height) : 1;
-  const draw = useCallback(() => {
-    const c = cv.current;
-    if (!c || !img) return;
-    const x = c.getContext("2d")!;
-    x.fillStyle = "#06121f";
-    x.fillRect(0, 0, S, S);
-    const sc = base * zoom;
-    x.drawImage(img, off.x, off.y, img.width * sc, img.height * sc);
-  }, [img, off, zoom, base]);
-  useEffect(draw, [draw]);
-
-  const load = (f?: File) => {
-    if (!f) return;
-    const u = URL.createObjectURL(f);
-    const i = new Image();
-    i.onload = () => {
-      setImg(i);
-      setZoom(1);
-      setOff({ x: (S - i.width * (S / Math.min(i.width, i.height))) / 2, y: (S - i.height * (S / Math.min(i.width, i.height))) / 2 });
-      setStep(1);
-      setMouth(null);
-    };
-    i.src = u;
-  };
-  const setZ = (z: number) => {
-    // zoom around the centre of the frame
-    const sc0 = base * zoom, sc1 = base * z, cx = (S / 2 - off.x) / sc0, cy = (S / 2 - off.y) / sc0;
-    setOff({ x: S / 2 - cx * sc1, y: S / 2 - cy * sc1 });
-    setZoom(z);
-  };
-  const save = () => {
-    if (!img || !mouth) return;
-    const o = document.createElement("canvas");
-    o.width = o.height = 512;
-    const x = o.getContext("2d")!;
-    const k = 512 / S, sc = base * zoom * k;
-    x.drawImage(img, off.x * k, off.y * k, img.width * sc, img.height * sc);
-    saveAvatar({ img: o.toDataURL("image/jpeg", 0.9), mx: mouth.x / S, my: mouth.y / S });
-    onClose();
-  };
-  const pt = (e: PE) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * S, y: ((e.clientY - r.top) / r.height) * S };
-  };
-
-  return (
-    <div className="av-modal" role="dialog" aria-modal="true" aria-label="Create my avatar" dir={fa ? "rtl" : "ltr"}>
-      <div className="av-card">
-        <button className="av-close" onClick={onClose} aria-label="Close">✕</button>
-        <h3>{T("Make my talking avatar", "ساخت آواتار سخنگوی من")}</h3>
-        <p className="muted">{T("Your photo is stored only in this browser. It is never uploaded.", "عکس فقط داخل همین مرورگر ذخیره می‌شود و جایی آپلود نمی‌شود.")}</p>
-        {!img && (
-          <label className="av-pick">
-            <input type="file" accept="image/*" onChange={(e) => load(e.target.files?.[0])} />
-            <span>📷 {T("Choose a photo of your face", "انتخاب یک عکس از صورتت")}</span>
-          </label>
-        )}
-        {img && (
-          <>
-            <p className="av-step">{step === 1 ? T("1 of 2 · Drag the photo and zoom so your face fills the oval (hair to chin).", "۱ از ۲ · عکس را بکش و زوم کن تا صورتت (از مو تا چانه) داخل بیضی بیفتد.") : T("2 of 2 · Tap the middle of your lips.", "۲ از ۲ · روی وسط لب‌هایت بزن.")}</p>
-            <div
-              className="av-frame"
-              style={{ width: S, height: S, cursor: step === 1 ? "grab" : "crosshair" }}
-              onPointerDown={(e) => {
-                if (step === 2) return setMouth(pt(e));
-                drag.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y };
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-              }}
-              onPointerMove={(e) => drag.current && setOff({ x: drag.current.ox + e.clientX - drag.current.x, y: drag.current.oy + e.clientY - drag.current.y })}
-              onPointerUp={() => (drag.current = null)}
-              onWheel={(e) => step === 1 && setZ(Math.max(1, Math.min(5, zoom * (e.deltaY < 0 ? 1.06 : 0.94))))}
-            >
-              <canvas ref={cv} width={S} height={S} />
-              <svg viewBox={"0 0 " + S + " " + S} width={S} height={S}>
-                <defs><mask id="avm"><rect width={S} height={S} fill="#fff" /><ellipse cx={S / 2} cy={S / 2} rx={S * 0.47} ry={S * 0.5} fill="#000" /></mask></defs>
-                <rect width={S} height={S} fill="rgba(5,12,22,.62)" mask="url(#avm)" />
-                <ellipse cx={S / 2} cy={S / 2} rx={S * 0.47} ry={S * 0.5} fill="none" stroke="#00dcd2" strokeWidth="1.5" strokeDasharray="5 4" />
-                {mouth && <g stroke="#ff5c5c" strokeWidth="2"><line x1={mouth.x - 12} x2={mouth.x + 12} y1={mouth.y} y2={mouth.y} /><line x1={mouth.x} x2={mouth.x} y1={mouth.y - 12} y2={mouth.y + 12} /></g>}
-              </svg>
-            </div>
-            {step === 1 && <input className="av-zoom" type="range" min="1" max="5" step="0.01" value={zoom} onChange={(e) => setZ(Number(e.target.value))} aria-label="Zoom" />}
-            <div className="av-actions">
-              {step === 2 && <button className="secondary" onClick={() => setStep(1)}>{T("Back", "بازگشت")}</button>}
-              <label className="secondary av-again">{T("Other photo", "عکس دیگر")}<input type="file" accept="image/*" onChange={(e) => load(e.target.files?.[0])} /></label>
-              {getAvatar() && <button className="secondary" onClick={() => { saveAvatar(null); onClose(); }}>{T("Remove avatar", "حذف آواتار")}</button>}
-              {step === 1 ? <button onClick={() => setStep(2)}>{T("Next", "بعدی")}</button> : <button disabled={!mouth} onClick={save}>{T("Save", "ذخیره")}</button>}
-            </div>
-          </>
-        )}
-      </div>
+    <div
+      className={"av-wrap" + (talking ? " talking" : "") + (min ? " min" : "")}
+      style={place.x < 0 ? { top: place.y, right: 14 } : { top: place.y, left: place.x }}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      role="img"
+      aria-label="Trading robot agent"
+    >
+      {!min && <canvas ref={cv} width={320} height={320} className="av-cv" />}
+      {min && <button className="av-chip" onClick={toggleMin} title="Show the agent" aria-label="Show the agent">🤖</button>}
+      {!min && <div className="av-btns"><button onClick={toggleMin} title="Minimise" aria-label="Minimise">–</button></div>}
+      {!min && text && <div className="av-say" dir="auto">{text}</div>}
     </div>
   );
 }

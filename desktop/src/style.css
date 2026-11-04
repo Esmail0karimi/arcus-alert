@@ -801,3 +801,8 @@ main.chart-wide{padding:3px 6px 2px!important}
 .an-foot{font-size:11px;margin-top:10px}
 .ag-hitbtns{display:flex;gap:6px;flex-wrap:wrap}.ag-hitbtns button:first-child{flex:1}
 @media(max-width:760px){.an-panel{width:calc(100% - 20px);max-height:60%}}
+
+/* trading robot agent (fixed head) */
+.av-cv{border-radius:0;background:radial-gradient(circle at 50% 55%,rgba(0,220,210,.12),rgba(8,23,42,0) 68%)}
+.av-wrap.talking .av-cv{filter:drop-shadow(0 0 16px rgba(0,220,210,.5))}
+.av-chip{width:54px;height:54px;border-radius:50%;border:2px solid #00c9b5;background:#0b1a2e;font-size:26px;line-height:1;cursor:pointer;display:grid;place-items:center}

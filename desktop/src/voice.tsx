@@ -4,7 +4,7 @@
    Uses the device's built-in text-to-speech; if it has no voice for the chosen language the English text is spoken instead. */
 import React, { useEffect, useRef, useState } from "react";
 import { getLang, useLang } from "./lang";
-import { emitPulse, emitSpeaking, getAvatar, openAvatarSetup } from "./avatar";
+import { emitPulse, emitSpeaking } from "./avatar";
 
 export type Chan = "price" | "agent";
 export type VoiceCfg = { on: boolean; lang: "auto" | "fa" | "en"; voice: string; rate: number; vol: number; chime: "off" | "soft" | "double"; avatar: boolean };
@@ -69,7 +69,7 @@ export function speak(c: Chan, say: Say, force = false): "fa" | "en" | "" {
     u.lang = v.lang;
   } else u.lang = lang === "fa" ? "fa-IR" : "en-US";
   const say1 = lang === "fa" ? say.fa : say.en;
-  const showAv = cfg.avatar && !!getAvatar();
+  const showAv = cfg.avatar;
   u.onstart = () => showAv && emitSpeaking({ on: true, text: say1 });
   u.onboundary = () => showAv && emitPulse();
   u.onend = u.onerror = () => showAv && emitSpeaking({ on: false });
@@ -140,8 +140,7 @@ export function VoiceControl(p: { chan: Chan; label: string; sample: Say }) {
               <option value="off">{T("None", "بدون صدا")}</option>
             </select>
           </label>
-          <label className="vx-row"><input type="checkbox" checked={cfg.avatar} onChange={(e) => set({ avatar: e.target.checked })} /> {T("Show my talking 3D avatar", "نمایش آواتار سه‌بعدی سخنگو")}</label>
-          <button type="button" className="secondary" onClick={() => { setOpen(false); openAvatarSetup(); }}>{getAvatar() ? T("Change my avatar photo", "تغییر عکس آواتار") : T("Create my avatar from a photo", "ساخت آواتار از روی عکس")}</button>{" "}
+          <label className="vx-row"><input type="checkbox" checked={cfg.avatar} onChange={(e) => set({ avatar: e.target.checked })} /> {T("Animate the trading-robot agent while speaking", "هنگام صحبت، ربات تریدر را متحرک کن")}</label>
           <button type="button" className="secondary" onClick={() => setUsed(speak(p.chan, p.sample, true))}>▶ {T("Test", "آزمایش")}</button>
           {used === "en" && want === "fa" && <p className="vx-note">{T("This device has no Persian voice, so it spoke English.", "این دستگاه صدای فارسی ندارد، پس انگلیسی خواند.")}</p>}
           {!hasFa && list.length > 0 && want === "fa" && used === "" && <p className="vx-note">{T("No Persian voice found on this device; English will be spoken.", "صدای فارسی روی این دستگاه پیدا نشد؛ انگلیسی خوانده می‌شود.")}</p>}
