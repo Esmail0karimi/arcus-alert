@@ -82,9 +82,10 @@ export function AgentTab(p: {
   const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
   const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
   const [strat, setStrat] = useState<string>("all");
-  const [sigs, setSigs] = useState<Sig[]>([]);
+  const [sigs, setSigs] = useState<Sig[]>(() => jget<Sig[]>("arcus.ag2.sigs", []));
+  const [every, setEvery] = useState<number>(() => jget("arcus.ag2.every", 60));
   const [prog, setProg] = useState<{ done: number; total: number; tf: string } | null>(null);
-  const [scanned, setScanned] = useState<{ at: number; tf: string; n: number; live: boolean } | null>(null);
+  const [scanned, setScanned] = useState<{ at: number; tf: string; n: number; live: boolean } | null>(() => jget("arcus.ag2.scanned", null));
   const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag2.hist", []));
   const [now, setNow] = useState(Date.now());
   const [msg, setMsg] = useState("");
@@ -100,16 +101,24 @@ export function AgentTab(p: {
   useEffect(() => { jset("arcus.ag2.on", on); }, [on]);
   useEffect(() => { jset("arcus.ag2.tfs", tfs); }, [tfs]);
   useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
+  useEffect(() => { jset("arcus.ag2.every", every); }, [every]);
+  useEffect(() => { jset("arcus.ag2.sigs", sigs.slice(0, 150)); }, [sigs]);
+  useEffect(() => { jset("arcus.ag2.scanned", scanned); }, [scanned]);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  const runScan = useCallback(async (tf: string, live: boolean): Promise<Sig[]> => {
-    ctl.current?.abort();
-    const c = new AbortController();
-    ctl.current = c;
+  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const runScan = useCallback((tf: string, live: boolean): Promise<Sig[]> => {
+    const p2 = chain.current.then(() => scanOne(tf, live));
+    chain.current = p2.catch(() => {});
+    return p2;
+  }, []);
+  const scanOne = useCallback(async (tf: string, live: boolean): Promise<Sig[]> => {
+    const c = ctl.current && !ctl.current.signal.aborted ? ctl.current : (ctl.current = new AbortController());
     const list = symsRef.current;
+    if (!list.length) return [];
     const out: Sig[] = [];
     let i = 0, finished = 0, got = 0;
     setProg({ done: 0, total: list.length, tf });
@@ -195,6 +204,27 @@ export function AgentTab(p: {
   }, [now, on, tfs, mins]);
 
   useEffect(() => () => ctl.current?.abort(), []);
+  // close-based scans: right after each chosen candle closes, and every `every` minutes
+  useEffect(() => {
+    if (!on || !p.syms.length) return;
+    const t = Date.now();
+    for (const tf of tfs) {
+      const sec = TF_SEC[tf];
+      if (!sec) continue;
+      const lastClose = Math.floor(t / 1000 / sec) * sec * 1000;
+      const key = tf + "|" + lastClose + "|c";
+      if (t - lastClose >= 8000 && t - lastClose < 600000 && !done.current[key]) {
+        done.current[key] = 1;
+        runScan(tf, false);
+      }
+    }
+    const lastAuto = jget<number>("arcus.ag2.lastAuto", 0);
+    if (every > 0 && t - lastAuto >= every * 60000) {
+      jset("arcus.ag2.lastAuto", t);
+      (async () => { for (const tf of tfs) await runScan(tf, false); })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, on, tfs, every]);
 
   const toggleTf = (tf: string) => setTfs((a) => (a.includes(tf) ? (a.length > 1 ? a.filter((x) => x !== tf) : a) : [...a, tf]));
   const nextClose = useMemo(() => {
@@ -240,16 +270,22 @@ export function AgentTab(p: {
             {[1, 2, 3, 5, 10].map((m) => <option key={m} value={m}>{m} {T("min before", "دقیقه قبل")}</option>)}
           </select>
         </label>
+        <label className="sg-min">{T("Auto-scan", "اسکن خودکار")}
+          <select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+            <option value={0}>{T("off", "خاموش")}</option>
+            {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + " " + T("h", "ساعت") : m + " " + T("min", "دقیقه")}</option>)}
+          </select>
+        </label>
         {on && nextClose && <span className="sg-cd" title={T("Next close", "بسته‌شدن بعدی")}>⏱ {nextClose.tf} · {left(nextClose.at, now)}</span>}
         <span className="sg-sp" />
-        <button type="button" className="sg-go" disabled={!!prog} onClick={() => runScan(tfs.includes("4h") ? "4h" : tfs[0], true)}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
+        <button type="button" className="sg-go" disabled={!!prog} onClick={async () => { for (const tf of tfs) await runScan(tf, false); }}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
         <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 3 signals: 2 long, 1 short.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۳ سیگنال: ۲ خرید و ۱ فروش." }} />
         <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
       <div className="sg-sub">
         <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
         {on && perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
-        {on && <span className="sg-hint">{T("Works while this page stays open.", "تا وقتی این صفحه باز است کار می‌کند.")}</span>}
+        {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
       </div>
       {prog && (
         <div className="sg-prog" role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done}>
