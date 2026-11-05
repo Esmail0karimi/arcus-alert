@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bi, FA_NAME, TF_SEC, left } from "./agent";
 import { setLang, useLang } from "./lang";
-import { STRAT_LIST, Sig, evaluate } from "./signals";
+import { STRAT_LIST, Sig, closedOnly, evaluate, trendOf } from "./signals";
 import { VoiceControl, speak, chime, getVoice } from "./voice";
 import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
 export type AgSym = { symbol: string; base: string; ex: string };
+type JE = { id: string; sym: string; base: string; tf: string; side: "long" | "short"; strat: string; top: boolean; n: number; from: number; entry: number; stop: number; t1: number; st: "open" | "win" | "loss" | "exp"; r: number; bars: number };
 type Hist = { at: number; tf: string; en: string; fa: string };
 const TFS = ["15m", "1h", "4h", "1d"];
 const HTF: Record<string, string | null> = { "15m": "4h", "1h": "1d", "4h": "1d", "1d": null };
@@ -106,6 +107,16 @@ export function AgentTab(p: {
   const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
   const [off, setOff] = useState<string[]>(() => jget("arcus.ag2.off", []));
   const [notifyTop, setNotifyTop] = useState<boolean>(() => jget("arcus.ag2.notifyTop", true));
+  const [acct, setAcct] = useState<number>(() => jget("arcus.ag2.acct", 1000));
+  const [riskPct, setRiskPct] = useState<number>(() => jget("arcus.ag2.risk", 1));
+  const [minLiq, setMinLiq] = useState<number>(() => jget("arcus.ag2.liq", 0));
+  const [mktMode, setMktMode] = useState<"off" | "warn" | "hide">(() => jget("arcus.ag2.mkt", "warn"));
+  const [maxStop, setMaxStop] = useState<number>(() => jget("arcus.ag2.maxstop", 5));
+  const [mkt, setMkt] = useState<"up" | "down" | "flat" | null>(null);
+  const jr = useRef<JE[]>(jget<JE[]>("arcus.ag2.journal", []));
+  const [jver, setJver] = useState(0);
+  const liqRef = useRef(minLiq);
+  liqRef.current = minLiq;
   const [strat, setStrat] = useState<string>("all");
   const [sigs, setSigs] = useState<Sig[]>(() => jget<Sig[]>("arcus.ag2.sigs", []));
   const [every, setEvery] = useState<number>(() => jget("arcus.ag2.every", 60));
@@ -130,6 +141,7 @@ export function AgentTab(p: {
   useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
   useEffect(() => { jset("arcus.ag2.every", every); }, [every]);
   useEffect(() => { jset("arcus.ag2.off", off); }, [off]);
+  useEffect(() => { jset("arcus.ag2.acct", acct); jset("arcus.ag2.risk", riskPct); jset("arcus.ag2.liq", minLiq); jset("arcus.ag2.mkt", mktMode); jset("arcus.ag2.maxstop", maxStop); }, [acct, riskPct, minLiq, mktMode, maxStop]);
   useEffect(() => { jset("arcus.ag2.notifyTop", notifyTop); }, [notifyTop]);
   const notifyRef = useRef(notifyTop);
   notifyRef.current = notifyTop;
@@ -142,6 +154,22 @@ export function AgentTab(p: {
     return () => window.clearInterval(id);
   }, []);
 
+  const resolveJ = (sym: string, tf: string, rows: QCandle[]) => {
+    const sec = TF_SEC[tf] || 1, nowS = Date.now() / 1000;
+    for (const e of jr.current) {
+      if (e.st !== "open" || e.sym !== sym || e.tf !== tf) continue;
+      const R = Math.abs(e.entry - e.stop) || 1, dir = e.side === "long" ? 1 : -1;
+      let k = 0;
+      for (const c of rows) {
+        if (c.time < e.from || c.time + sec > nowS) continue;
+        k++;
+        const stopHit = dir > 0 ? c.low <= e.stop : c.high >= e.stop, tgtHit = dir > 0 ? c.high >= e.t1 : c.low <= e.t1;
+        if (stopHit) { e.st = "loss"; e.r = -1; e.bars = k; break; }
+        if (tgtHit) { e.st = "win"; e.r = 1; e.bars = k; break; }
+        if (k >= 30) { e.st = "exp"; e.r = Math.max(-1, Math.min(3, ((c.close - e.entry) / R) * dir)); e.bars = k; break; }
+      }
+    }
+  };
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const runScan = useCallback((tf: string, live: boolean): Promise<Sig[]> => {
     const p2 = chain.current.then(() => scanOne(tf, live));
@@ -152,6 +180,13 @@ export function AgentTab(p: {
     const c = ctl.current && !ctl.current.signal.aborted ? ctl.current : (ctl.current = new AbortController());
     const list = symsRef.current;
     if (!list.length) return [];
+    const btc = list.find((x) => x.base === "BTC");
+    if (btc) {
+      try {
+        const br = await fetchRef.current(btc.symbol, "1d", c.signal);
+        setMkt(trendOf(closedOnly(br, "1d")));
+      } catch {}
+    }
     const out: Sig[] = [];
     let i = 0, finished = 0, got = 0;
     setProg({ done: 0, total: list.length, tf });
@@ -165,6 +200,9 @@ export function AgentTab(p: {
           const rows = await fetchRef.current(s.symbol, tf, c.signal);
           if (rows.length > 60) {
             got++;
+            resolveJ(s.symbol, tf, rows);
+            const lv = rows.slice(-20);
+            const lowLiq = liqRef.current > 0 && lv.reduce((a, r) => a + r.close * r.volume, 0) / lv.length < liqRef.current;
             let h: QCandle[] | null = null;
             if (htfTf) {
               const key = s.symbol + "|" + htfTf, hit = htfCache.current[key];
@@ -177,7 +215,7 @@ export function AgentTab(p: {
               }
             }
             const r = evaluate(s.symbol, s.base, tf, rows, h, htfTf, Date.now(), live);
-            out.push(...r);
+            if (!lowLiq) out.push(...r);
           }
         } catch {}
         finished++;
@@ -190,6 +228,20 @@ export function AgentTab(p: {
     setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort(rank));
     setScanned({ at: Date.now(), tf, n: got, live });
     setProg(null);
+    if (!live) {
+      const sec0 = TF_SEC[tf] || 1, from = Math.floor(Date.now() / 1000 / sec0) * sec0;
+      const gm = new Map<string, number>();
+      for (const x of out) gm.set(x.symbol + "|" + x.side, (gm.get(x.symbol + "|" + x.side) || 0) + 1);
+      for (const x of out) {
+        const id = [x.symbol, tf, x.side, x.strat.id, from].join("|");
+        if (jr.current.some((e) => e.id === id)) continue;
+        const n = gm.get(x.symbol + "|" + x.side) || 1;
+        jr.current.push({ id, sym: x.symbol, base: x.base, tf, side: x.side, strat: x.strat.id, top: isTop({ all: Array(n).fill(x), score: x.score + n - 1, vol: x.vol }), n, from, entry: x.entry, stop: x.stop, t1: x.t[0], st: "open", r: 0, bars: 0 });
+      }
+      jr.current = jr.current.slice(-600);
+      jset("arcus.ag2.journal", jr.current);
+      setJver((v) => v + 1);
+    }
     if (!live && notifyRef.current) {
       // very good signals (several strategies agree, or grade A with heavy volume) -> one notification per candle
       const g = new Map<string, Sig[]>();
@@ -304,7 +356,29 @@ export function AgentTab(p: {
       })
       .sort(rank);
   }, [sigs, off]);
-  const shown = merged.filter((x) => (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
+  const counter = (x: Sig) => mktMode !== "off" && mkt != null && ((x.side === "long" && mkt === "down") || (x.side === "short" && mkt === "up"));
+  const stats = useMemo(() => {
+    const m: Record<string, { n: number; w: number; sum: number; open: number }> = {};
+    const add = (k: string, e: JE) => {
+      const o = (m[k] ||= { n: 0, w: 0, sum: 0, open: 0 });
+      if (e.st === "open") o.open++;
+      else { o.n++; o.sum += e.r; if (e.r > 0) o.w++; }
+    };
+    for (const e of jr.current) { add(e.strat, e); if (e.top) add("_top", e); add("_all", e); }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jver]);
+  const csv = () => {
+    const rows = [["symbol", "tf", "side", "strategies", "grade", "score", "entry", "stop", "1R", "2R", "3R"]].concat(
+      merged.map((g) => [g.symbol, g.tf, g.side, g.all.map((x) => x.strat.id).join("+"), g.grade, String(g.score), String(g.entry), String(g.stop), String(g.t[0]), String(g.t[1]), String(g.t[2])]),
+    );
+    const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "arcus-signals.csv";
+    a.click();
+  };
+  const shown = merged.filter((x) => !(mktMode === "hide" && counter(x)) && (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -342,6 +416,7 @@ export function AgentTab(p: {
         {on && nextClose && <span className="sg-cd" title={T("Next close", "بسته‌شدن بعدی")}>⏱ {nextClose.tf} · {left(nextClose.at, now)}</span>}
         <span className="sg-sp" />
         <button type="button" className="sg-go" disabled={!!prog} onClick={async () => { for (const tf of tfs) await runScan(tf, false); }}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
+        <button type="button" className="sg-go" onClick={csv} disabled={!merged.length} title="CSV">⬇ CSV</button>
         <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 4 signals are available from the latest scan.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۴ سیگنال از اسکن اخیر موجود است." }} />
         <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
@@ -361,6 +436,50 @@ export function AgentTab(p: {
             </label>
           ))}
         </div>
+      </details>
+      <details className="sg-set">
+        <summary>🛡 {T("Filters & position size", "فیلترها و اندازه‌ی پوزیشن")}</summary>
+        <div className="sg-form">
+          <label>{T("Account size ($)", "اندازه‌ی حساب ($)")}<input type="number" min={0} value={acct} onChange={(e) => setAcct(Math.max(0, Number(e.target.value)))} /></label>
+          <label>{T("Risk per trade (%)", "ریسک هر معامله (٪)")}<input type="number" min={0.1} step={0.1} value={riskPct} onChange={(e) => setRiskPct(Math.max(0.1, Number(e.target.value)))} /></label>
+          <label>{T("Min traded value per candle", "حداقل ارزش معامله در هر کندل")}
+            <select value={minLiq} onChange={(e) => setMinLiq(Number(e.target.value))}>
+              <option value={0}>{T("No filter", "بدون فیلتر")}</option>
+              {[1000, 10000, 50000, 200000, 1000000].map((v) => <option key={v} value={v}>${v.toLocaleString()}</option>)}
+            </select>
+          </label>
+          <label>{T("Against BTC daily trend", "خلاف روند روزانه‌ی بیت‌کوین")}
+            <select value={mktMode} onChange={(e) => setMktMode(e.target.value as any)}>
+              <option value="off">{T("Ignore", "نادیده")}</option>
+              <option value="warn">{T("Warn", "هشدار")}</option>
+              <option value="hide">{T("Hide", "پنهان")}</option>
+            </select>
+          </label>
+          <label>{T("Warn if stop is wider than (%)", "هشدار اگر حد ضرر دورتر از (٪)")}
+            <select value={maxStop} onChange={(e) => setMaxStop(Number(e.target.value))}>
+              <option value={0}>{T("Off", "خاموش")}</option>
+              {[2, 3, 5, 8, 12].map((v) => <option key={v} value={v}>{v}%</option>)}
+            </select>
+          </label>
+        </div>
+        {mkt && <p className="sg-mk">₿ {T("BTC daily trend", "روند روزانه‌ی بیت‌کوین")}: <b className={mkt}>{mkt === "up" ? T("Up", "صعودی") : mkt === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی")}</b></p>}
+      </details>
+      <details className="sg-set">
+        <summary>📊 {T("Results journal (which strategies work?)", "دفتر نتایج (کدام استراتژی جواب می‌دهد؟)")} · {stats._all ? stats._all.n + stats._all.open : 0}</summary>
+        <p className="sg-jn">{T("Every signal from a closed-candle scan is tracked automatically: win = reaches 1R before the stop; loss = stop first; after 30 candles it expires at its current R. Sample sizes are small at first — wait for 30+ per strategy.", "هر سیگنال اسکنِ کندل بسته به‌طور خودکار دنبال می‌شود: برد = رسیدن به 1R پیش از حد ضرر؛ باخت = اول حد ضرر؛ بعد از ۳۰ کندل با R همان لحظه بسته می‌شود. در ابتدا نمونه‌ها کم‌اند — منتظر ۳۰+ سیگنال برای هر استراتژی بمان.")}</p>
+        <div className="sg-jt">
+          <div className="h"><span>{T("Strategy", "استراتژی")}</span><span>{T("Closed", "بسته")}</span><span>{T("Win %", "برد ٪")}</span><span>{T("Avg R", "میانگین R")}</span><span>{T("Open", "باز")}</span></div>
+          {[{ id: "_top", name: { en: "⭐ Top signals", fa: "⭐ سیگنال‌های ممتاز" } }, ...STRAT_LIST.map((x) => ({ id: x.id as string, name: x.name })), { id: "_all", name: { en: "All", fa: "همه" } }].map((x) => {
+            const o = stats[x.id] || { n: 0, w: 0, sum: 0, open: 0 };
+            return (
+              <div key={x.id} className={x.id.startsWith("_") ? "tot" : ""}>
+                <span>{L(x.name)}</span><span>{o.n}</span><span>{o.n ? Math.round((o.w / o.n) * 100) + "%" : "—"}</span>
+                <span className={o.n && o.sum / o.n > 0 ? "g" : o.n ? "r" : ""}>{o.n ? (o.sum / o.n).toFixed(2) : "—"}</span><span>{o.open}</span>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the journal?", "دفتر پاک شود؟"))) { jr.current = []; jset("arcus.ag2.journal", []); setJver((v) => v + 1); } }}>{T("Clear journal", "پاک کردن دفتر")}</button>
       </details>
       {prog && (
         <div className="sg-prog" role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done}>
@@ -397,6 +516,8 @@ export function AgentTab(p: {
             <div className="sg-badges">
               {isTop(s) && <span className="sg-top">⭐ {T("Top signal", "سیگنال ممتاز")}</span>}
               {s.all.length > 1 && <span className="sg-multi">✅ {T(`${s.all.length} strategies confirm`, `${s.all.length} استراتژی تأیید کرده‌اند`)}</span>}
+              {counter(s) && <span className="sg-warn">⚠ {T("Against BTC daily trend", "خلاف روند روزانه‌ی بیت‌کوین")}</span>}
+              {maxStop > 0 && s.riskPct > maxStop && <span className="sg-warn">⚠ {T("Wide stop", "حد ضرر دور")} {s.riskPct.toFixed(1)}%</span>}
               {isHot(s) && <span className="sg-hot">🔥 {T("Strong + volume", "قوی + حجم")}</span>}
               {s.all.map((x) => <span key={x.strat.id} className={"sg-tag " + x.strat.id} title={L(x.strat.basis)}>🏷 {L(x.strat.name)}</span>)}
             </div>
@@ -420,6 +541,10 @@ export function AgentTab(p: {
               <div className="g"><dt>2R</dt><dd>{fmt(s.t[1])}</dd></div>
               <div className="g"><dt>3R</dt><dd>{fmt(s.t[2])}</dd></div>
             </div>
+            {acct > 0 && (() => {
+              const riskUsd = (acct * riskPct) / 100, qty = riskUsd / Math.max(1e-12, Math.abs(s.entry - s.stop)), notional = qty * s.entry;
+              return <p className="sg-size">💰 {T("Size for", "حجم برای")} {riskPct}% {T("risk", "ریسک")} (${riskUsd.toFixed(0)}): <b>{fmt(qty)}</b> {s.base} ≈ ${notional.toFixed(0)} <small>({(notional / acct).toFixed(1)}×)</small></p>;
+            })()}
             <details>
               <summary>{T("All reasons", "همه‌ی دلایل")}</summary>
               <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
