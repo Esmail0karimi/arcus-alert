@@ -12,6 +12,7 @@ import { ReportHost, openReport as openReportExt } from "./report";
 import { OrderBook } from "./obtab";
 import { FA_NAME } from "./agent";
 import { AgentTab } from "./agenttab";
+import type { QCandle } from "./qfex";
 import { VoiceControl, speak } from "./voice";
 import { AvatarHead } from "./avatar";
 import { AnalysisPanel, type SetupLines } from "./analysispanel";
@@ -1664,15 +1665,53 @@ function App() {
   const [evTick, setEvTick] = useState(0);
   const [anOpen, setAnOpen] = useState(false);
   const [setupLines, setSetupLines] = useState<SetupLines | null>(null);
-  const openFromAgent = (base: string, frame: string, setup: SetupLines | null): boolean => {
-    const hit = symbols.find((x) => assetBase(dn(x)) === base);
-    if (!hit) return false;
-    setSymbol(hit);
+  const openFromAgent = (sym: string, frame: string, setup: SetupLines | null): boolean => {
+    if (!prices[sym]) return false;
+    setSymbol(sym);
     if (TF_LIST.includes(frame)) setTf(frame);
     setSetupLines(setup);
     setAnOpen(true);
     setTab("Chart");
     return true;
+  };
+  // every symbol of every exchange that is switched on (no de-duplication), for the Agent's scanner
+  const agentSyms = useMemo(
+    () =>
+      Object.keys(prices)
+        .filter((s) => {
+          const a = adapterOf(s);
+          return a ? exOn[a.id] !== false : exOn.arcus !== false;
+        })
+        .map((s) => ({ symbol: s, base: String(assetBase(displayName(s))), ex: adapterOf(s)?.label || "Arcus" }))
+        .filter((x) => /^[A-Z0-9]{2,12}$/.test(x.base)),
+    [prices, exOn],
+  );
+  const agentFetch = async (sym: string, frame: string, signal: AbortSignal): Promise<QCandle[]> => {
+    const a = adapterOf(sym);
+    const base = String(assetBase(displayName(sym)));
+    if (a) return (await getCandles(a, sym, frame, signal)).rows;
+    const mk = pricesRef.current[sym]?.marketId || sym;
+    try {
+      const r = await fetch(
+        "https://api.arcus.xyz/v1/candles?market=" + encodeURIComponent(mk) + "&timeframe=" + encodeURIComponent(frame) + "&to=" + Date.now() * 1000 + "&countback=250",
+        { headers: { Accept: "application/json" }, signal },
+      );
+      if (r.ok) {
+        const j = await r.json();
+        const rows = (Array.isArray(j.candles) ? j.candles : [])
+          .map((c: any) => {
+            const t = Number(c.openTime ?? c.time ?? c.timestamp);
+            return { time: Math.floor(t > 100000000000 ? t / 1000 : t), open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume ?? c.vol ?? c.v ?? 0) };
+          })
+          .filter((c: any) => c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+          .sort((x: any, y: any) => x.time - y.time)
+          .filter((c: any, i: number, arr: any[]) => i === 0 || c.time > arr[i - 1].time);
+        if (rows.length > 60) return rows;
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") throw e;
+    }
+    return (await externalCandles(base, frame, signal, catOfSymbol(sym) !== "Crypto")).rows;
   };
   useEffect(() => {
     if (setupLines && symbol && assetBase(dn(symbol)) !== setupLines.base) setSetupLines(null);
@@ -2777,7 +2816,7 @@ function App() {
         )}
         {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        {tab === "Agent" && <AgentTab bases={obBases} tfNow={tf} onOpenChart={openFromAgent} />}
+        {tab === "Agent" && <AgentTab syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />

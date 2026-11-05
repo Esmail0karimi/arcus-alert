@@ -1,5 +1,5 @@
 /* Analysis panel shown on top of the Chart tab: the Agent's read of the coin and timeframe you are looking at. */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { externalCandles } from "./exchanges";
 import { Analysis, Bi, FA_NAME, TF_SEC, analyze, fmtPrice, left } from "./agent";
 import { setLang, useLang } from "./lang";
@@ -46,10 +46,43 @@ export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; se
   const ms: Match[] = useMemo(() => (rows ? matchesFor(rows, p.tf, Date.now()) : []), [rows, p.tf, tick]);
   const nm = fa ? FA_NAME[p.base] || p.base : p.base;
   const col = a ? (a.bias === "bull" ? "ag-bull" : a.bias === "bear" ? "ag-bear" : "ag-flat") : "";
+  const el = useRef<HTMLElement | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("arcus.an.pos.v1") || "null");
+    } catch {
+      return null;
+    }
+  });
+  const drag = (e: any) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const box = el.current, par = box?.offsetParent as HTMLElement | null;
+    if (!box || !par) return;
+    const pr = par.getBoundingClientRect(), br = box.getBoundingClientRect();
+    const dx = e.clientX - br.left, dy = e.clientY - br.top;
+    let last = { x: br.left - pr.left, y: br.top - pr.top };
+    const mv = (m: PointerEvent) => {
+      last = {
+        x: Math.max(0, Math.min(pr.width - 60, m.clientX - pr.left - dx)),
+        y: Math.max(0, Math.min(pr.height - 40, m.clientY - pr.top - dy)),
+      };
+      setPos(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", mv);
+      window.removeEventListener("pointerup", up);
+      try {
+        localStorage.setItem("arcus.an.pos.v1", JSON.stringify(last));
+      } catch {}
+    };
+    window.addEventListener("pointermove", mv);
+    window.addEventListener("pointerup", up);
+    e.preventDefault();
+  };
   const sd = (s: "long" | "short") => (s === "long" ? T("LONG", "خرید") : T("SHORT", "فروش"));
   return (
-    <aside className={"an-panel " + col} dir={fa ? "rtl" : "ltr"} aria-label="Analysis">
-      <header>
+    <aside ref={el as any} className={"an-panel " + col} dir={fa ? "rtl" : "ltr"} aria-label="Analysis" style={pos ? { left: pos.x, top: pos.y, insetInlineStart: "auto" } : undefined}>
+      <header onPointerDown={drag} className="an-drag" title={T("Drag to move", "برای جابه‌جایی بکش")}>
         <b>🧠 {T("Analysis", "تحلیل")} · {nm} <small>{p.tf}</small></b>
         <span>
           <button onClick={() => setLang(fa ? "en" : "fa")} title="English / فارسی">{fa ? "EN" : "فا"}</button>
@@ -67,7 +100,7 @@ export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; se
         <div className="an-body">
           {p.setup && p.setup.base === p.base && (
             <section className={"an-setup " + p.setup.side}>
-              <h4>{T("Setup you opened", "ستاپی که باز کردی")}: <span className={"ag-badge " + p.setup.side}>{sd(p.setup.side)}</span> {L(STRATEGIES.find((x) => x.id === p.setup!.sid)!.name)}</h4>
+              <h4>{T("Setup you opened", "ستاپی که باز کردی")}: <span className={"ag-badge " + p.setup.side}>{sd(p.setup.side)}</span> {p.setup.sid === "sig" ? T("Agent signal", "سیگنال ایجنت") : L(STRATEGIES.find((x) => x.id === p.setup!.sid)?.name || { en: p.setup.sid, fa: p.setup.sid })}</h4>
               <dl className="ag-lv">
                 <div><dt>{T("Entry", "ورود")}</dt><dd>{fmtPrice(p.setup.entry)}</dd></div>
                 <div className="s"><dt>{T("Stop", "حدضرر")}</dt><dd>{fmtPrice(p.setup.stop)}</dd></div>

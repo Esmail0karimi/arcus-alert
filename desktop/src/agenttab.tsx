@@ -1,17 +1,17 @@
-/* Agent tab: scans the coins you watch, reads momentum and candle structure, and warns you shortly before a candle closes. */
+/* Agent tab: one slim bar (on/off, timeframes, minutes before close). While it is on, shortly before each chosen candle closes it scans
+   EVERY symbol of the exchanges that are switched on, grades technical signals, announces them once (voice + notification) and lists them. */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { externalCandles } from "./exchanges";
-import { Analysis, Bi, FA_NAME, TF_LIST, TF_SEC, analyze, fmtPrice, left } from "./agent";
+import { Bi, FA_NAME, TF_SEC, left } from "./agent";
 import { setLang, useLang } from "./lang";
-import { loadSymbols } from "./orderbook";
-import { Hit, Match, STRATEGIES, matchesFor, scan } from "./strategies";
+import { Sig, evaluate } from "./signals";
 import { VoiceControl, speak } from "./voice";
 import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
-type Rule = { id: string; base: string; tf: string; min: number; minScore: number };
-type Hist = { id: string; at: number; base: string; tf: string; title: string; body: string; score: number };
-const DEF_WATCH = ["BTC", "ETH", "SOL", "XRP", "DOGE", "HYPE", "BNB", "LINK"];
+export type AgSym = { symbol: string; base: string; ex: string };
+type Hist = { at: number; tf: string; en: string; fa: string };
+const TFS = ["15m", "1h", "4h", "1d"];
+const HTF: Record<string, string | null> = { "15m": "4h", "1h": "1d", "4h": "1d", "1d": null };
 const jget = <T,>(k: string, d: T): T => {
   try {
     const v = localStorage.getItem(k);
@@ -38,451 +38,272 @@ const sendNotification = (title: string, body: string, tag: string) => {
     else fall();
   } catch {}
 };
+const fmt = (v: number) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
+const TFN: Record<string, { en: string; fa: string }> = { "15m": { en: "15-minute", fa: "۱۵ دقیقه‌ای" }, "1h": { en: "1-hour", fa: "یک‌ساعته" }, "4h": { en: "4-hour", fa: "۴ ساعته" }, "1d": { en: "daily", fa: "روزانه" } };
 
-export function AgentTab(p: { bases: string[]; tfNow?: string; onOpenChart?: (base: string, tf: string, setup: SetupLines | null) => boolean }) {
+function Mini({ s }: { s: Sig }) {
+  const bars = s.bars;
+  const vals = bars.flatMap((x) => [x[1], x[2]]).concat([s.stop, s.entry, s.t[0]]);
+  if (s.level) vals.push(s.level.price);
+  const hi = Math.max(...vals), lo = Math.min(...vals), W = 220, H = 74, bw = W / bars.length;
+  const y = (v: number) => 4 + (1 - (v - lo) / (hi - lo || 1)) * (H - 8);
+  const line = (v: number, c: string, d = "3 3") => <line x1="0" x2={W} y1={y(v)} y2={y(v)} stroke={c} strokeDasharray={d} strokeWidth="1" />;
+  return (
+    <svg className="sg-mini" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      {s.level && line(s.level.price, "#f2c94c", "5 3")}
+      {line(s.entry, "#00dcd2")}
+      {line(s.stop, "#ff5c5c")}
+      {line(s.t[1], "#3ddc97")}
+      {bars.map((b, i) => {
+        const up = b[3] >= b[0], c = up ? "#3ddc97" : "#ff5c5c", x = i * bw + bw / 2;
+        return (
+          <g key={i}>
+            <line x1={x} x2={x} y1={y(b[1])} y2={y(b[2])} stroke={c} strokeWidth="1" />
+            <rect x={x - bw * 0.32} width={bw * 0.64} y={Math.min(y(b[0]), y(b[3]))} height={Math.max(1, Math.abs(y(b[0]) - y(b[3])))} fill={c} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export function AgentTab(p: {
+  syms: AgSym[];
+  fetchCandles: (symbol: string, tf: string, signal: AbortSignal) => Promise<QCandle[]>;
+  onOpenChart?: (symbol: string, tf: string, setup: SetupLines | null) => boolean;
+}) {
   const fa = useLang() === "fa";
   const T = (en: string, f: string) => (fa ? f : en);
   const L = (x: Bi) => (fa ? x.fa : x.en);
-  const [tf, setTf] = useState(() => localStorage.getItem("arcus.ag.tf") || "4h");
-  const [watch, setWatch] = useState<string[]>(() => jget("arcus.ag.watch.v1", DEF_WATCH));
-  const [rules, setRules] = useState<Rule[]>(() => jget("arcus.ag.rules.v1", [{ id: "r1", base: "*", tf: "4h", min: 2, minScore: 25 }]));
-  const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag.hist.v1", []));
-  const [sel, setSel] = useState<string>("");
-  const [data, setData] = useState<Record<string, { rows: QCandle[]; at: number; src: string }>>({});
+  const [on, setOn] = useState<boolean>(() => jget("arcus.ag2.on", false));
+  const [tfs, setTfs] = useState<string[]>(() => jget("arcus.ag2.tfs", ["4h"]));
+  const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
+  const [side, setSide] = useState<"all" | "long" | "short">("all");
+  const [sigs, setSigs] = useState<Sig[]>([]);
+  const [prog, setProg] = useState<{ done: number; total: number; tf: string } | null>(null);
+  const [scanned, setScanned] = useState<{ at: number; tf: string; n: number; live: boolean } | null>(null);
+  const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag2.hist", []));
   const [now, setNow] = useState(Date.now());
-  const [add, setAdd] = useState("");
+  const [msg, setMsg] = useState("");
   const [perm, setPerm] = useState<string>(() => ("Notification" in window ? Notification.permission : "unsupported"));
-  const [mode, setMode] = useState<string>(() => localStorage.getItem("arcus.ag.mode") || "list");
-  const [top, setTop] = useState<string[]>([]);
-  const [stratSel, setStratSel] = useState("all");
-  const [sideSel, setSideSel] = useState<"both" | "long" | "short">("both");
-  const [busy, setBusy] = useState(false);
-  const [openMsg, setOpenMsg] = useState("");
-  const [failed, setFailed] = useState<string[]>([]);
-  const fired = useRef<Record<string, number>>(jget("arcus.ag.fired.v1", {}));
-  const dataRef = useRef(data);
-  dataRef.current = data;
+  const ctl = useRef<AbortController | null>(null);
+  const done = useRef<Record<string, number>>({});
+  const htfCache = useRef<Record<string, { at: number; rows: QCandle[] }>>({});
+  const symsRef = useRef(p.syms);
+  symsRef.current = p.syms;
+  const fetchRef = useRef(p.fetchCandles);
+  fetchRef.current = p.fetchCandles;
 
-  useEffect(() => jset("arcus.ag.watch.v1", watch), [watch]);
-  useEffect(() => {
-    try {
-      localStorage.setItem("arcus.ag.mode", mode);
-    } catch {}
-  }, [mode]);
-  useEffect(() => {
-    const c = new AbortController();
-    loadSymbols(c.signal).then((l) => setTop(l.filter((x) => !/^(USDC|USDT|DAI|FDUSD|TUSD|USDE|BUSD|USD1|PYUSD)$/.test(x)).slice(0, 80)));
-    return () => c.abort();
-  }, []);
-  const universe = useMemo(() => {
-    const n = mode === "60" ? 60 : mode === "30" ? 30 : 0;
-    return Array.from(new Set([...watch, ...top.slice(0, n)]));
-  }, [watch, top, mode]);
-  useEffect(() => jset("arcus.ag.rules.v1", rules), [rules]);
-  useEffect(() => jset("arcus.ag.hist.v1", hist), [hist]);
-  useEffect(() => {
-    try {
-      localStorage.setItem("arcus.ag.tf", tf);
-    } catch {}
-  }, [tf]);
+  useEffect(() => { jset("arcus.ag2.on", on); }, [on]);
+  useEffect(() => { jset("arcus.ag2.tfs", tfs); }, [tfs]);
+  useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  const load = useCallback(async (base: string, frame: string, signal?: AbortSignal) => {
-    const r = await externalCandles(base, frame, signal);
-    if (signal?.aborted) return null;
-    if (r.rows.length > 1) {
-      const v = { rows: r.rows, at: Date.now(), src: r.source };
-      dataRef.current = { ...dataRef.current, [base + "|" + frame]: v };
-      setData((d) => ({ ...d, [base + "|" + frame]: v }));
-      return v;
-    }
-    return null;
+  const runScan = useCallback(async (tf: string, live: boolean): Promise<Sig[]> => {
+    ctl.current?.abort();
+    const c = new AbortController();
+    ctl.current = c;
+    const list = symsRef.current;
+    const out: Sig[] = [];
+    let i = 0, finished = 0, got = 0;
+    setProg({ done: 0, total: list.length, tf });
+    const htfTf = HTF[tf];
+    const worker = async () => {
+      while (!c.signal.aborted) {
+        const k = i++;
+        if (k >= list.length) return;
+        const s = list[k];
+        try {
+          const rows = await fetchRef.current(s.symbol, tf, c.signal);
+          if (rows.length > 60) {
+            got++;
+            let h: QCandle[] | null = null;
+            if (htfTf) {
+              const key = s.symbol + "|" + htfTf, hit = htfCache.current[key];
+              if (hit && Date.now() - hit.at < 600000) h = hit.rows;
+              else {
+                try {
+                  h = await fetchRef.current(s.symbol, htfTf, c.signal);
+                  htfCache.current[key] = { at: Date.now(), rows: h };
+                } catch {}
+              }
+            }
+            const r = evaluate(s.symbol, s.base, tf, rows, h, htfTf, Date.now(), live);
+            if (r) out.push(r);
+          }
+        } catch {}
+        finished++;
+        if (finished % 4 === 0 || finished === list.length) setProg({ done: finished, total: list.length, tf });
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+    if (c.signal.aborted) return out;
+    out.sort((a, b) => b.score - a.score);
+    setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort((a, b) => b.score - a.score));
+    setScanned({ at: Date.now(), tf, n: got, live });
+    setProg(null);
+    return out;
   }, []);
 
-  // keep the chosen timeframe fresh for every watched coin (3 at a time), plus all timeframes for the selected coin
-  useEffect(() => {
-    const ctl = new AbortController();
-    let alive = true;
-    const run = async () => {
-      setBusy(true);
-      const jobs: [string, string][] = universe.map((w) => [w, tf]);
-      if (sel) for (const f of TF_LIST) if (f !== tf) jobs.push([sel, f]);
-      const bad: string[] = [];
-      let i = 0;
-      const worker = async () => {
-        while (alive && i < jobs.length) {
-          const [b, f] = jobs[i++];
-          const age = Date.now() - (dataRef.current[b + "|" + f]?.at || 0);
-          if (age < (watch.includes(b) ? 25000 : 110000)) continue;
-          try {
-            if (!(await load(b, f, ctl.signal)) && f === tf && watch.includes(b)) bad.push(b);
-          } catch {
-            if (f === tf && watch.includes(b)) bad.push(b);
-          }
-        }
-      };
-      await Promise.all([worker(), worker(), worker(), worker()]);
-      if (alive) {
-        setFailed(bad);
-        setBusy(false);
-      }
-    };
-    run();
-    const id = window.setInterval(run, 30000);
-    return () => {
-      alive = false;
-      ctl.abort();
-      window.clearInterval(id);
-    };
-  }, [watch, universe, tf, sel, load]);
+  const announce = useCallback((tf: string, closeAt: number, res: Sig[], minLeft: number) => {
+    const n = res.length, lg = res.filter((x) => x.side === "long").length, sh = n - lg;
+    const top = res.slice(0, 3);
+    const en = n
+      ? `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. ${n} signal${n === 1 ? "" : "s"}: ${lg} long, ${sh} short. Best: ${top.map((x) => `${x.base} ${x.side} grade ${x.grade}`).join(", ")}.`
+      : `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. No clear signal right now.`;
+    const faT = n
+      ? `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. ${n} سیگنال: ${lg} خرید و ${sh} فروش. بهترین‌ها: ${top.map((x) => `${FA_NAME[x.base] || x.base} ${x.side === "long" ? "خرید" : "فروش"} درجه ${x.grade}`).join("، ")}.`
+      : `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. فعلاً سیگنال واضحی نیست.`;
+    speak("agent", { en, fa: faT });
+    const lang = localStorage.getItem("arcus.news.lang") === "fa" || fa;
+    sendNotification(lang ? "🧠 ایجنت · " + TFN[tf].fa : "🧠 Agent · " + TFN[tf].en, lang ? faT : en, "ag2-" + tf + closeAt);
+    setHist((h) => {
+      const nh = [{ at: Date.now(), tf, en, fa: faT }, ...h].slice(0, 20);
+      jset("arcus.ag2.hist", nh);
+      return nh;
+    });
+  }, [fa]);
 
-  const tick = Math.floor(now / 10000);
-  const results = useMemo(() => {
-    const out: Analysis[] = [];
-    for (const w of watch) {
-      const d = data[w + "|" + tf];
-      const a = d ? analyze(w, tf, d.rows, Date.now()) : null;
-      if (a) out.push(a);
+  // schedule: pre-scan a little earlier, announce `mins` minutes before the close (one announcement per timeframe)
+  useEffect(() => {
+    if (!on) return;
+    const t = Date.now();
+    for (const tf of tfs) {
+      const sec = TF_SEC[tf];
+      if (!sec) continue;
+      const closeAt = (Math.floor(t / 1000 / sec) + 1) * sec * 1000;
+      const key = tf + "|" + closeAt;
+      const toClose = closeAt - t;
+      if (toClose <= mins * 60000 && toClose > 5000 && done.current[key] !== 2) {
+        done.current[key] = 2;
+        const minLeft = Math.max(1, Math.round(toClose / 60000));
+        const fresh = scanned && scanned.tf === tf && t - scanned.at < 150000 && scanned.live;
+        const go = fresh ? Promise.resolve(sigs.filter((x) => x.tf === tf)) : runScan(tf, true);
+        go.then((r) => announce(tf, closeAt, r, minLeft));
+      } else if (toClose <= (mins + 2) * 60000 && toClose > mins * 60000 && !done.current[key]) {
+        done.current[key] = 1;
+        runScan(tf, true);
+      }
     }
-    return out.sort((x, y) => Math.abs(y.score) - Math.abs(x.score));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, watch, tf, tick]);
-  const hits: Hit[] = useMemo(
-    () => scan(universe, tf, (b) => data[b + "|" + tf]?.rows, Date.now()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, universe, tf, tick],
-  );
-  const loaded = universe.filter((u) => data[u + "|" + tf]).length;
-  const flat = useMemo(() => {
-    const out: { h: Hit; m: Match }[] = [];
-    for (const h of hits) for (const m of h.matches) if ((stratSel === "all" || m.sid === stratSel) && (sideSel === "both" || m.side === sideSel)) out.push({ h, m });
-    return out.sort((x, y) => y.m.q - x.m.q).slice(0, 40);
-  }, [hits, stratSel, sideSel]);
-  const countOf = (sid: string) => hits.reduce((n, h) => n + h.matches.filter((m) => sid === "all" || m.sid === sid).length, 0);
-  const selected = sel || results[0]?.base || "";
-  useEffect(() => {
-    if (!sel && results[0]) setSel(results[0].base);
-  }, [sel, results]);
-  const detail = results.find((r) => r.base === selected) || null;
-  const multi = useMemo(
-    () => TF_LIST.map((f) => ({ f, a: data[selected + "|" + f] ? analyze(selected, f, data[selected + "|" + f].rows, Date.now()) : null })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, selected, tick],
-  );
+  }, [now, on, tfs, mins]);
 
-  // pre-close alerts: checked every few seconds while this page is open
-  const TF_SAY: Record<string, Bi> = {
-    "5m": { en: "5 minute", fa: "پنج دقیقه‌ای" }, "15m": { en: "15 minute", fa: "پانزده دقیقه‌ای" }, "1h": { en: "1 hour", fa: "یک ساعته" }, "4h": { en: "4 hour", fa: "چهار ساعته" }, "1d": { en: "daily", fa: "روزانه" },
-  };
-  const fire = useCallback(
-    async (base: string, frame: string, closeAt: number, key: string, minScore: number) => {
-      let rows = dataRef.current[base + "|" + frame]?.rows;
-      try {
-        const v = await load(base, frame);
-        if (v) rows = v.rows;
-      } catch {}
-      const a = rows ? analyze(base, frame, rows, Date.now()) : null;
-      if (!a || !rows || Math.abs(a.score) < minScore) return false;
-      const secs = Math.max(0, Math.round((closeAt - Date.now()) / 1000));
-      const mins = Math.max(1, Math.round(secs / 60));
-      const nmFa = FA_NAME[base] || base;
-      const tfs = TF_SAY[frame] || { en: frame, fa: frame };
-      const ms = matchesFor(rows, frame).slice(0, 2);
-      const stEn = ms.map((m) => STRATEGIES.find((x) => x.id === m.sid)!.name.en + " (" + m.side + ")").join(", ");
-      const stFa = ms.map((m) => STRATEGIES.find((x) => x.id === m.sid)!.name.fa + " (" + (m.side === "long" ? "خرید" : "فروش") + ")").join("، ");
-      const whyEn = a.why.slice(0, 3).map((x) => x.en).join("; ");
-      const whyFa = a.why.slice(0, 3).map((x) => x.fa).join("؛ ");
-      const titleEn = "⏰ " + base + " · " + frame + " candle closes in " + mins + " min";
-      const titleFa = "⏰ " + nmFa + " · " + mins + " دقیقه تا بسته‌شدن کندل " + frame;
-      const bodyEn = "Why: the " + frame + " candle is about to close.\n" + a.label.en + " (score " + a.score + ") — " + whyEn + ".\n" + (stEn ? "Strategy: " + stEn + ".\n" : "") + a.plan.en;
-      const bodyFa = "دلیل: کندل " + frame + " دارد بسته می‌شود.\n" + a.label.fa + " (امتیاز " + a.score + ") — " + whyFa + ".\n" + (stFa ? "استراتژی: " + stFa + ".\n" : "") + a.plan.fa;
-      const lang = localStorage.getItem("arcus.news.lang") === "fa";
-      sendNotification(lang ? titleFa : titleEn, lang ? bodyFa : bodyEn, "ag-" + key);
-      speak("agent", {
-        en: base + ". The " + tfs.en + " candle closes in " + mins + (mins === 1 ? " minute. " : " minutes. ") + a.label.en + ", score " + a.score + ". Because " + whyEn + ". " + (stEn ? "Strategy match: " + stEn + ". " : "") + a.plan.en,
-        fa: nmFa + ". " + mins + " دقیقه تا بسته شدن کندل " + tfs.fa + ". " + a.label.fa + "، امتیاز " + a.score + ". چون " + whyFa + ". " + (stFa ? "استراتژی: " + stFa + ". " : "") + a.plan.fa,
-      });
-      setHist((h) => [{ id: key, at: Date.now(), base, tf: frame, title: lang ? titleFa : titleEn, body: lang ? bodyFa : bodyEn, score: a.score }, ...h].slice(0, 40));
-      return true;
-    },
-    [load],
-  );
-  useEffect(() => {
-    const check = async () => {
-      const t = Date.now();
-      for (const r of rules) {
-        const span = TF_SEC[r.tf];
-        if (!span) continue;
-        const closeAt = (Math.floor(t / 1000 / span) + 1) * span * 1000;
-        const ms = closeAt - t;
-        if (ms > r.min * 60000 || ms < 3000) continue;
-        const targets = r.base === "*" ? watch : [r.base];
-        for (const base of targets) {
-          const key = r.id + "|" + base + "|" + r.tf + "|" + closeAt;
-          if (fired.current[key]) continue;
-          fired.current[key] = t;
-          const cut = t - 3 * 86400000;
-          for (const k of Object.keys(fired.current)) if (fired.current[k] < cut) delete fired.current[k];
-          jset("arcus.ag.fired.v1", fired.current);
-          await fire(base, r.tf, closeAt, key, r.base === "*" ? r.minScore : 0);
-        }
-      }
-    };
-    const id = window.setInterval(check, 4000);
-    check();
-    return () => window.clearInterval(id);
-  }, [rules, watch, fire]);
+  useEffect(() => () => ctl.current?.abort(), []);
 
-  const enableAlerts = async () => {
+  const toggleTf = (tf: string) => setTfs((a) => (a.includes(tf) ? (a.length > 1 ? a.filter((x) => x !== tf) : a) : [...a, tf]));
+  const nextClose = useMemo(() => {
+    let best: { tf: string; at: number } | null = null;
+    for (const tf of tfs) {
+      const sec = TF_SEC[tf];
+      const at = (Math.floor(now / 1000 / sec) + 1) * sec * 1000;
+      if (!best || at < best.at) best = { tf, at };
+    }
+    return best;
+  }, [now, tfs]);
+  const groups = useMemo(() => {
+    const m: Record<string, number> = {};
+    p.syms.forEach((s) => (m[s.ex] = (m[s.ex] || 0) + 1));
+    return Object.entries(m);
+  }, [p.syms]);
+  const shown = sigs.filter((x) => side === "all" || x.side === side);
+  const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
+  const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
+  const askPerm = async () => {
     if (!("Notification" in window)) return setPerm("unsupported");
     setPerm(await Notification.requestPermission());
   };
-  const addCoin = (v: string) => {
-    const c = v.trim().toUpperCase().replace(/[-/ ]?(USD|USDT|PERP)$/, "");
-    if (!/^[A-Z0-9]{2,12}$/.test(c) || watch.includes(c)) return setAdd("");
-    setWatch([...watch, c]);
-    setSel(c);
-    setAdd("");
-  };
-  const addRule = () => setRules([...rules, { id: "r" + Date.now(), base: "*", tf: "1h", min: 2, minScore: 25 }]);
-  const patch = (id: string, v: Partial<Rule>) => setRules(rules.map((r) => (r.id === id ? { ...r, ...v } : r)));
-  const col = (a: { bias: string }) => (a.bias === "bull" ? "ag-bull" : a.bias === "bear" ? "ag-bear" : "ag-flat");
-  const nm = (b: string) => (fa ? FA_NAME[b] || b : b);
-
-  const Gauge = ({ v }: { v: number }) => (
-    <span className="ag-gauge" aria-label={"score " + v}>
-      <i className="mid" />
-      <i className={"fill " + (v >= 0 ? "pos" : "neg")} style={v >= 0 ? { left: "50%", width: v / 2 + "%" } : { right: "50%", width: -v / 2 + "%" }} />
-    </span>
-  );
-  const Candle = ({ a }: { a: Analysis }) => {
-    const c = a.candle, lo = c.l, hi = c.h, r = hi - lo || 1, y = (v: number) => 8 + ((hi - v) / r) * 104;
-    const top = y(Math.max(c.o, c.c)), bot = y(Math.min(c.o, c.c));
-    const color = c.green ? "#3ddc97" : "#ff5c5c";
-    return (
-      <svg className="ag-candle" viewBox="0 0 70 120" role="img" aria-label="Candle shape">
-        <line x1="35" x2="35" y1="8" y2="112" stroke={color} strokeWidth="2" />
-        <rect x="21" width="28" y={top} height={Math.max(2, bot - top)} rx="2" fill={color} />
-        <text x="2" y="12" className="t">H</text>
-        <text x="2" y="116" className="t">L</text>
-      </svg>
-    );
+  const open = (s: Sig) => {
+    const ok = p.onOpenChart?.(s.symbol, s.tf, { base: s.base, tf: s.tf, side: s.side, sid: "sig", entry: s.entry, stop: s.stop, t: s.t });
+    setMsg(ok === false ? T("This symbol is not in the chart list right now.", "این نماد الان در لیست چارت نیست.") : "");
   };
 
   return (
-    <div className={"ag-tab" + (fa ? " fa" : "")} dir={fa ? "rtl" : "ltr"}>
-      <div className="heading">
-        <div>
-          <small>{T("TRADING AGENT", "ایجنت معاملاتی")}</small>
-          <h1>{T("Setups & candle alerts", "فرصت‌ها و هشدار کندل")}</h1>
-        </div>
-        <div className="news-head-btns">
-          <VoiceControl chan="agent" label={T("Agent voice", "صدای ایجنت")} sample={{ en: "Bitcoin. The 4 hour candle closes in 2 minutes. Strong bullish momentum, score 68. Because price is above EMA20 and EMA50, and MACD momentum is positive.", fa: "بیت‌کوین. ۲ دقیقه تا بسته شدن کندل چهار ساعته. مومنتوم صعودی قوی، امتیاز ۶۸. چون قیمت بالای EMA20 و EMA50 است و مومنتوم MACD مثبت است." }} />
-          <button className="secondary" onClick={() => setLang(fa ? "en" : "fa")} title="English / فارسی">{fa ? "EN" : "فا"}</button>
-          <button className={"secondary" + (perm === "granted" ? " on" : "")} onClick={enableAlerts} disabled={perm === "granted" || perm === "unsupported"}>
-            {perm === "granted" ? T("🔔 Alerts on", "🔔 هشدار فعال") : perm === "denied" ? T("Alerts blocked in browser", "هشدار در مرورگر مسدود است") : T("🔔 Enable alerts", "🔔 فعال‌سازی هشدار")}
-          </button>
-        </div>
+    <div className="sg" dir={fa ? "rtl" : "ltr"}>
+      <div className={"sg-bar" + (on ? " on" : "")}>
+        <button type="button" role="switch" aria-checked={on} className={"sg-sw" + (on ? " on" : "")} onClick={() => setOn(!on)} title={T("Turn the Agent on or off", "روشن / خاموش کردن ایجنت")}>
+          <i />
+        </button>
+        <b className="sg-t">🧠 {on ? T("Agent on", "ایجنت روشن") : T("Agent off", "ایجنت خاموش")}</b>
+        <span className="sg-chips" role="group" aria-label="Timeframes">
+          {TFS.map((tf) => (
+            <button key={tf} type="button" className={tfs.includes(tf) ? "on" : ""} onClick={() => toggleTf(tf)}>{tf}</button>
+          ))}
+        </span>
+        <label className="sg-min">{T("Tell me", "اطلاع")}
+          <select value={mins} onChange={(e) => setMins(Number(e.target.value))}>
+            {[1, 2, 3, 5, 10].map((m) => <option key={m} value={m}>{m} {T("min before", "دقیقه قبل")}</option>)}
+          </select>
+        </label>
+        {on && nextClose && <span className="sg-cd" title={T("Next close", "بسته‌شدن بعدی")}>⏱ {nextClose.tf} · {left(nextClose.at, now)}</span>}
+        <span className="sg-sp" />
+        <button type="button" className="sg-go" disabled={!!prog} onClick={() => runScan(tfs.includes("4h") ? "4h" : tfs[0], true)}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
+        <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 3 signals: 2 long, 1 short.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۳ سیگنال: ۲ خرید و ۱ فروش." }} />
+        <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
-      <p className="ag-lead">{T("It reads trend, momentum and the shape of the forming candle for every coin you watch, ranks them, and tells you what to watch before the candle closes. Rule-based analysis, not financial advice.", "برای هر ارزی که دنبال می‌کنی روند، مومنتوم و شکل کندلِ در حال تشکیل را می‌خواند، رتبه‌بندی می‌کند و می‌گوید پیش از بسته‌شدن کندل به چه چیزی نگاه کنی. تحلیل قاعده‌محور است و توصیه‌ی مالی نیست.")}</p>
-
-      <div className="ag-bar">
-        <div className="ob-tfs" role="tablist" aria-label="Timeframe">
-          {TF_LIST.map((f) => (
-            <button key={f} role="tab" aria-selected={tf === f} className={tf === f ? "on" : ""} onClick={() => setTf(f)}>{f}</button>
-          ))}
-        </div>
-        <form className="ag-add" onSubmit={(e) => { e.preventDefault(); addCoin(add); }}>
-          <input list="ag-bases" value={add} onChange={(e) => setAdd(e.target.value.toUpperCase())} placeholder={T("Add coin…", "افزودن ارز…")} aria-label="Add coin" />
-          <datalist id="ag-bases">{p.bases.slice(0, 500).map((b) => <option key={b} value={b} />)}</datalist>
-          <button className="secondary" type="submit">＋</button>
-        </form>
-        <span className="ag-stat">{busy ? T("Scanning…", "در حال بررسی…") : T("Updated", "به‌روز شد") + " " + new Date(Math.max(0, ...Object.values(data).map((d) => d.at))).toLocaleTimeString()}</span>
+      <div className="sg-sub">
+        <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
+        {on && perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
+        {on && <span className="sg-hint">{T("Works while this page stays open.", "تا وقتی این صفحه باز است کار می‌کند.")}</span>}
       </div>
-      {failed.length > 0 && <div className="ag-warn">{T("No candle data for: ", "داده‌ی کندل پیدا نشد برای: ")}{failed.join(", ")}</div>}
-
-      <div className="ag-grid">
-        <div className="ag-list">
-          {!results.length && <div className="empty">{busy ? T("Reading candles…", "در حال خواندن کندل‌ها…") : T("No data yet. Check your connection or add a coin.", "هنوز داده‌ای نیست. اتصال را بررسی کن یا ارز اضافه کن.")}</div>}
-          {results.map((a) => (
-            <button key={a.base} className={"ag-card " + col(a) + (a.base === selected ? " on" : "")} onClick={() => setSel(a.base)}>
-              <span className="ag-top">
-                <b>{nm(a.base)}</b>
-                <em>{fmtPrice(a.price)}</em>
-                <span className="ag-left" title={T("Time until this candle closes", "زمان تا بسته‌شدن کندل")}>⏱ {left(a.closeAt, now)}</span>
-              </span>
-              <Gauge v={a.score} />
-              <span className="ag-sc"><strong>{a.score > 0 ? "+" : ""}{a.score}</strong> {L(a.label)}</span>
-              <span className="ag-set">{L(a.setup)}</span>
-              <span className="ag-x" onClick={(e) => { e.stopPropagation(); setWatch(watch.filter((w) => w !== a.base)); }} role="button" aria-label="Remove" title={T("Remove from list", "حذف از فهرست")}>✕</span>
-            </button>
-          ))}
+      {prog && (
+        <div className="sg-prog" role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done}>
+          <i style={{ width: (prog.done / Math.max(1, prog.total)) * 100 + "%" }} />
+          <span>{T("Scanning", "در حال اسکن")} {prog.tf} · {prog.done}/{prog.total}</span>
         </div>
-
-        {detail && (
-          <section className={"ag-detail " + col(detail)}>
-            <div className="ag-dh">
-              <div>
-                <h2>{nm(detail.base)} <small>{detail.tf}</small></h2>
-                <p>{L(detail.headline)}</p>
-              </div>
-              <div className="ag-clock" title={T("Time until this candle closes", "زمان تا بسته‌شدن کندل")}>
-                <small>{T("candle closes in", "بسته‌شدن کندل تا")}</small>
-                <b>{left(detail.closeAt, now)}</b>
-              </div>
-            </div>
-            <div className="ag-mtf" aria-label="Other timeframes">
-              {multi.map(({ f, a }) => (
-                <button key={f} className={"ag-m " + (a ? col(a) : "") + (f === tf ? " on" : "")} onClick={() => setTf(f)} title={a ? L(a.label) : ""}>
-                  <small>{f}</small>
-                  <b>{a ? (a.score > 0 ? "+" : "") + a.score : "…"}</b>
-                </button>
-              ))}
-            </div>
-            <div className="ag-cols">
-              <div className="ag-cn">
-                <Candle a={detail} />
-                <dl>
-                  <dt>O</dt><dd>{fmtPrice(detail.candle.o)}</dd>
-                  <dt>H</dt><dd>{fmtPrice(detail.candle.h)}</dd>
-                  <dt>L</dt><dd>{fmtPrice(detail.candle.l)}</dd>
-                  <dt>C</dt><dd>{fmtPrice(detail.candle.c)}</dd>
-                </dl>
-              </div>
-              <div className="ag-tx">
-                <h3>{T("Candle structure", "ساختار کندل")}</h3>
-                <ul>{detail.candleLines.map((x, i) => <li key={i}>{L(x)}</li>)}{detail.patterns.map((x, i) => <li key={"p" + i} className="pat">{L(x)}</li>)}</ul>
-                <h3>{T("Trend & levels", "روند و سطوح")}</h3>
-                <ul>
-                  <li>{L(detail.structure)}</li>
-                  <li>{T("Price vs EMA20 / EMA50: ", "قیمت نسبت به EMA20 و EMA50: ")}{detail.price > detail.ind.ema20 ? T("above", "بالا") : T("below", "پایین")} {fmtPrice(detail.ind.ema20)} / {detail.price > detail.ind.ema50 ? T("above", "بالا") : T("below", "پایین")} {fmtPrice(detail.ind.ema50)}</li>
-                  <li>RSI {detail.ind.rsi.toFixed(0)} · MACD {detail.ind.hist > 0 ? T("positive", "مثبت") : T("negative", "منفی")} · ATR {fmtPrice(detail.ind.atr)}</li>
-                  <li>{T("Resistance ", "مقاومت ")}{detail.res ? fmtPrice(detail.res) : "—"} · {T("Support ", "حمایت ")}{detail.sup ? fmtPrice(detail.sup) : "—"}</li>
-                </ul>
-              </div>
-            </div>
-            <div className="ag-sc2">
-              <div className="up"><h4>▲ {T("If buyers win", "اگر خریداران برنده شوند")}</h4><p>{L(detail.bull)}</p></div>
-              <div className="dn"><h4>▼ {T("If sellers win", "اگر فروشندگان برنده شوند")}</h4><p>{L(detail.bear)}</p></div>
-            </div>
-            <div className="ag-plan"><h4>{T("Before the close", "پیش از بسته‌شدن کندل")}</h4><p>{L(detail.plan)}</p></div>
-            <div className="ag-risk"><h4>{T("Risks", "ریسک‌ها")}</h4><ul>{detail.risks.map((x, i) => <li key={i}>{L(x)}</li>)}</ul></div>
-          </section>
-        )}
+      )}
+      <div className="sg-head">
+        <b>{T("Signals", "سیگنال‌ها")} <small>{shown.length}</small></b>
+        <span className="sg-chips">
+          {(["all", "long", "short"] as const).map((k) => (
+            <button key={k} type="button" className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "all" ? T("All", "همه") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
+          ))}
+        </span>
+        {scanned && <small className="sg-when">{T("Last scan", "آخرین اسکن")} {new Date(scanned.at).toLocaleTimeString()} · {scanned.tf} · {scanned.n} {T("symbols", "نماد")}{scanned.live ? " · " + T("candle still forming", "کندل هنوز بسته نشده") : ""}</small>}
       </div>
-
-      <section className="ag-strat">
-        <div className="ag-sh">
-          <h3>{T("Momentum strategies", "استراتژی‌های مومنتوم")}</h3>
-          <div className="ag-seg" role="group" aria-label="Scan universe">
-            {[["list", T("My list", "فهرست من")], ["30", T("Top 30", "۳۰ ارز برتر")], ["60", T("Top 60", "۶۰ ارز برتر")]].map(([k, l]) => (
-              <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>
-            ))}
-          </div>
-          <span className="ag-stat">{T("Scanned", "اسکن‌شده")} {loaded}/{universe.length} · {tf}</span>
-        </div>
-        <div className="ag-schips">
-          <button className={stratSel === "all" ? "on" : ""} onClick={() => setStratSel("all")}>{T("All", "همه")} <i>{countOf("all")}</i></button>
-          {STRATEGIES.map((x) => (
-            <button key={x.id} className={stratSel === x.id ? "on" : ""} onClick={() => setStratSel(x.id)}>{L(x.name)} <i>{countOf(x.id)}</i></button>
-          ))}
-          <span className="ag-sidesel">
-            {(["both", "long", "short"] as const).map((k) => (
-              <button key={k} className={sideSel === k ? "on" : ""} onClick={() => setSideSel(k)}>{k === "both" ? T("Both", "هر دو") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
-            ))}
-          </span>
-        </div>
-        {stratSel !== "all" && (() => {
-          const x = STRATEGIES.find((v) => v.id === stratSel)!;
-          return (
-            <div className="ag-sinfo">
-              <p>{L(x.blurb)}</p>
-              <p><b>{T("Works when:", "کِی جواب می‌دهد:")}</b> {L(x.works)}</p>
-              <p><b>{T("Fails when:", "کِی شکست می‌خورد:")}</b> {L(x.fails)}</p>
+      {msg && <p className="sg-msg">{msg}</p>}
+      {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
+      <div className="sg-list">
+        {shown.map((s) => (
+          <article key={s.symbol + s.tf} className={"sg-card " + (s.side === "long" ? "up" : "dn")}>
+            <header>
+              <b>{fa ? FA_NAME[s.base] || s.base : s.base}</b>
+              <span className={"sg-side " + s.side}>{s.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
+              <span className={"sg-grade g" + s.grade} title={T("Signal grade", "درجه‌ی سیگنال")}>{s.grade}</span>
+              <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small>
+              <em>{fmt(s.price)}</em>
+            </header>
+            <div className="sg-body">
+              <Mini s={s} />
+              <ul className="sg-facts">
+                {s.htf && <li className={s.htf.trend}><i>{arrow(s.htf.trend)}</i> {s.htf.tf}: {trendTxt(s.htf.trend)}</li>}
+                <li className={s.trend}><i>{arrow(s.trend)}</i> {s.tf}: {trendTxt(s.trend)}</li>
+                {s.level && <li className="lvl">📍 {s.level.kind === "support" ? T("Support", "حمایت") : T("Resistance", "مقاومت")} {fmt(s.level.price)} {s.level.state === "broken" ? T("broken", "شکسته شد") : T("retested", "ریتست")}</li>}
+                <li>🕯 {L(s.candle.name)}</li>
+                <li><i className="sg-vol"><u style={{ width: Math.min(100, (s.vol.ratio / 2) * 100) + "%" }} /></i> {L(s.vol.label)} ×{s.vol.ratio.toFixed(1)}</li>
+                <li>RSI <b>{s.rsi.toFixed(0)}</b> · SMA20 {s.sma.above20 ? "▲" : "▼"} SMA50 {s.sma.above50 ? "▲" : "▼"}</li>
+              </ul>
             </div>
-          );
-        })()}
-        {openMsg && <div className="ag-warn">{T("“" + openMsg + "” is not in this app's symbol list, so its chart cannot open here.", "«" + openMsg + "» در فهرست نمادهای این اپ نیست و چارتش اینجا باز نمی‌شود.")}</div>}
-        {!flat.length && <div className="empty">{loaded < universe.length ? T("Scanning… results appear as coins load.", "در حال اسکن… نتایج با لود شدن ارزها می‌آید.") : T("No coin matches this right now. Momentum setups are selective; try another timeframe or the Top 60 scan.", "فعلاً ارزی با این شرایط نیست. ستاپ‌های مومنتوم گزینشی‌اند؛ تایم‌فریم دیگر یا اسکن ۶۰ ارز برتر را امتحان کن.")}</div>}
-        <div className="ag-hits">
-          {flat.map(({ h, m }) => {
-            const st = STRATEGIES.find((v) => v.id === m.sid)!;
-            const inList = watch.includes(h.base);
-            return (
-              <article key={h.base + m.sid + m.side} className={"ag-hit " + m.side}>
-                <header>
-                  <b>{nm(h.base)}</b>
-                  <span className={"ag-badge " + m.side}>{m.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
-                  <em>{L(st.name)}</em>
-                  <span className="ag-q" title={T("Setup quality", "کیفیت ستاپ")}><i style={{ width: m.q + "%" }} />{m.q}</span>
-                </header>
-                <ul>{m.why.map((x, i) => <li key={i}>{L(x)}</li>)}</ul>
-                <dl className="ag-lv">
-                  <div><dt>{T("Entry", "ورود")}</dt><dd>{fmtPrice(m.entry)}</dd></div>
-                  <div className="s"><dt>{T("Stop", "حدضرر")}</dt><dd>{fmtPrice(m.stop)} <small>{m.riskPct.toFixed(1)}%</small></dd></div>
-                  <div className="t"><dt>1R</dt><dd>{fmtPrice(m.t[0])}</dd></div>
-                  <div className="t"><dt>2R</dt><dd>{fmtPrice(m.t[1])}</dd></div>
-                  <div className="t"><dt>3R</dt><dd>{fmtPrice(m.t[2])}</dd></div>
-                </dl>
-                <div className="ag-hitbtns">
-                  <button onClick={() => {
-                    const okOpen = p.onOpenChart?.(h.base, tf, { base: h.base, tf, side: m.side, sid: m.sid, entry: m.entry, stop: m.stop, t: m.t });
-                    setOpenMsg(okOpen === false ? h.base : "");
-                  }}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
-                  {!inList && <button className="secondary" onClick={() => setWatch([...watch, h.base])}>＋ {T("Watch", "دنبال کن")}</button>}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        <p className="muted ag-foot">{T("R = the distance from entry to stop. Stops and targets are sized from the coin's average candle range (ATR), so they adapt to volatility. These are screening ideas, not signals to follow blindly: always check the chart and size your risk.", "R یعنی فاصله‌ی ورود تا حدضرر. حدضرر و اهداف از میانگین دامنه‌ی کندل (ATR) هر ارز ساخته می‌شوند و با نوسان تطبیق پیدا می‌کنند. اینها ایده‌ی غربالگری‌اند، نه سیگنالی که کورکورانه دنبال شود: همیشه چارت را ببین و ریسکت را کنترل کن.")}</p>
-      </section>
-
-      <div className="ag-lower">
-        <section className="ag-rules">
-          <h3>{T("Pre-close alerts", "هشدار پیش از بسته‌شدن کندل")}</h3>
-          <p className="muted">{T("You get a notification with the analysis a few minutes before the candle closes. Works while this app is open in a browser tab or the desktop app.", "چند دقیقه پیش از بسته‌شدن کندل، اعلان همراه با تحلیل می‌گیری. تا وقتی اپ در یک تب مرورگر یا برنامه‌ی دسکتاپ باز باشد کار می‌کند.")}</p>
-          {rules.map((r) => (
-            <div className="ag-rule" key={r.id}>
-              <select value={r.base} onChange={(e) => patch(r.id, { base: e.target.value })} aria-label="Coin">
-                <option value="*">{T("All watched coins", "همه‌ی ارزهای فهرست")}</option>
-                {watch.map((w) => <option key={w} value={w}>{nm(w)}</option>)}
-              </select>
-              <select value={r.tf} onChange={(e) => patch(r.id, { tf: e.target.value })} aria-label="Timeframe">
-                {TF_LIST.map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
-              <select value={r.min} onChange={(e) => patch(r.id, { min: Number(e.target.value) })} aria-label="Minutes before">
-                {[1, 2, 3, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} {T("min before", "دقیقه قبل")}</option>)}
-              </select>
-              {r.base === "*" && (
-                <select value={r.minScore} onChange={(e) => patch(r.id, { minScore: Number(e.target.value) })} aria-label="Minimum score">
-                  <option value={0}>{T("any score", "هر امتیازی")}</option>
-                  <option value={25}>{T("score ≥ 25", "امتیاز ≥ ۲۵")}</option>
-                  <option value={50}>{T("score ≥ 50", "امتیاز ≥ ۵۰")}</option>
-                </select>
-              )}
-              <button className="secondary" onClick={() => setRules(rules.filter((x) => x.id !== r.id))} aria-label="Delete rule">✕</button>
-            </div>
-          ))}
-          <button className="secondary" onClick={addRule}>＋ {T("Add alert", "افزودن هشدار")}</button>{" "}
-          <button className="secondary" disabled={!detail} onClick={() => detail && fire(detail.base, detail.tf, detail.closeAt, "test" + Date.now(), 0)} title={T("Plays the real alert (sound, voice, notification) for the selected coin so you can hear what it says", "هشدار واقعی (صدا، گفتار، اعلان) را برای ارز انتخاب‌شده پخش می‌کند تا ببینی چه می‌گوید")}>▶ {T("Test alert now", "آزمایش هشدار")}</button>
-        </section>
-        <section className="ag-hist">
-          <h3>{T("Recent alerts", "هشدارهای اخیر")}</h3>
-          {!hist.length && <p className="muted">{T("None yet.", "هنوز هشداری نیامده.")}</p>}
-          {hist.slice(0, 8).map((h) => (
-            <button key={h.id} className="ag-h" onClick={() => { setSel(h.base); setTf(h.tf); }}>
-              <b>{h.title}</b>
-              <span>{h.body.split("\n")[0]}</span>
-              <em>{new Date(h.at).toLocaleString()}</em>
-            </button>
-          ))}
-        </section>
+            <details>
+              <summary>{T("Why this signal", "چرا این سیگنال")}</summary>
+              <ul>{s.why.map((w, i) => <li key={i}>{L(w)}</li>)}</ul>
+            </details>
+            <footer>
+              <span>{T("Entry", "ورود")} {fmt(s.entry)} · {T("Stop", "حد ضرر")} {fmt(s.stop)} ({s.riskPct.toFixed(1)}%) · 1R {fmt(s.t[0])} · 2R {fmt(s.t[1])} · 3R {fmt(s.t[2])}</span>
+              <button type="button" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
+            </footer>
+          </article>
+        ))}
       </div>
-      <p className="muted ag-foot">{T("Candle times follow UTC, like most exchanges. Scores are a summary of EMA trend, RSI, MACD, recent move, swing structure and the current candle; they describe what price is doing, not what it will do.", "زمان کندل‌ها مثل بیشتر صرافی‌ها بر اساس UTC است. امتیاز خلاصه‌ی روند EMA، RSI، MACD، حرکت اخیر، ساختار سقف و کف و کندل جاری است؛ توضیح می‌دهد قیمت چه می‌کند، نه اینکه چه خواهد کرد.")}</p>
+      {hist.length > 0 && (
+        <details className="sg-hist">
+          <summary>{T("Announcements", "اعلان‌های گذشته")} ({hist.length})</summary>
+          {hist.map((h) => <p key={h.at}><small>{new Date(h.at).toLocaleString()}</small> {fa ? h.fa : h.en}</p>)}
+        </details>
+      )}
+      <p className="sg-note">{T("Signals come from standard technical-analysis rules (trend, support/resistance breaks, candle shape, volume, RSI, SMA). They are leads to review, not advice.", "سیگنال‌ها از قواعد استاندارد تحلیل تکنیکال می‌آیند (روند، شکست حمایت/مقاومت، شکل کندل، حجم، RSI، SMA). فقط سرنخ برای بررسی‌اند، نه توصیه.")}</p>
     </div>
   );
 }

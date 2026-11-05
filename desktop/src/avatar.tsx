@@ -2,7 +2,6 @@
    It breathes, follows the pointer, blinks, and while an alert is being spoken its mouth is a bar equaliser and its antenna flashes. */
 import React, { useEffect, useRef, useState } from "react";
 
-const POS = "arcus.avatar.pos.v1", MIN = "arcus.avatar.min.v1";
 export type SpeakEvent = { on: boolean; text?: string };
 export const emitSpeaking = (d: SpeakEvent) => window.dispatchEvent(new CustomEvent("arcus:speaking", { detail: d }));
 export const emitPulse = () => window.dispatchEvent(new Event("arcus:pulse"));
@@ -153,17 +152,9 @@ function setupGl(canvas: HTMLCanvasElement) {
 export function AvatarHead() {
   const [text, setText] = useState("");
   const [talking, setTalking] = useState(false);
-  const [min, setMin] = useState(() => localStorage.getItem(MIN) === "1");
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(POS) || "null");
-    } catch {
-      return null;
-    }
-  });
+  const min = false;
   const cv = useRef<HTMLCanvasElement>(null);
   const st = useRef({ talking: false, amp: 0, talk: 0, mx: 0, my: 0, yaw: 0, pitch: 0 });
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   useEffect(() => {
     // an earlier version stored a photo of the user here; remove it
@@ -246,47 +237,10 @@ export function AvatarHead() {
     };
   }, [min]);
 
-  const place = pos || { x: -1, y: 70 };
-  const onDown = (e: PE) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    drag.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onMove = (e: PE) => {
-    if (!drag.current) return;
-    setPos({ x: Math.max(0, Math.min(window.innerWidth - 80, e.clientX - drag.current.dx)), y: Math.max(0, Math.min(window.innerHeight - 80, e.clientY - drag.current.dy)) });
-  };
-  const onUp = () => {
-    if (drag.current && pos) {
-      try {
-        localStorage.setItem(POS, JSON.stringify(pos));
-      } catch {}
-    }
-    drag.current = null;
-  };
-  const toggleMin = () => {
-    const n = !min;
-    setMin(n);
-    try {
-      localStorage.setItem(MIN, n ? "1" : "0");
-    } catch {}
-  };
-
   return (
-    <div
-      className={"av-wrap" + (talking ? " talking" : "") + (min ? " min" : "")}
-      style={place.x < 0 ? { top: place.y, right: 14 } : { top: place.y, left: place.x }}
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      role="img"
-      aria-label="Trading robot agent"
-    >
-      {!min && <canvas ref={cv} width={320} height={320} className="av-cv" />}
-      {min && <button className="av-chip" onClick={toggleMin} title="Show the agent" aria-label="Show the agent">🤖</button>}
-      {!min && <div className="av-btns"><button onClick={toggleMin} title="Minimise" aria-label="Minimise">–</button></div>}
-      {!min && text && <div className="av-say" dir="auto">{text}</div>}
+    <div className={"av-wrap av-fixed" + (talking ? " talking" : "")} role="img" aria-label="Trading robot agent">
+      <canvas ref={cv} width={192} height={192} className="av-cv" />
+      {text && <div className="av-say" dir="auto">{text}</div>}
     </div>
   );
 }
