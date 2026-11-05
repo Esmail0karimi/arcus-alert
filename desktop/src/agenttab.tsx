@@ -93,6 +93,8 @@ export function AgentTab(p: {
   const ctl = useRef<AbortController | null>(null);
   const done = useRef<Record<string, number>>({});
   const htfCache = useRef<Record<string, { at: number; rows: QCandle[] }>>({});
+  const sigsRef = useRef<Sig[]>([]);
+  sigsRef.current = sigs;
   const symsRef = useRef(p.syms);
   symsRef.current = p.syms;
   const fetchRef = useRef(p.fetchCandles);
@@ -161,14 +163,9 @@ export function AgentTab(p: {
   }, []);
 
   const announce = useCallback((tf: string, closeAt: number, res: Sig[], minLeft: number) => {
-    const n = res.length, lg = res.filter((x) => x.side === "long").length, sh = n - lg;
-    const top = res.slice().sort(rank).slice(0, 3);
-    const en = n
-      ? `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. ${n} signal${n === 1 ? "" : "s"}: ${lg} long, ${sh} short. Best: ${top.map((x) => `${x.base} ${x.side} grade ${x.grade}`).join(", ")}.`
-      : `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. No clear signal right now.`;
-    const faT = n
-      ? `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. ${n} سیگنال: ${lg} خرید و ${sh} فروش. بهترین‌ها: ${top.map((x) => `${FA_NAME[x.base] || x.base} ${x.side === "long" ? "خرید" : "فروش"} درجه ${x.grade}`).join("، ")}.`
-      : `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. فعلاً سیگنال واضحی نیست.`;
+    const n = res.length;
+    const en = `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. ${n ? `${n} signal${n === 1 ? " is" : "s are"} available from the latest scan.` : "No signals in the latest scan."}`;
+    const faT = `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. ${n ? `${n} سیگنال از اسکن اخیر موجود است.` : "در اسکن اخیر سیگنالی نبود."}`;
     speak("agent", { en, fa: faT });
     const lang = localStorage.getItem("arcus.news.lang") === "fa" || fa;
     sendNotification(lang ? "🧠 ایجنت · " + TFN[tf].fa : "🧠 Agent · " + TFN[tf].en, lang ? faT : en, "ag2-" + tf + closeAt);
@@ -192,12 +189,7 @@ export function AgentTab(p: {
       if (toClose <= mins * 60000 && toClose > 5000 && done.current[key] !== 2) {
         done.current[key] = 2;
         const minLeft = Math.max(1, Math.round(toClose / 60000));
-        const fresh = scanned && scanned.tf === tf && t - scanned.at < 150000 && scanned.live;
-        const go = fresh ? Promise.resolve(sigs.filter((x) => x.tf === tf)) : runScan(tf, true);
-        go.then((r) => announce(tf, closeAt, r, minLeft));
-      } else if (toClose <= (mins + 2) * 60000 && toClose > mins * 60000 && !done.current[key]) {
-        done.current[key] = 1;
-        runScan(tf, true);
+        announce(tf, closeAt, sigsRef.current.filter((x) => x.tf === tf), minLeft);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -279,7 +271,7 @@ export function AgentTab(p: {
         {on && nextClose && <span className="sg-cd" title={T("Next close", "بسته‌شدن بعدی")}>⏱ {nextClose.tf} · {left(nextClose.at, now)}</span>}
         <span className="sg-sp" />
         <button type="button" className="sg-go" disabled={!!prog} onClick={async () => { for (const tf of tfs) await runScan(tf, false); }}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
-        <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 3 signals: 2 long, 1 short.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۳ سیگنال: ۲ خرید و ۱ فروش." }} />
+        <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 4 signals are available from the latest scan.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۴ سیگنال از اسکن اخیر موجود است." }} />
         <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
       <div className="sg-sub">
