@@ -891,3 +891,20 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sg-jt{display:flex;flex-direction:column;gap:2px;margin:8px 0;max-width:560px}.sg-jt div{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:6px;padding:5px 8px;border-radius:8px;background:#0a1a2e;font-size:12px;font-variant-numeric:tabular-nums}.sg-jt .h{background:none;color:#6f86a3;font-size:10.5px;text-transform:uppercase}.sg-jt .tot{background:#10253c;font-weight:700}.sg-jt .g{color:#3ddc97}.sg-jt .r{color:#ff7a7a}
 .sg-warn{padding:2px 9px;border-radius:99px;background:rgba(255,154,74,.15);border:1px solid #ff9a4a;color:#ffb877;font-size:11px}
 .sg-size{margin:0;padding:6px 10px;border-radius:10px;background:#0c1f35;font-size:11.5px;color:#9fb5cf}.sg-size b{color:#fff}.sg-size small{color:#6f86a3}
+
+/* ---- slim collapsible rows ---- */
+.sg-list{grid-template-columns:1fr!important;gap:8px!important}
+.sg-card{padding:0!important;gap:0!important;border-radius:14px!important}
+.sg-card header{padding:8px 12px;cursor:pointer;gap:10px;min-height:52px}.sg-card header:hover{background:rgba(255,255,255,.03)}
+.sg-card header:focus-visible{outline:2px solid #00c9b5;outline-offset:-2px}
+.sg-card .sg-ring{width:34px;height:34px}
+.sg-card .sg-id{flex:0 0 auto;min-width:96px}.sg-card .sg-id b{font-size:14.5px}
+.sg-mini-b{display:inline-flex;gap:4px;font-size:12px;align-items:center}.sg-mini-b b{color:#3ddc97;font-size:11.5px}
+.sg-strs{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#8aa0bb;font-size:11.5px}
+.sg-chev{font-style:normal;color:#8aa0bb;font-size:13px}
+.sg-more{display:flex;flex-direction:column;gap:10px;padding:2px 14px 14px;border-top:1px solid #14283e;margin-top:0;animation:sgin .18s ease}
+.sg-more>*:first-child{margin-top:10px}
+@keyframes sgin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media(max-width:560px){.sg-strs{display:none}.sg-card .sg-id{min-width:0;flex:1}}
+@media(prefers-reduced-motion:reduce){.sg-more{animation:none}}
+.sg-min,.sg-nt{white-space:nowrap}.sg-nt input{width:auto;flex:none}.sg-sub{justify-content:flex-start}.sg-card .sg-id em{display:block}

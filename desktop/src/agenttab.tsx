@@ -125,6 +125,7 @@ export function AgentTab(p: {
   const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag2.hist", []));
   const [now, setNow] = useState(Date.now());
   const [msg, setMsg] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [perm, setPerm] = useState<string>(() => ("Notification" in window ? Notification.permission : "unsupported"));
   const ctl = useRef<AbortController | null>(null);
   const done = useRef<Record<string, number>>({});
@@ -214,7 +215,12 @@ export function AgentTab(p: {
                 } catch {}
               }
             }
-            const r = evaluate(s.symbol, s.base, tf, rows, h, htfTf, Date.now(), live);
+            let r = evaluate(s.symbol, s.base, tf, rows, h, htfTf, Date.now(), live);
+            const cur = rows[rows.length - 1], secN = TF_SEC[tf] || 1;
+            if (!live && cur && (cur.time + secN) * 1000 > Date.now()) {
+              // the candle that is still forming: if it already hit the stop or the first target, the idea is spent
+              r = r.filter((x) => (x.side === "long" ? cur.low > x.stop && cur.high < x.t[0] : cur.high < x.stop && cur.low > x.t[0])).map((x) => ({ ...x, price: cur.close }));
+            }
             if (!lowLiq) out.push(...r);
           }
         } catch {}
@@ -344,7 +350,9 @@ export function AgentTab(p: {
   const merged: Grp[] = useMemo(() => {
     const m = new Map<string, Sig[]>();
     for (const x of sigs) {
-      if (off.includes(x.strat.id)) continue;
+      if (off.includes(x.strat.id) || !tfs.includes(x.tf)) continue;
+      const secX = TF_SEC[x.tf] || 1;
+      if (now > (Math.floor(x.at / 1000 / secX) + 2) * secX * 1000) continue; // older than one candle: wait for the next scan
       const k = x.symbol + "|" + x.tf + "|" + x.side;
       const cur = m.get(k) || [];
       if (!cur.some((y) => y.strat.id === x.strat.id)) m.set(k, cur.concat(x));
@@ -355,7 +363,7 @@ export function AgentTab(p: {
         return { ...top, all: g, score: top.score + g.length - 1 } as Grp;
       })
       .sort(rank);
-  }, [sigs, off]);
+  }, [sigs, off, tfs, Math.floor(now / 30000)]);
   const counter = (x: Sig) => mktMode !== "off" && mkt != null && ((x.side === "long" && mkt === "down") || (x.side === "short" && mkt === "up"));
   const stats = useMemo(() => {
     const m: Record<string, { n: number; w: number; sum: number; open: number }> = {};
@@ -504,15 +512,19 @@ export function AgentTab(p: {
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       <div className="sg-list">
         {shown.map((s) => (
-          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "") + (isTop(s) ? " top" : "")}>
-            <header>
+          <article key={s.symbol + s.tf + s.side} className={"sg-card " + (openId === s.symbol + s.tf + s.side ? "open " : "") + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "") + (isTop(s) ? " top" : "")}>
+            <header role="button" tabIndex={0} aria-expanded={openId === s.symbol + s.tf + s.side} onClick={() => setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side)} onKeyDown={(e: any) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side))}>
               <Ring v={s.score} g={s.grade} />
               <div className="sg-id">
                 <b>{fa ? FA_NAME[s.base] || s.base : s.base} <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small></b>
                 <em>{fmt(s.price)}</em>
               </div>
               <span className={"sg-side " + s.side}>{s.side === "long" ? "▲ " + T("LONG", "خرید") : "▼ " + T("SHORT", "فروش")}</span>
+              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
+              <span className="sg-strs">{s.all.map((x) => L(x.strat.name)).join(" · ")}</span>
+              <i className="sg-chev">{openId === s.symbol + s.tf + s.side ? "▴" : "▾"}</i>
             </header>
+            {openId === s.symbol + s.tf + s.side && <div className="sg-more">
             <div className="sg-badges">
               {isTop(s) && <span className="sg-top">⭐ {T("Top signal", "سیگنال ممتاز")}</span>}
               {s.all.length > 1 && <span className="sg-multi">✅ {T(`${s.all.length} strategies confirm`, `${s.all.length} استراتژی تأیید کرده‌اند`)}</span>}
@@ -550,6 +562,7 @@ export function AgentTab(p: {
               <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
             <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
+            </div>}
           </article>
         ))}
       </div>
