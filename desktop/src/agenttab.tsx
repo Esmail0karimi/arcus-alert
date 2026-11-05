@@ -38,6 +38,8 @@ const sendNotification = (title: string, body: string, tag: string) => {
     else fall();
   } catch {}
 };
+export const isHot = (s: Sig) => s.grade !== "C" && s.vol.ratio >= 1.3;
+const rank = (a: Sig, b: Sig) => Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
 const fmt = (v: number) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
 const TFN: Record<string, { en: string; fa: string }> = { "15m": { en: "15-minute", fa: "۱۵ دقیقه‌ای" }, "1h": { en: "1-hour", fa: "یک‌ساعته" }, "4h": { en: "4-hour", fa: "۴ ساعته" }, "1d": { en: "daily", fa: "روزانه" } };
 
@@ -78,7 +80,7 @@ export function AgentTab(p: {
   const [on, setOn] = useState<boolean>(() => jget("arcus.ag2.on", false));
   const [tfs, setTfs] = useState<string[]>(() => jget("arcus.ag2.tfs", ["4h"]));
   const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
-  const [side, setSide] = useState<"all" | "long" | "short">("all");
+  const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
   const [sigs, setSigs] = useState<Sig[]>([]);
   const [prog, setProg] = useState<{ done: number; total: number; tf: string } | null>(null);
   const [scanned, setScanned] = useState<{ at: number; tf: string; n: number; live: boolean } | null>(null);
@@ -141,8 +143,8 @@ export function AgentTab(p: {
     };
     await Promise.all(Array.from({ length: 8 }, worker));
     if (c.signal.aborted) return out;
-    out.sort((a, b) => b.score - a.score);
-    setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort((a, b) => b.score - a.score));
+    out.sort(rank);
+    setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort(rank));
     setScanned({ at: Date.now(), tf, n: got, live });
     setProg(null);
     return out;
@@ -150,7 +152,7 @@ export function AgentTab(p: {
 
   const announce = useCallback((tf: string, closeAt: number, res: Sig[], minLeft: number) => {
     const n = res.length, lg = res.filter((x) => x.side === "long").length, sh = n - lg;
-    const top = res.slice(0, 3);
+    const top = res.slice().sort(rank).slice(0, 3);
     const en = n
       ? `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. ${n} signal${n === 1 ? "" : "s"}: ${lg} long, ${sh} short. Best: ${top.map((x) => `${x.base} ${x.side} grade ${x.grade}`).join(", ")}.`
       : `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. No clear signal right now.`;
@@ -208,7 +210,7 @@ export function AgentTab(p: {
     p.syms.forEach((s) => (m[s.ex] = (m[s.ex] || 0) + 1));
     return Object.entries(m);
   }, [p.syms]);
-  const shown = sigs.filter((x) => side === "all" || x.side === side);
+  const shown = sigs.filter((x) => side === "all" || (side === "hot" ? isHot(x) : x.side === side));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -257,8 +259,8 @@ export function AgentTab(p: {
       <div className="sg-head">
         <b>{T("Signals", "سیگنال‌ها")} <small>{shown.length}</small></b>
         <span className="sg-chips">
-          {(["all", "long", "short"] as const).map((k) => (
-            <button key={k} type="button" className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "all" ? T("All", "همه") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
+          {(["all", "hot", "long", "short"] as const).map((k) => (
+            <button key={k} type="button" className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "all" ? T("All", "همه") : k === "hot" ? "🔥 " + T("Momentum", "مومنتوم") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
           ))}
         </span>
         {scanned && <small className="sg-when">{T("Last scan", "آخرین اسکن")} {new Date(scanned.at).toLocaleTimeString()} · {scanned.tf} · {scanned.n} {T("symbols", "نماد")}{scanned.live ? " · " + T("candle still forming", "کندل هنوز بسته نشده") : ""}</small>}
@@ -267,9 +269,10 @@ export function AgentTab(p: {
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       <div className="sg-list">
         {shown.map((s) => (
-          <article key={s.symbol + s.tf} className={"sg-card " + (s.side === "long" ? "up" : "dn")}>
+          <article key={s.symbol + s.tf} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) ? " hot" : "")}>
             <header>
               <b>{fa ? FA_NAME[s.base] || s.base : s.base}</b>
+              {isHot(s) && <span className="sg-hot">🔥 {T("Strong + volume", "قوی + حجم")}</span>}
               <span className={"sg-side " + s.side}>{s.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
               <span className={"sg-grade g" + s.grade} title={T("Signal grade", "درجه‌ی سیگنال")}>{s.grade}</span>
               <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small>
