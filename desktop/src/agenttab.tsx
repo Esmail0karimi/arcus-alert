@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bi, FA_NAME, TF_SEC, left } from "./agent";
 import { setLang, useLang } from "./lang";
-import { Sig, evaluate } from "./signals";
+import { STRAT_LIST, Sig, evaluate } from "./signals";
 import { VoiceControl, speak } from "./voice";
 import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
@@ -81,6 +81,7 @@ export function AgentTab(p: {
   const [tfs, setTfs] = useState<string[]>(() => jget("arcus.ag2.tfs", ["4h"]));
   const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
   const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
+  const [strat, setStrat] = useState<string>("all");
   const [sigs, setSigs] = useState<Sig[]>([]);
   const [prog, setProg] = useState<{ done: number; total: number; tf: string } | null>(null);
   const [scanned, setScanned] = useState<{ at: number; tf: string; n: number; live: boolean } | null>(null);
@@ -134,7 +135,7 @@ export function AgentTab(p: {
               }
             }
             const r = evaluate(s.symbol, s.base, tf, rows, h, htfTf, Date.now(), live);
-            if (r) out.push(r);
+            out.push(...r);
           }
         } catch {}
         finished++;
@@ -210,7 +211,7 @@ export function AgentTab(p: {
     p.syms.forEach((s) => (m[s.ex] = (m[s.ex] || 0) + 1));
     return Object.entries(m);
   }, [p.syms]);
-  const shown = sigs.filter((x) => side === "all" || (side === "hot" ? isHot(x) : x.side === side));
+  const shown = sigs.filter((x) => (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.strat.id === strat));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -263,13 +264,17 @@ export function AgentTab(p: {
             <button key={k} type="button" className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "all" ? T("All", "همه") : k === "hot" ? "🔥 " + T("Momentum", "مومنتوم") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
           ))}
         </span>
+        <select className="sg-strat" value={strat} onChange={(e) => setStrat(e.target.value)} aria-label="Strategy">
+          <option value="all">{T("All strategies", "همه استراتژی‌ها")}</option>
+          {STRAT_LIST.map((x) => <option key={x.id} value={x.id}>{L(x.name)} ({sigs.filter((g) => g.strat.id === x.id).length})</option>)}
+        </select>
         {scanned && <small className="sg-when">{T("Last scan", "آخرین اسکن")} {new Date(scanned.at).toLocaleTimeString()} · {scanned.tf} · {scanned.n} {T("symbols", "نماد")}{scanned.live ? " · " + T("candle still forming", "کندل هنوز بسته نشده") : ""}</small>}
       </div>
       {msg && <p className="sg-msg">{msg}</p>}
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       <div className="sg-list">
         {shown.map((s) => (
-          <article key={s.symbol + s.tf} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) ? " hot" : "")}>
+          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) ? " hot" : "")}>
             <header>
               <b>{fa ? FA_NAME[s.base] || s.base : s.base}</b>
               {isHot(s) && <span className="sg-hot">🔥 {T("Strong + volume", "قوی + حجم")}</span>}
@@ -278,6 +283,7 @@ export function AgentTab(p: {
               <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small>
               <em>{fmt(s.price)}</em>
             </header>
+            <p className={"sg-strat-l " + s.strat.id}><b>🏷 {L(s.strat.name)}</b> <span>{L(s.strat.basis)}</span></p>
             <div className="sg-body">
               <Mini s={s} />
               <ul className="sg-facts">
