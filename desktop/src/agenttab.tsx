@@ -83,6 +83,7 @@ export function AgentTab(p: {
   const [tfs, setTfs] = useState<string[]>(() => jget("arcus.ag2.tfs", ["4h"]));
   const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
   const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
+  const [off, setOff] = useState<string[]>(() => jget("arcus.ag2.off", []));
   const [strat, setStrat] = useState<string>("all");
   const [sigs, setSigs] = useState<Sig[]>(() => jget<Sig[]>("arcus.ag2.sigs", []));
   const [every, setEvery] = useState<number>(() => jget("arcus.ag2.every", 60));
@@ -106,6 +107,9 @@ export function AgentTab(p: {
   useEffect(() => { jset("arcus.ag2.tfs", tfs); }, [tfs]);
   useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
   useEffect(() => { jset("arcus.ag2.every", every); }, [every]);
+  useEffect(() => { jset("arcus.ag2.off", off); }, [off]);
+  const offRef = useRef<string[]>(off);
+  offRef.current = off;
   useEffect(() => { jset("arcus.ag2.sigs", sigs.slice(0, 150)); }, [sigs]);
   useEffect(() => { jset("arcus.ag2.scanned", scanned); }, [scanned]);
   useEffect(() => {
@@ -191,7 +195,7 @@ export function AgentTab(p: {
       if (toClose <= mins * 60000 && toClose > 5000 && done.current[key] !== 2) {
         done.current[key] = 2;
         const minLeft = Math.max(1, Math.round(toClose / 60000));
-        announce(tf, closeAt, sigsRef.current.filter((x) => x.tf === tf), minLeft);
+        announce(tf, closeAt, sigsRef.current.filter((x) => x.tf === tf && !offRef.current.includes(x.strat.id)), minLeft);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,8 +242,10 @@ export function AgentTab(p: {
   const merged: Grp[] = useMemo(() => {
     const m = new Map<string, Sig[]>();
     for (const x of sigs) {
+      if (off.includes(x.strat.id)) continue;
       const k = x.symbol + "|" + x.tf + "|" + x.side;
-      m.set(k, (m.get(k) || []).concat(x));
+      const cur = m.get(k) || [];
+      if (!cur.some((y) => y.strat.id === x.strat.id)) m.set(k, cur.concat(x));
     }
     return Array.from(m.values())
       .map((g) => {
@@ -247,7 +253,7 @@ export function AgentTab(p: {
         return { ...top, all: g, score: top.score + g.length - 1 } as Grp;
       })
       .sort(rank);
-  }, [sigs]);
+  }, [sigs, off]);
   const shown = merged.filter((x) => (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
@@ -294,6 +300,17 @@ export function AgentTab(p: {
         {on && perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
         {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
       </div>
+      <details className="sg-set">
+        <summary>⚙ {T("Strategies on / off", "فعال / غیرفعال کردن استراتژی‌ها")} ({STRAT_LIST.length - off.length}/{STRAT_LIST.length})</summary>
+        <div className="sg-set-list">
+          {STRAT_LIST.map((x) => (
+            <label key={x.id} className={"sg-set-row " + x.id}>
+              <input type="checkbox" checked={!off.includes(x.id)} onChange={(e) => setOff((o) => (e.target.checked ? o.filter((y) => y !== x.id) : [...o, x.id]))} />
+              <span><b>{L(x.name)}</b><small>{L(x.basis)}</small></span>
+            </label>
+          ))}
+        </div>
+      </details>
       {prog && (
         <div className="sg-prog" role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done}>
           <i style={{ width: (prog.done / Math.max(1, prog.total)) * 100 + "%" }} />
@@ -309,7 +326,7 @@ export function AgentTab(p: {
         </span>
         <select className="sg-strat" value={strat} onChange={(e) => setStrat(e.target.value)} aria-label="Strategy">
           <option value="all">{T("All strategies", "همه استراتژی‌ها")}</option>
-          {STRAT_LIST.map((x) => <option key={x.id} value={x.id}>{L(x.name)} ({sigs.filter((g) => g.strat.id === x.id).length})</option>)}
+          {STRAT_LIST.filter((x) => !off.includes(x.id)).map((x) => <option key={x.id} value={x.id}>{L(x.name)} ({sigs.filter((g) => g.strat.id === x.id).length})</option>)}
         </select>
         {scanned && <small className="sg-when">{T("Last scan", "آخرین اسکن")} {new Date(scanned.at).toLocaleTimeString()} · {scanned.tf} · {scanned.n} {T("symbols", "نماد")}{scanned.live ? " · " + T("candle still forming", "کندل هنوز بسته نشده") : ""}</small>}
       </div>

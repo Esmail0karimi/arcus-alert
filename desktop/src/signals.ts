@@ -89,6 +89,9 @@ const STRATS = {
   dow: { id: "dow", name: b("Dow theory", "تئوری داو"), basis: b("Higher highs and higher lows (or lower/lower); after the new swing price nears the last extreme while volume grows", "سقف و کف بالاتر (یا پایین‌تر)؛ بعد از کف/سقف جدید، قیمت به آخرین نقطه‌ی حدی نزدیک می‌شود و حجم زیاد می‌شود") },
   pul: { id: "pul", name: b("Pullback", "پولبک"), basis: b("Trend continuation: price dips to the SMA20/SMA50 zone and turns back with the trend", "ادامه‌ی روند: قیمت تا ناحیه‌ی SMA20/SMA50 برمی‌گردد و دوباره هم‌جهت روند می‌شود") },
   vsg: { id: "vsg", name: b("Volume surge", "افزایش ناگهانی حجم"), basis: b("Volume jumps to 2.5× its average or more while price moves with it — someone big is active", "حجم ناگهان به ۲.۵ برابر میانگین یا بیشتر می‌رسد و قیمت هم همراهش حرکت می‌کند — بازیگر بزرگی وارد شده"), },
+  rct: { id: "rct", name: b("Reaction at a level", "ری‌اکشن در سطح"), basis: b("Price returns to a level that held before (2+ touches) and reacts with a rejection candle", "قیمت به سطحی که قبلاً چند بار نگه داشته برمی‌گردد و با کندل پس‌زده‌شدن واکنش نشان می‌دهد") },
+  pa: { id: "pa", name: b("Price action", "پرایس اکشن"), basis: b("Pure price patterns: inside-bar breakout, double bottom / double top with a neckline break", "الگوهای خالص قیمت: شکست اینساید بار، دوقلوی کف / سقف با شکست خط گردن") },
+  ell: { id: "ell", name: b("Elliott wave (simplified)", "الیوت (ساده‌شده)"), basis: b("Wave 4 correction ends after a 5-wave-style impulse (wave 2 holds, wave 3 beyond wave 1, no overlap) — start of wave 5. Elliott is subjective; treat as a lead", "پایان موج ۴ بعد از ساختار پنج‌موجی (موج ۲ نگه داشته، موج ۳ فراتر از موج ۱، بدون همپوشانی) — شروع موج ۵. الیوت ذهنی است؛ فقط سرنخ"), },
   mom: { id: "mom", name: b("Momentum candle", "کندل مومنتوم"), basis: b("Engulfing / marubozu in the trend direction on above-average volume", "اینگالفینگ یا کندل بلند در جهت روند با حجم بالای میانگین") },
 };
 export const STRAT_LIST = Object.values(STRATS);
@@ -173,6 +176,61 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
   if (ratio >= 1.3 && !candle.name.en.startsWith("Ordinary") && !candle.name.en.startsWith("Doji") && !candle.name.en.startsWith("Hammer") && !candle.name.en.startsWith("Shooting")) {
     if (candle.dir === "bull" && trend !== "down") hits.push({ side: "long", id: "mom", bonus: 2, level: null, why: [b(`${candle.name.en} on ${ratio.toFixed(1)}× volume`, `${candle.name.fa} با حجم ${ratio.toFixed(1)} برابر`)] });
     if (candle.dir === "bear" && trend !== "up") hits.push({ side: "short", id: "mom", bonus: 2, level: null, why: [b(`${candle.name.en} on ${ratio.toFixed(1)}× volume`, `${candle.name.fa} با حجم ${ratio.toFixed(1)} برابر`)] });
+  }
+
+  // 7) reaction at a level that held before
+  const near = atr * 0.5;
+  const rctS = supL.filter((x) => x.touches >= 2 && last.low <= x.p + atr * 0.2 && last.low >= x.p - near && last.close > x.p && last.close > last.open).sort((a, c) => c.touches - a.touches)[0];
+  const rctR = resL.filter((x) => x.touches >= 2 && last.high >= x.p - atr * 0.2 && last.high <= x.p + near && last.close < x.p && last.close < last.open).sort((a, c) => c.touches - a.touches)[0];
+  const wickLo = Math.min(last.open, last.close) - last.low, wickUp = last.high - Math.max(last.open, last.close), bodyL = Math.abs(last.close - last.open);
+  if (rctS && wickLo >= bodyL * 0.7)
+    hits.push({ side: "long", id: "rct", bonus: 3, level: { kind: "support", price: rctS.p, state: "retest" }, why: [b(`Price touched support ${fmtp(rctS.p)} (held ${rctS.touches} times before) and bounced with a rejection candle`, `قیمت به حمایت ${fmtp(rctS.p)} (قبلاً ${rctS.touches} بار نگه داشته) رسید و با کندل پس‌زده‌شدن برگشت`)] });
+  if (rctR && wickUp >= bodyL * 0.7)
+    hits.push({ side: "short", id: "rct", bonus: 3, level: { kind: "resistance", price: rctR.p, state: "retest" }, why: [b(`Price touched resistance ${fmtp(rctR.p)} (held ${rctR.touches} times before) and was rejected`, `قیمت به مقاومت ${fmtp(rctR.p)} (قبلاً ${rctR.touches} بار نگه داشته) رسید و پس زده شد`)] });
+
+  // 8) price action: inside-bar breakout, double bottom / top
+  const pp = rows[n - 3];
+  if (pp && prev.high <= pp.high && prev.low >= pp.low) {
+    if (last.close > pp.high) hits.push({ side: "long", id: "pa", bonus: 2, level: null, why: [b("Inside bar (compression) broke upward on a close", "اینساید بار (فشردگی) با بسته‌شدن کندل رو به بالا شکست")] });
+    if (last.close < pp.low) hits.push({ side: "short", id: "pa", bonus: 2, level: null, why: [b("Inside bar (compression) broke downward on a close", "اینساید بار (فشردگی) با بسته‌شدن کندل رو به پایین شکست")] });
+  }
+  if (pr.lo.length >= 2) {
+    const [a1, a2] = pr.lo.slice(-2);
+    const neck = Math.max(...rec.slice(a1.i, a2.i + 1).map((r) => r.high));
+    if (Math.abs(a1.p - a2.p) <= atr * 0.4 && a2.i - a1.i >= 5 && prev.close <= neck && last.close > neck)
+      hits.push({ side: "long", id: "pa", bonus: 3, level: { kind: "resistance", price: neck, state: "broken" }, why: [b(`Double bottom (${fmtp(a1.p)} / ${fmtp(a2.p)}) — neckline ${fmtp(neck)} broken up`, `کف دوقلو (${fmtp(a1.p)} / ${fmtp(a2.p)}) — خط گردن ${fmtp(neck)} به بالا شکست`)] });
+  }
+  if (pr.hi.length >= 2) {
+    const [a1, a2] = pr.hi.slice(-2);
+    const neck = Math.min(...rec.slice(a1.i, a2.i + 1).map((r) => r.low));
+    if (Math.abs(a1.p - a2.p) <= atr * 0.4 && a2.i - a1.i >= 5 && prev.close >= neck && last.close < neck)
+      hits.push({ side: "short", id: "pa", bonus: 3, level: { kind: "support", price: neck, state: "broken" }, why: [b(`Double top (${fmtp(a1.p)} / ${fmtp(a2.p)}) — neckline ${fmtp(neck)} broken down`, `سقف دوقلو (${fmtp(a1.p)} / ${fmtp(a2.p)}) — خط گردن ${fmtp(neck)} به پایین شکست`)] });
+  }
+
+  // 9) simplified Elliott: wave-4 correction finished, wave 5 starting
+  {
+    type P = { i: number; p: number; k: "h" | "l" };
+    const pts: P[] = [...pr.hi.map((x): P => ({ ...x, k: "h" })), ...pr.lo.map((x): P => ({ ...x, k: "l" }))].sort((a, c) => a.i - c.i);
+    const alt: P[] = [];
+    for (const x of pts) {
+      const t = alt[alt.length - 1];
+      if (!t || t.k !== x.k) alt.push(x);
+      else if ((x.k === "h" && x.p > t.p) || (x.k === "l" && x.p < t.p)) alt[alt.length - 1] = x;
+    }
+    const q = alt.slice(-5);
+    if (q.length === 5) {
+      const [p0, p1, p2, p3, p4] = q;
+      if (p0.k === "l" && p1.k === "h" && p2.p > p0.p && p3.p > p1.p && p3.p - p2.p >= (p1.p - p0.p) * 0.9 && p4.p > p1.p) {
+        const ret = (p3.p - p4.p) / (p3.p - p2.p);
+        if (ret >= 0.2 && ret <= 0.6 && last.close > last.open && last.close > prev.high && last.low >= p4.p - atr * 0.3)
+          hits.push({ side: "long", id: "ell", bonus: 3, level: null, why: [b(`Impulse up (wave 3 ${fmtp(p3.p)} beyond wave 1 ${fmtp(p1.p)}); wave 4 pulled back ${(ret * 100).toFixed(0)}% to ${fmtp(p4.p)} without overlapping wave 1; price turning up = wave 5 start`, `ایمپالس صعودی (موج ۳ ${fmtp(p3.p)} فراتر از موج ۱ ${fmtp(p1.p)})؛ موج ۴ ${(ret * 100).toFixed(0)}٪ تا ${fmtp(p4.p)} اصلاح شد بدون همپوشانی با موج ۱؛ برگشت قیمت = شروع موج ۵`)] });
+      }
+      if (p0.k === "h" && p1.k === "l" && p2.p < p0.p && p3.p < p1.p && p2.p - p3.p >= (p0.p - p1.p) * 0.9 && p4.p < p1.p) {
+        const ret = (p4.p - p3.p) / (p2.p - p3.p);
+        if (ret >= 0.2 && ret <= 0.6 && last.close < last.open && last.close < prev.low && last.high <= p4.p + atr * 0.3)
+          hits.push({ side: "short", id: "ell", bonus: 3, level: null, why: [b(`Impulse down (wave 3 ${fmtp(p3.p)} beyond wave 1 ${fmtp(p1.p)}); wave 4 bounced ${(ret * 100).toFixed(0)}% to ${fmtp(p4.p)} without overlap; price turning down = wave 5 start`, `ایمپالس نزولی (موج ۳ ${fmtp(p3.p)} فراتر از موج ۱ ${fmtp(p1.p)})؛ موج ۴ ${(ret * 100).toFixed(0)}٪ تا ${fmtp(p4.p)} برگشت بدون همپوشانی؛ برگشت قیمت = شروع موج ۵`)] });
+      }
+    }
   }
 
   // 6) sudden volume surge with a real price move

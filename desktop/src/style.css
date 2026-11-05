@@ -852,3 +852,8 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sg-card.multi{border-color:#3ddc97;box-shadow:0 0 0 1px rgba(61,220,151,.45),0 6px 22px rgba(61,220,151,.16);background:linear-gradient(180deg,rgba(61,220,151,.12),#0a1a2e 55%)}
 
 .sg-strat-l.vsg{border-color:#ff6bd6}
+
+.sg-strat-l.rct{border-color:#5ee7ff}.sg-strat-l.pa{border-color:#ffd166}.sg-strat-l.ell{border-color:#b388ff}
+.sg-set{margin:6px 4px;font-size:12.5px;color:#9fb5cf}.sg-set summary{cursor:pointer;color:#cfe0f2}
+.sg-set-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-top:8px}
+.sg-set-row{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid #1c3048;border-radius:10px;background:#0a1a2e;cursor:pointer}.sg-set-row b{display:block;color:#fff}.sg-set-row small{display:block;color:#8aa0bb;line-height:1.45}
