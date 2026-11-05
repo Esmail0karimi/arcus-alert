@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Bi, FA_NAME, TF_SEC, left } from "./agent";
 import { setLang, useLang } from "./lang";
 import { STRAT_LIST, Sig, evaluate } from "./signals";
-import { VoiceControl, speak } from "./voice";
+import { VoiceControl, speak, chime, getVoice } from "./voice";
 import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
@@ -40,33 +40,54 @@ const sendNotification = (title: string, body: string, tag: string) => {
 };
 export const isHot = (s: Sig) => s.grade !== "C" && s.vol.ratio >= 1.3;
 type Grp = Sig & { all: Sig[] };
+export const isTop = (g: { all?: Sig[]; score: number; vol: { ratio: number } }) => (nOf(g) > 1 && g.score >= 7) || (g.score >= 8 && g.vol.ratio >= 1.3);
 const nOf = (g: any): number => g.all?.length || 1;
-const rank = (a: Sig, b: Sig) => Number(nOf(b) > 1) - Number(nOf(a) > 1) || nOf(b) - nOf(a) || Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
+const rank = (a: Sig, b: Sig) => Number(isTop(b as any)) - Number(isTop(a as any)) || Number(nOf(b) > 1) - Number(nOf(a) > 1) || nOf(b) - nOf(a) || Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
 const fmt = (v: number) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
+function Ring({ v, g }: { v: number; g: string }) {
+  const p = Math.max(0, Math.min(1, v / 10)), r = 15, c = 2 * Math.PI * r;
+  return (
+    <svg className={"sg-ring g" + g} viewBox="0 0 40 40" aria-label={"score " + v}>
+      <circle cx="20" cy="20" r={r} fill="none" stroke="#17304a" strokeWidth="4" />
+      <circle cx="20" cy="20" r={r} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${c * p} ${c}`} transform="rotate(-90 20 20)" />
+      <text x="20" y="24.5" textAnchor="middle" fontSize="13" fontWeight="800" fill="currentColor">{g}</text>
+    </svg>
+  );
+}
 const TFN: Record<string, { en: string; fa: string }> = { "15m": { en: "15-minute", fa: "۱۵ دقیقه‌ای" }, "1h": { en: "1-hour", fa: "یک‌ساعته" }, "4h": { en: "4-hour", fa: "۴ ساعته" }, "1d": { en: "daily", fa: "روزانه" } };
 
 function Mini({ s }: { s: Sig }) {
   const bars = s.bars;
-  const vals = bars.flatMap((x) => [x[1], x[2]]).concat([s.stop, s.entry, s.t[0]]);
+  const vals = bars.flatMap((x) => [x[1], x[2]]).concat([s.stop, s.entry, s.t[1]]);
   if (s.level) vals.push(s.level.price);
-  const hi = Math.max(...vals), lo = Math.min(...vals), W = 220, H = 74, bw = W / bars.length;
-  const y = (v: number) => 4 + (1 - (v - lo) / (hi - lo || 1)) * (H - 8);
-  const line = (v: number, c: string, d = "3 3") => <line x1="0" x2={W} y1={y(v)} y2={y(v)} stroke={c} strokeDasharray={d} strokeWidth="1" />;
+  const hi = Math.max(...vals), lo = Math.min(...vals), W = 280, H = 110, padR = 46, cw = W - padR, bw = cw / bars.length;
+  const y = (v: number) => 6 + (1 - (v - lo) / (hi - lo || 1)) * (H - 12);
+  const zone = (a: number, c: number, col: string) => <rect x="0" width={cw} y={Math.min(y(a), y(c))} height={Math.abs(y(a) - y(c))} fill={col} />;
+  const tag = (v: number, c: string, t: string, d = "3 3") => (
+    <g>
+      <line x1="0" x2={cw} y1={y(v)} y2={y(v)} stroke={c} strokeDasharray={d} strokeWidth="1" opacity=".9" />
+      <text x={cw + 4} y={y(v) + 3} fill={c} fontSize="9" fontWeight="700">{t}</text>
+    </g>
+  );
+  const lastB = bars[bars.length - 1];
   return (
     <svg className="sg-mini" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
-      {s.level && line(s.level.price, "#f2c94c", "5 3")}
-      {line(s.entry, "#00dcd2")}
-      {line(s.stop, "#ff5c5c")}
-      {line(s.t[1], "#3ddc97")}
-      {bars.map((b, i) => {
-        const up = b[3] >= b[0], c = up ? "#3ddc97" : "#ff5c5c", x = i * bw + bw / 2;
+      {zone(s.entry, s.t[2], "rgba(61,220,151,.10)")}
+      {zone(s.entry, s.stop, "rgba(255,92,92,.12)")}
+      {s.level && tag(s.level.price, "#f2c94c", s.level.kind === "support" ? "S" : "R", "5 3")}
+      {tag(s.entry, "#00dcd2", "E")}
+      {tag(s.stop, "#ff5c5c", "SL")}
+      {tag(s.t[1], "#3ddc97", "2R")}
+      {bars.map((c, i) => {
+        const up = c[3] >= c[0], col = up ? "#3ddc97" : "#ff5c5c", x = i * bw + bw / 2;
         return (
           <g key={i}>
-            <line x1={x} x2={x} y1={y(b[1])} y2={y(b[2])} stroke={c} strokeWidth="1" />
-            <rect x={x - bw * 0.32} width={bw * 0.64} y={Math.min(y(b[0]), y(b[3]))} height={Math.max(1, Math.abs(y(b[0]) - y(b[3])))} fill={c} />
+            <line x1={x} x2={x} y1={y(c[1])} y2={y(c[2])} stroke={col} strokeWidth="1" />
+            <rect x={x - bw * 0.34} width={bw * 0.68} y={Math.min(y(c[0]), y(c[3]))} height={Math.max(1, Math.abs(y(c[0]) - y(c[3])))} fill={col} />
           </g>
         );
       })}
+      <circle cx={(bars.length - 0.5) * bw} cy={y(lastB[3])} r="3.2" fill="#fff" stroke={s.side === "long" ? "#3ddc97" : "#ff5c5c"} strokeWidth="1.5" />
     </svg>
   );
 }
@@ -84,6 +105,7 @@ export function AgentTab(p: {
   const [mins, setMins] = useState<number>(() => jget("arcus.ag2.min", 2));
   const [side, setSide] = useState<"all" | "hot" | "long" | "short">("all");
   const [off, setOff] = useState<string[]>(() => jget("arcus.ag2.off", []));
+  const [notifyTop, setNotifyTop] = useState<boolean>(() => jget("arcus.ag2.notifyTop", true));
   const [strat, setStrat] = useState<string>("all");
   const [sigs, setSigs] = useState<Sig[]>(() => jget<Sig[]>("arcus.ag2.sigs", []));
   const [every, setEvery] = useState<number>(() => jget("arcus.ag2.every", 60));
@@ -108,6 +130,9 @@ export function AgentTab(p: {
   useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
   useEffect(() => { jset("arcus.ag2.every", every); }, [every]);
   useEffect(() => { jset("arcus.ag2.off", off); }, [off]);
+  useEffect(() => { jset("arcus.ag2.notifyTop", notifyTop); }, [notifyTop]);
+  const notifyRef = useRef(notifyTop);
+  notifyRef.current = notifyTop;
   const offRef = useRef<string[]>(off);
   offRef.current = off;
   useEffect(() => { jset("arcus.ag2.sigs", sigs.slice(0, 150)); }, [sigs]);
@@ -165,6 +190,31 @@ export function AgentTab(p: {
     setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort(rank));
     setScanned({ at: Date.now(), tf, n: got, live });
     setProg(null);
+    if (!live && notifyRef.current) {
+      // very good signals (several strategies agree, or grade A with heavy volume) -> one notification per candle
+      const g = new Map<string, Sig[]>();
+      for (const x of out) if (!offRef.current.includes(x.strat.id)) g.set(x.symbol + "|" + x.side, (g.get(x.symbol + "|" + x.side) || []).concat(x));
+      const sec = TF_SEC[tf] || 1, bucket = Math.floor(Date.now() / 1000 / sec);
+      const seen = jget<string[]>("arcus.ag2.notified", []);
+      const fresh: { base: string; side: string; n: number }[] = [];
+      for (const [k, arr] of g) {
+        const top = arr.slice().sort((a, b) => b.score - a.score)[0];
+        const grp = { all: arr, score: top.score + arr.length - 1, vol: top.vol };
+        const id = k + "|" + tf + "|" + bucket;
+        if (isTop(grp) && !seen.includes(id)) {
+          seen.push(id);
+          fresh.push({ base: top.base, side: top.side, n: arr.length });
+        }
+      }
+      if (fresh.length) {
+        jset("arcus.ag2.notified", seen.slice(-300));
+        const fa2 = localStorage.getItem("arcus.news.lang") === "fa";
+        const line = (f: { base: string; side: string; n: number }) => (fa2 ? `${FA_NAME[f.base] || f.base} ${f.side === "long" ? "خرید" : "فروش"}${f.n > 1 ? ` (${f.n} استراتژی)` : ""}` : `${f.base} ${f.side}${f.n > 1 ? ` (${f.n} strategies)` : ""}`);
+        const body = fresh.slice(0, 5).map(line).join(" · ") + (fresh.length > 5 ? " …" : "");
+        sendNotification((fa2 ? "⭐ سیگنال ممتاز " : "⭐ Top signal ") + tf, (fa2 ? "حتماً بررسی کن: " : "Worth checking: ") + body, "ag2-top-" + tf + bucket);
+        chime("soft", getVoice("agent").vol);
+      }
+    }
     return out;
   }, []);
 
@@ -297,7 +347,8 @@ export function AgentTab(p: {
       </div>
       <div className="sg-sub">
         <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
-        {on && perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
+        <label className="sg-nt"><input type="checkbox" checked={notifyTop} onChange={(e) => setNotifyTop(e.target.checked)} /> ⭐ {T("Notify me about top signals", "نوتیف برای سیگنال‌های ممتاز")}</label>
+        {perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
         {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
       </div>
       <details className="sg-set">
@@ -334,38 +385,46 @@ export function AgentTab(p: {
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       <div className="sg-list">
         {shown.map((s) => (
-          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "")}>
+          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "") + (isTop(s) ? " top" : "")}>
             <header>
-              <b>{fa ? FA_NAME[s.base] || s.base : s.base}</b>
+              <Ring v={s.score} g={s.grade} />
+              <div className="sg-id">
+                <b>{fa ? FA_NAME[s.base] || s.base : s.base} <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small></b>
+                <em>{fmt(s.price)}</em>
+              </div>
+              <span className={"sg-side " + s.side}>{s.side === "long" ? "▲ " + T("LONG", "خرید") : "▼ " + T("SHORT", "فروش")}</span>
+            </header>
+            <div className="sg-badges">
+              {isTop(s) && <span className="sg-top">⭐ {T("Top signal", "سیگنال ممتاز")}</span>}
               {s.all.length > 1 && <span className="sg-multi">✅ {T(`${s.all.length} strategies confirm`, `${s.all.length} استراتژی تأیید کرده‌اند`)}</span>}
               {isHot(s) && <span className="sg-hot">🔥 {T("Strong + volume", "قوی + حجم")}</span>}
-              <span className={"sg-side " + s.side}>{s.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
-              <span className={"sg-grade g" + s.grade} title={T("Signal grade", "درجه‌ی سیگنال")}>{s.grade}</span>
-              <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small>
-              <em>{fmt(s.price)}</em>
-            </header>
+              {s.all.map((x) => <span key={x.strat.id} className={"sg-tag " + x.strat.id} title={L(x.strat.basis)}>🏷 {L(x.strat.name)}</span>)}
+            </div>
+            <Mini s={s} />
+            <div className="sg-chipsrow">
+              {s.htf && <span className={"sg-c " + s.htf.trend}>{arrow(s.htf.trend)} {s.htf.tf} {trendTxt(s.htf.trend)}</span>}
+              <span className={"sg-c " + s.trend}>{arrow(s.trend)} {s.tf} {trendTxt(s.trend)}</span>
+              {s.level && <span className="sg-c lvl">📍 {s.level.kind === "support" ? T("Support", "حمایت") : T("Resistance", "مقاومت")} {fmt(s.level.price)} · {s.level.state === "broken" ? T("broken", "شکسته") : s.level.state === "retest" ? T("retest", "ریتست") : T("near", "نزدیک")}</span>}
+              <span className="sg-c">🕯 {L(s.candle.name)}</span>
+              <span className="sg-c vol"><i className="sg-vol"><u style={{ width: Math.min(100, (s.vol.ratio / 3) * 100) + "%" }} /></i> {L(s.vol.label)} ×{s.vol.ratio.toFixed(1)}</span>
+              <span className="sg-c">RSI {s.rsi.toFixed(0)}</span>
+              <span className="sg-c">SMA20 {s.sma.above20 ? "▲" : "▼"} · SMA50 {s.sma.above50 ? "▲" : "▼"}</span>
+            </div>
             {s.all.map((x) => (
-              <p key={x.strat.id} className={"sg-strat-l " + x.strat.id}><b>🏷 {L(x.strat.name)}</b> <span>{L(x.strat.basis)}</span></p>
+              <p key={x.strat.id} className={"sg-strat-l " + x.strat.id}><b>{L(x.strat.name)}</b> <span>{L(x.why[0] || x.strat.basis)}</span></p>
             ))}
-            <div className="sg-body">
-              <Mini s={s} />
-              <ul className="sg-facts">
-                {s.htf && <li className={s.htf.trend}><i>{arrow(s.htf.trend)}</i> {s.htf.tf}: {trendTxt(s.htf.trend)}</li>}
-                <li className={s.trend}><i>{arrow(s.trend)}</i> {s.tf}: {trendTxt(s.trend)}</li>
-                {s.level && <li className="lvl">📍 {s.level.kind === "support" ? T("Support", "حمایت") : T("Resistance", "مقاومت")} {fmt(s.level.price)} {s.level.state === "broken" ? T("broken", "شکسته شد") : T("retested", "ریتست")}</li>}
-                <li>🕯 {L(s.candle.name)}</li>
-                <li><i className="sg-vol"><u style={{ width: Math.min(100, (s.vol.ratio / 2) * 100) + "%" }} /></i> {L(s.vol.label)} ×{s.vol.ratio.toFixed(1)}</li>
-                <li>RSI <b>{s.rsi.toFixed(0)}</b> · SMA20 {s.sma.above20 ? "▲" : "▼"} SMA50 {s.sma.above50 ? "▲" : "▼"}</li>
-              </ul>
+            <div className="sg-lv">
+              <div><dt>{T("Entry", "ورود")}</dt><dd>{fmt(s.entry)}</dd></div>
+              <div className="r"><dt>{T("Stop", "حد ضرر")}</dt><dd>{fmt(s.stop)}<small>{s.riskPct.toFixed(1)}%</small></dd></div>
+              <div className="g"><dt>1R</dt><dd>{fmt(s.t[0])}</dd></div>
+              <div className="g"><dt>2R</dt><dd>{fmt(s.t[1])}</dd></div>
+              <div className="g"><dt>3R</dt><dd>{fmt(s.t[2])}</dd></div>
             </div>
             <details>
-              <summary>{T("Why this signal", "چرا این سیگنال")}</summary>
+              <summary>{T("All reasons", "همه‌ی دلایل")}</summary>
               <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
-            <footer>
-              <span>{T("Entry", "ورود")} {fmt(s.entry)} · {T("Stop", "حد ضرر")} {fmt(s.stop)} ({s.riskPct.toFixed(1)}%) · 1R {fmt(s.t[0])} · 2R {fmt(s.t[1])} · 3R {fmt(s.t[2])}</span>
-              <button type="button" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
-            </footer>
+            <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
           </article>
         ))}
       </div>

@@ -857,3 +857,30 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sg-set{margin:6px 4px;font-size:12.5px;color:#9fb5cf}.sg-set summary{cursor:pointer;color:#cfe0f2}
 .sg-set-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-top:8px}
 .sg-set-row{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid #1c3048;border-radius:10px;background:#0a1a2e;cursor:pointer}.sg-set-row b{display:block;color:#fff}.sg-set-row small{display:block;color:#8aa0bb;line-height:1.45}
+
+/* ---- Agent signal cards v2 ---- */
+.sg-list{grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.sg-card{position:relative;gap:10px;padding:14px;border:1px solid #1c3048;border-inline-start:1px solid #1c3048;border-radius:18px;background:linear-gradient(180deg,#0d2034,#0a1a2e);box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden;transition:transform .18s,box-shadow .18s}
+.sg-card::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:#37506b}.sg-card.up::before{background:linear-gradient(90deg,#3ddc97,transparent)}.sg-card.dn::before{background:linear-gradient(90deg,#ff5c5c,transparent)}
+.sg-card:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(0,0,0,.5)}
+.sg-card header{display:flex;align-items:center;gap:10px}
+.sg-ring{width:42px;height:42px;flex:none}.sg-ring.gA{color:#3ddc97}.sg-ring.gB{color:#f2c94c}.sg-ring.gC{color:#9fb5cf}
+.sg-id{display:flex;flex-direction:column;min-width:0;flex:1}.sg-id b{color:#fff;font-size:16px;line-height:1.2}.sg-id b small{font-size:11px;color:#8aa0bb;font-weight:600;margin-inline-start:4px}.sg-id em{font-style:normal;color:#cfe0f2;font-size:12.5px;direction:ltr;text-align:start;font-variant-numeric:tabular-nums}
+.sg-side{padding:5px 12px;font-size:12px;letter-spacing:.02em}
+.sg-badges{display:flex;flex-wrap:wrap;gap:5px}
+.sg-tag{padding:2px 9px;border-radius:99px;border:1px solid #2a4560;background:#0c1f35;color:#cfe0f2;font-size:11px}
+.sg-tag.brk{border-color:#f2c94c}.sg-tag.hmr{border-color:#c792ea}.sg-tag.dow{border-color:#4aa3ff}.sg-tag.pul{border-color:#3ddc97}.sg-tag.mom{border-color:#ff9a4a}.sg-tag.vsg{border-color:#ff6bd6}.sg-tag.rct{border-color:#5ee7ff}.sg-tag.pa{border-color:#ffd166}.sg-tag.ell{border-color:#b388ff}
+.sg-top{padding:2px 10px;border-radius:99px;background:linear-gradient(90deg,#ffd166,#f2a33a);color:#1a1000;font-size:11px;font-weight:800;box-shadow:0 0 12px rgba(255,209,102,.45)}
+.sg-card.top{border-color:#ffd166;box-shadow:0 0 0 1px rgba(255,209,102,.55),0 10px 30px rgba(255,209,102,.2)}.sg-card.top::before{height:4px;background:linear-gradient(90deg,#ffd166,#f2a33a,transparent)}
+.sg-mini{width:100%;height:auto;border-radius:12px;background:linear-gradient(180deg,#07131f,#06101a);border:1px solid #14283e}
+.sg-chipsrow{display:flex;flex-wrap:wrap;gap:5px}
+.sg-c{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:8px;background:#0c1f35;color:#b8cbe0;font-size:11.5px}
+.sg-c.up{color:#3ddc97;background:rgba(61,220,151,.1)}.sg-c.down{color:#ff7a7a;background:rgba(255,92,92,.1)}.sg-c.lvl{color:#f2c94c;background:rgba(242,201,76,.1)}
+.sg-strat-l{margin:0;padding:6px 10px;font-size:11.5px}.sg-strat-l b{display:inline;margin-inline-end:6px}
+.sg-lv{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;direction:ltr;margin:0}
+.sg-lv div{padding:6px 4px;border-radius:10px;background:#0c1f35;text-align:center}.sg-lv dt{font-size:9px;color:#6f86a3;text-transform:uppercase;letter-spacing:.04em}.sg-lv dd{margin:2px 0 0;font-size:11.5px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.sg-lv small{display:block;font-size:9px;color:#ff9a9a;font-weight:500}
+.sg-lv .g dd{color:#3ddc97}.sg-lv .r dd{color:#ff7a7a}
+.sg-open{width:100%;padding:9px 12px;border:0;border-radius:12px;background:linear-gradient(90deg,#0e8a7d,#00c9b5);color:#04141a;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(0,201,181,.25)}.sg-open:hover{filter:brightness(1.08)}
+.sg-nt{display:inline-flex;align-items:center;gap:6px;color:#cfe0f2;cursor:pointer}
+@media(max-width:560px){.sg-list{grid-template-columns:1fr}.sg-lv{grid-template-columns:repeat(3,1fr)}}
+@media(prefers-reduced-motion:reduce){.sg-card{transition:none}.sg-card:hover{transform:none}}
