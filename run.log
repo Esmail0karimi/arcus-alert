@@ -1,22 +1,23 @@
    3s ForexFactory nextweek HTTP 404
-  85s   fallback probe: GOOGL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"GOOGL Earnings Date","announcement":"Earnings announcement* for GOOGL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"
-  85s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  85s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: GOOGL finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: MSFT finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  85s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  85s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  85s   fallback probe: BRK fromFinviz error: HTTP 404
-  85s   fallback probe: BRKB fromFinviz error: HTTP 404
-  85s   fallback probe: BRKB fromSA error: HTTP 404
-  85s earnings-date fallback: 37/95 tracked stocks found
-  85s details: 521 companies, refreshing 110
- 105s   detail fail BRK.A finviz HTTP 404
+  87s   fallback probe: GOOGL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"GOOGL Earnings Date","announcement":"Earnings announcement* for GOOGL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"
+  87s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  87s   fallback probe: AAPL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AAPL Earnings Date","announcement":"Earnings announcement* for AAPL: ","eQRResposeModel":{"text":["AAPL has a \"high\" Earnings Quality Ranking (EQR) for the 22nd cons
+  87s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  87s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  87s   fallback probe: MSFT finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  87s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  87s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  87s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  87s   fallback probe: BRK fromFinviz error: HTTP 404
+  87s   fallback probe: BRKB fromFinviz error: HTTP 404
+  87s   fallback probe: BRK fromSA error: HTTP 404
+  87s earnings-date fallback: 41/99 tracked stocks found
+  87s details: 521 companies, refreshing 110
+ 106s   detail fail BRK.A finviz HTTP 404
  106s   detail fail BRK.B finviz HTTP 404
- 211s details written 110, empty 0
- 211s news.json: 618 events, 677 company files
+ 156s   detail fail UHAL.B finviz HTTP 404
+ 202s details written 110, empty 0
+ 202s news.json: 618 events, 677 company files
 [
  {
   "name": "Fed calendar",
@@ -43,8 +44,8 @@
  {
   "name": "Nasdaq earnings",
   "ok": true,
-  "note": "497 reports in 56 days",
-  "n": 497
+  "note": "501 reports in 57 days",
+  "n": 501
  },
  {
   "name": "Nasdaq analysts",
@@ -67,25 +68,25 @@
  {
   "name": "Finviz headlines",
   "ok": true,
-  "note": "108/110 companies",
-  "n": 108
+  "note": "107/110 companies",
+  "n": 107
  },
  {
   "name": "FXStreet actuals",
   "ok": true,
-  "note": "42 released numbers filled in (455 events checked)",
-  "n": 42
+  "note": "43 released numbers filled in (497 events checked)",
+  "n": 43
  },
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "0 write-ups for 63 recent events",
+  "note": "0 write-ups for 65 recent events",
   "n": 0
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "30 reported companies summarised",
-  "n": 30
+  "note": "34 reported companies summarised",
+  "n": 34
  }
 ]
