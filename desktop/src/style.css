@@ -850,3 +850,5 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 
 .sg-multi{padding:1px 8px;border-radius:99px;background:#3ddc97;color:#04170e;font-size:11px;font-weight:800}
 .sg-card.multi{border-color:#3ddc97;box-shadow:0 0 0 1px rgba(61,220,151,.45),0 6px 22px rgba(61,220,151,.16);background:linear-gradient(180deg,rgba(61,220,151,.12),#0a1a2e 55%)}
+
+.sg-strat-l.vsg{border-color:#ff6bd6}

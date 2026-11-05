@@ -88,6 +88,7 @@ const STRATS = {
   hmr: { id: "hmr", name: b("Hammer at SMA7", "چکش کنار SMA7"), basis: b("Candle pattern in the trend direction, right at the 7-period average", "الگوی کندلی هم‌جهت با روند، کنار میانگین ۷ کندلی") },
   dow: { id: "dow", name: b("Dow theory", "تئوری داو"), basis: b("Higher highs and higher lows (or lower/lower); after the new swing price nears the last extreme while volume grows", "سقف و کف بالاتر (یا پایین‌تر)؛ بعد از کف/سقف جدید، قیمت به آخرین نقطه‌ی حدی نزدیک می‌شود و حجم زیاد می‌شود") },
   pul: { id: "pul", name: b("Pullback", "پولبک"), basis: b("Trend continuation: price dips to the SMA20/SMA50 zone and turns back with the trend", "ادامه‌ی روند: قیمت تا ناحیه‌ی SMA20/SMA50 برمی‌گردد و دوباره هم‌جهت روند می‌شود") },
+  vsg: { id: "vsg", name: b("Volume surge", "افزایش ناگهانی حجم"), basis: b("Volume jumps to 2.5× its average or more while price moves with it — someone big is active", "حجم ناگهان به ۲.۵ برابر میانگین یا بیشتر می‌رسد و قیمت هم همراهش حرکت می‌کند — بازیگر بزرگی وارد شده"), },
   mom: { id: "mom", name: b("Momentum candle", "کندل مومنتوم"), basis: b("Engulfing / marubozu in the trend direction on above-average volume", "اینگالفینگ یا کندل بلند در جهت روند با حجم بالای میانگین") },
 };
 export const STRAT_LIST = Object.values(STRATS);
@@ -172,6 +173,13 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
   if (ratio >= 1.3 && !candle.name.en.startsWith("Ordinary") && !candle.name.en.startsWith("Doji") && !candle.name.en.startsWith("Hammer") && !candle.name.en.startsWith("Shooting")) {
     if (candle.dir === "bull" && trend !== "down") hits.push({ side: "long", id: "mom", bonus: 2, level: null, why: [b(`${candle.name.en} on ${ratio.toFixed(1)}× volume`, `${candle.name.fa} با حجم ${ratio.toFixed(1)} برابر`)] });
     if (candle.dir === "bear" && trend !== "up") hits.push({ side: "short", id: "mom", bonus: 2, level: null, why: [b(`${candle.name.en} on ${ratio.toFixed(1)}× volume`, `${candle.name.fa} با حجم ${ratio.toFixed(1)} برابر`)] });
+  }
+
+  // 6) sudden volume surge with a real price move
+  const bodyMove = Math.abs(last.close - last.open);
+  if (ratio >= 2.5 && bodyMove >= atr * 0.5) {
+    const L = last.close > last.open;
+    hits.push({ side: L ? "long" : "short", id: "vsg", bonus: 3, level: null, why: [b(`Volume is ${ratio.toFixed(1)}× its 20-candle average and price moved ${(bodyMove / atr).toFixed(1)} ATR ${L ? "up" : "down"} with it`, `حجم ${ratio.toFixed(1)} برابر میانگین ۲۰ کندل است و قیمت هم ${(bodyMove / atr).toFixed(1)} ATR ${L ? "بالا" : "پایین"} رفته`)] });
   }
 
   const out: Sig[] = [];
