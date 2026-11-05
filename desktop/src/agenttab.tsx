@@ -39,7 +39,9 @@ const sendNotification = (title: string, body: string, tag: string) => {
   } catch {}
 };
 export const isHot = (s: Sig) => s.grade !== "C" && s.vol.ratio >= 1.3;
-const rank = (a: Sig, b: Sig) => Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
+type Grp = Sig & { all: Sig[] };
+const nOf = (g: any): number => g.all?.length || 1;
+const rank = (a: Sig, b: Sig) => Number(nOf(b) > 1) - Number(nOf(a) > 1) || nOf(b) - nOf(a) || Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
 const fmt = (v: number) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
 const TFN: Record<string, { en: string; fa: string }> = { "15m": { en: "15-minute", fa: "۱۵ دقیقه‌ای" }, "1h": { en: "1-hour", fa: "یک‌ساعته" }, "4h": { en: "4-hour", fa: "۴ ساعته" }, "1d": { en: "daily", fa: "روزانه" } };
 
@@ -163,7 +165,7 @@ export function AgentTab(p: {
   }, []);
 
   const announce = useCallback((tf: string, closeAt: number, res: Sig[], minLeft: number) => {
-    const n = res.length;
+    const n = new Set(res.map((x) => x.symbol + x.side)).size;
     const en = `${TFN[tf].en} candle closes in ${minLeft} minute${minLeft === 1 ? "" : "s"}. ${n ? `${n} signal${n === 1 ? " is" : "s are"} available from the latest scan.` : "No signals in the latest scan."}`;
     const faT = `کندل ${TFN[tf].fa} تا ${minLeft} دقیقه دیگر بسته می‌شود. ${n ? `${n} سیگنال از اسکن اخیر موجود است.` : "در اسکن اخیر سیگنالی نبود."}`;
     speak("agent", { en, fa: faT });
@@ -233,7 +235,20 @@ export function AgentTab(p: {
     p.syms.forEach((s) => (m[s.ex] = (m[s.ex] || 0) + 1));
     return Object.entries(m);
   }, [p.syms]);
-  const shown = sigs.filter((x) => (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.strat.id === strat));
+  const merged: Grp[] = useMemo(() => {
+    const m = new Map<string, Sig[]>();
+    for (const x of sigs) {
+      const k = x.symbol + "|" + x.tf + "|" + x.side;
+      m.set(k, (m.get(k) || []).concat(x));
+    }
+    return Array.from(m.values())
+      .map((g) => {
+        const top = g.slice().sort((a, b) => b.score - a.score)[0];
+        return { ...top, all: g, score: top.score + g.length - 1 } as Grp;
+      })
+      .sort(rank);
+  }, [sigs]);
+  const shown = merged.filter((x) => (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -302,16 +317,19 @@ export function AgentTab(p: {
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       <div className="sg-list">
         {shown.map((s) => (
-          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) ? " hot" : "")}>
+          <article key={s.symbol + s.tf + s.strat.id + s.side} className={"sg-card " + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "")}>
             <header>
               <b>{fa ? FA_NAME[s.base] || s.base : s.base}</b>
+              {s.all.length > 1 && <span className="sg-multi">✅ {T(`${s.all.length} strategies confirm`, `${s.all.length} استراتژی تأیید کرده‌اند`)}</span>}
               {isHot(s) && <span className="sg-hot">🔥 {T("Strong + volume", "قوی + حجم")}</span>}
               <span className={"sg-side " + s.side}>{s.side === "long" ? T("LONG", "خرید") : T("SHORT", "فروش")}</span>
               <span className={"sg-grade g" + s.grade} title={T("Signal grade", "درجه‌ی سیگنال")}>{s.grade}</span>
               <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small>
               <em>{fmt(s.price)}</em>
             </header>
-            <p className={"sg-strat-l " + s.strat.id}><b>🏷 {L(s.strat.name)}</b> <span>{L(s.strat.basis)}</span></p>
+            {s.all.map((x) => (
+              <p key={x.strat.id} className={"sg-strat-l " + x.strat.id}><b>🏷 {L(x.strat.name)}</b> <span>{L(x.strat.basis)}</span></p>
+            ))}
             <div className="sg-body">
               <Mini s={s} />
               <ul className="sg-facts">
@@ -325,7 +343,7 @@ export function AgentTab(p: {
             </div>
             <details>
               <summary>{T("Why this signal", "چرا این سیگنال")}</summary>
-              <ul>{s.why.map((w, i) => <li key={i}>{L(w)}</li>)}</ul>
+              <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
             <footer>
               <span>{T("Entry", "ورود")} {fmt(s.entry)} · {T("Stop", "حد ضرر")} {fmt(s.stop)} ({s.riskPct.toFixed(1)}%) · 1R {fmt(s.t[0])} · 2R {fmt(s.t[1])} · 3R {fmt(s.t[2])}</span>
