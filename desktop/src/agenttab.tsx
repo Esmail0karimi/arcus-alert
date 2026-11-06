@@ -519,7 +519,7 @@ export function AgentTab(p: {
                 <em>{fmt(s.price)}</em>
               </div>
               <span className={"sg-side " + s.side}>{s.side === "long" ? "▲ " + T("LONG", "خرید") : "▼ " + T("SHORT", "فروش")}</span>
-              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.mtf.length > 1 && <b title="multi-timeframe">⏱{s.mtf.join("+")}</b>}{s.tgt && <b className={s.tgt.rr < 1.5 ? "w" : "g"} title={T("Reward-to-risk to the next level", "نسبت سود به ریسک تا سطح بعدی")}>R:R {s.tgt.rr.toFixed(1)}</b>}{(() => { const rr0 = Math.abs(s.entry - s.stop) || 1, pr = ((s.price - s.entry) / rr0) * (s.side === "long" ? 1 : -1); return <b className={pr >= 0 ? "g" : "w"} title={T("Where price is now, in R from the entry", "قیمت الان چند R از نقطه‌ی ورود فاصله دارد")}>{pr >= 0 ? "+" : ""}{pr.toFixed(1)}R</b>; })()}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
+              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.mtf.length > 1 && <b title="multi-timeframe">⏱{s.mtf.join("+")}</b>}<b className={s.tgt && s.tgt.rr < 1.5 ? "w" : "g"} title={s.tgt ? T("Reward-to-risk to the next level", "نسبت سود به ریسک تا سطح بعدی") : T("No level ahead — measured to 3R", "سطحی در مسیر نیست — تا 3R حساب شده")}>R:R {s.tgt ? s.tgt.rr.toFixed(1) : "3+"}</b>{(() => { const rr0 = Math.abs(s.entry - s.stop) || 1, pr = ((s.price - s.entry) / rr0) * (s.side === "long" ? 1 : -1); return <b className={pr >= 0 ? "g" : "w"} title={T("Where price is now, in R from the entry", "قیمت الان چند R از نقطه‌ی ورود فاصله دارد")}>{pr >= 0 ? "+" : ""}{pr.toFixed(1)}R</b>; })()}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
               <span className="sg-strs">{s.all.map((x) => L(x.strat.name)).join(" · ")}</span>
               <i className="sg-chev">{openId === s.symbol + s.tf + s.side ? "▴" : "▾"}</i>
             </header>
@@ -546,6 +546,7 @@ export function AgentTab(p: {
             {s.all.map((x) => (
               <p key={x.strat.id} className={"sg-strat-l " + x.strat.id}><b>{L(x.strat.name)}</b> <span>{L(x.why[0] || x.strat.basis)}</span></p>
             ))}
+            {!s.tgt && <p className="sg-tg"><span>🎯 {T("No level ahead in the last 100 candles — open space. R:R to 3R", "سطحی در ۱۰۰ کندل اخیر جلوی قیمت نیست — فضای باز. R:R تا 3R")} <b>3.0</b></span></p>}
             {(s.tgt || s.alt) && (
               <p className="sg-tg">
                 {s.tgt && <span className={s.tgt.rr < 1.5 ? "w" : ""}>🎯 {T("Next level", "سطح بعدی")} {fmt(s.tgt.price)} · R:R <b>{s.tgt.rr.toFixed(1)}</b>{s.tgt.rr < 1.5 ? " — " + T("little room to run", "جای حرکت کم است") : ""}</span>}
