@@ -254,6 +254,7 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
     }
     if (trend === want) { sc += 2; why.push(b(`${tf} trend is ${L ? "up" : "down"}`, `روند ${tf} ${L ? "صعودی" : "نزولی"} است`)); } else if (trend === opp && h.id !== "brk") sc -= 1;
     if (ratio >= 1.3) sc += 1;
+    else if (ratio < 0.7 && h.id !== "vsg") { sc -= 1; why.push(b("Volume is thin — moves are less reliable", "حجم کم است — اعتماد به حرکت کمتر است")); }
     if (L ? rsi >= 48 && rsi <= 72 : rsi <= 52 && rsi >= 28) { sc += 1; why.push(b(`RSI ${rsi.toFixed(0)} has room left`, `RSI برابر ${rsi.toFixed(0)} و جا برای ادامه دارد`)); }
     else if (L ? rsi > 78 : rsi < 22) { sc -= 1; why.push(b(`RSI ${rsi.toFixed(0)} is stretched — chasing is risky`, `RSI برابر ${rsi.toFixed(0)} و کشیده است — دنبال‌کردن ریسک دارد`)); }
     if (L ? above20 && above50 : !above20 && !above50) sc += 1;

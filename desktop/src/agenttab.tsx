@@ -9,7 +9,7 @@ import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
 export type AgSym = { symbol: string; base: string; ex: string };
-type JE = { id: string; sym: string; base: string; tf: string; side: "long" | "short"; strat: string; top: boolean; n: number; from: number; entry: number; stop: number; t1: number; st: "open" | "win" | "loss" | "exp"; r: number; bars: number };
+type JE = { mine?: boolean; id: string; sym: string; base: string; tf: string; side: "long" | "short"; strat: string; top: boolean; n: number; from: number; entry: number; stop: number; t1: number; st: "open" | "win" | "loss" | "exp"; r: number; bars: number };
 type Hist = { at: number; tf: string; en: string; fa: string };
 const TFS = ["15m", "1h", "4h", "1d"];
 const HTF: Record<string, string | null> = { "15m": "4h", "1h": "1d", "4h": "1d", "1d": null };
@@ -278,6 +278,8 @@ export function AgentTab(p: {
         const id = [x.symbol, tf, x.side, x.strat.id, from].join("|");
         if (jr.current.some((e) => e.id === id)) continue;
         const n = gm.get(x.symbol + "|" + x.side) || 1;
+        // only decent signals go into the automatic journal (weak ones would just pollute the statistics); picks you pin yourself are always tracked
+        if ((x.tgt && x.tgt.rr < 1.5) || !(x.grade === "A" || (x.grade === "B" && (x.vol.ratio >= 1.3 || n > 1)))) continue;
         jr.current.push({ id, sym: x.symbol, base: x.base, tf, side: x.side, strat: x.strat.id, top: isTop({ all: Array(n).fill(x), score: x.score + n - 1, vol: x.vol, tgt: x.tgt }), n, from, entry: x.entry, stop: x.stop, t1: x.t[0], st: "open", r: 0, bars: 0 });
       }
       jr.current = jr.current.slice(-600);
@@ -421,7 +423,7 @@ export function AgentTab(p: {
       if (e.st === "open") o.open++;
       else { o.n++; o.sum += e.r; if (e.r > 0) o.w++; }
     };
-    for (const e of jr.current) { add(e.strat, e); if (e.top) add("_top", e); add("_all", e); }
+    for (const e of jr.current) { add(e.strat, e); if (e.top) add("_top", e); if (e.mine) add("_mine", e); add("_all", e); }
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jver]);
@@ -445,10 +447,16 @@ export function AgentTab(p: {
     if (!("Notification" in window)) return setPerm("unsupported");
     setPerm(await Notification.requestPermission());
   };
-  const open = (s: Sig) => {
-    const ok = p.onOpenChart?.(s.symbol, s.tf, { base: s.base, tf: s.tf, side: s.side, sid: "sig", entry: s.entry, stop: s.stop, t: s.t });
+  const open = (s: Grp) => {
+    const secO = TF_SEC[s.tf] || 1;
+    const closed = s.forming ? "—" : new Date(Math.floor(s.at / 1000 / secO) * secO * 1000).toLocaleTimeString();
+    const ok = p.onOpenChart?.(s.symbol, s.tf, {
+      base: s.base, tf: s.tf, side: s.side, sid: "sig", entry: s.entry, stop: s.stop, t: s.t,
+      sig: { strats: s.all.map((x) => ({ name: x.strat.name, basis: x.strat.basis })), why: Array.from(new Map(s.all.flatMap((x) => x.why).map((w) => [w.en, w])).values()), grade: s.grade, score: s.score, rr: s.tgt ? s.tgt.rr : null, closed },
+    });
     setMsg(ok === false ? T("This symbol is not in the chart list right now.", "این نماد الان در لیست چارت نیست.") : "");
   };
+
 
   return (
     <div className="sg" dir={fa ? "rtl" : "ltr"}>
@@ -566,6 +574,19 @@ export function AgentTab(p: {
               <summary>{T("All reasons", "همه‌ی دلایل")}</summary>
               <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
+            <button type="button" className="sg-watch" onClick={() => {
+              const secT = TF_SEC[s.tf] || 1, from = Math.floor(Date.now() / 1000 / secT) * secT;
+              let added = 0;
+              for (const x of s.all) {
+                const id = [x.symbol, s.tf, x.side, x.strat.id, from, "mine"].join("|");
+                if (jr.current.some((e) => e.id === id)) continue;
+                jr.current.push({ id, mine: true, sym: x.symbol, base: x.base, tf: s.tf, side: x.side, strat: x.strat.id, top: isTop(s), n: s.all.length, from, entry: x.entry, stop: x.stop, t1: x.t[0], st: "open", r: 0, bars: 0 });
+                added++;
+              }
+              jset("arcus.ag2.journal", jr.current);
+              setJver((v) => v + 1);
+              setMsg(added ? T("Added to the journal — it will be checked on the next scans.", "به دفتر اضافه شد — در اسکن‌های بعدی چک می‌شود.") : T("Already in the journal.", "قبلاً در دفتر هست."));
+            }}>📌 {T("Track in journal", "ثبت در دفتر برای بررسی")}</button>
             <button type="button" className="sg-watch" onClick={() => setWatch((a) => (a.some((w) => w.symbol === s.symbol && w.side === s.side) ? a : a.concat({ id: s.symbol + s.side + Date.now(), symbol: s.symbol, base: s.base, tf: s.tf, side: s.side, at: Date.now() })))}>👁 {T("Watch — notify me when it triggers", "دیده‌بانی — وقتی فعال شد خبر بده")}</button>
             <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
             </div>}
@@ -582,7 +603,7 @@ export function AgentTab(p: {
         <p className="sg-jn">{T("Every signal from a closed-candle scan is tracked automatically: win = reaches 1R before the stop; loss = stop first; after 30 candles it expires at its current R. Sample sizes are small at first — wait for 30+ per strategy.", "هر سیگنال اسکنِ کندل بسته به‌طور خودکار دنبال می‌شود: برد = رسیدن به 1R پیش از حد ضرر؛ باخت = اول حد ضرر؛ بعد از ۳۰ کندل با R همان لحظه بسته می‌شود. در ابتدا نمونه‌ها کم‌اند — منتظر ۳۰+ سیگنال برای هر استراتژی بمان.")}</p>
         <div className="sg-jt">
           <div className="h"><span>{T("Strategy", "استراتژی")}</span><span>{T("Closed", "بسته")}</span><span>{T("Win %", "برد ٪")}</span><span>{T("Avg R", "میانگین R")}</span><span>{T("Open", "باز")}</span></div>
-          {[{ id: "_top", name: { en: "⭐ Top signals", fa: "⭐ سیگنال‌های ممتاز" } }, ...STRAT_LIST.map((x) => ({ id: x.id as string, name: x.name })), { id: "_all", name: { en: "All", fa: "همه" } }].map((x) => {
+          {[{ id: "_mine", name: { en: "📌 My picks", fa: "📌 انتخاب‌های من" } }, { id: "_top", name: { en: "⭐ Top signals", fa: "⭐ سیگنال‌های ممتاز" } }, ...STRAT_LIST.map((x) => ({ id: x.id as string, name: x.name })), { id: "_all", name: { en: "All", fa: "همه" } }].map((x) => {
             const o = stats[x.id] || { n: 0, w: 0, sum: 0, open: 0 };
             return (
               <div key={x.id} className={x.id.startsWith("_") ? "tot" : ""}>

@@ -930,3 +930,4 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sg-mini-b b.g{color:#3ddc97}.sg-mini-b b.w{color:#ffb877}.sg-mini-b b{padding:1px 6px;border-radius:6px;background:#0c1f35;font-size:11px;white-space:nowrap}
 .sg-an{margin:0;font-size:11.5px;color:#8aa0bb}.sg-an b{color:#8fd0ff}
 .sg-drop{margin:6px 4px;font-size:11.5px;color:#8aa0bb}
+.an-sig{margin:8px 0;padding:8px 10px;border-radius:10px;background:rgba(0,201,181,.07);border:1px solid #1f6f66}.an-sig h4{margin:0 0 4px}.an-sig p{margin:3px 0;font-size:12px}.an-sig ul{margin:4px 0;padding-inline-start:18px;font-size:12px}.an-sig small{color:#8aa0bb;display:block;margin-top:4px}

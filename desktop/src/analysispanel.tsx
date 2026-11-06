@@ -6,7 +6,7 @@ import { setLang, useLang } from "./lang";
 import { STRATEGIES, matchesFor, type Match } from "./strategies";
 import type { QCandle } from "./qfex";
 
-export type SetupLines = { base: string; tf: string; side: "long" | "short"; sid: string; entry: number; stop: number; t: [number, number, number] };
+export type SetupLines = { base: string; tf: string; side: "long" | "short"; sid: string; entry: number; stop: number; t: [number, number, number]; sig?: { strats: { name: Bi; basis: Bi }[]; why: Bi[]; grade: string; score: number; rr: number | null; closed: string } };
 
 export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; setup: SetupLines | null; onClose: () => void; onTf: (tf: string) => void }) {
   const fa = useLang() === "fa";
@@ -108,6 +108,14 @@ export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; se
                 <div className="t"><dt>2R</dt><dd>{fmtPrice(p.setup.t[1])}</dd></div>
                 <div className="t"><dt>3R</dt><dd>{fmtPrice(p.setup.t[2])}</dd></div>
               </dl>
+              {p.setup.sig && (
+                <div className="an-sig">
+                  <h4>{T("Why the Agent signalled", "چرا ایجنت سیگنال داد")} · {p.setup.sig.grade} ({p.setup.sig.score}) · {p.setup.tf}{p.setup.sig.rr != null ? " · R:R " + p.setup.sig.rr.toFixed(1) : ""}</h4>
+                  {p.setup.sig.strats.map((x, i) => <p key={i}><b>🏷 {L(x.name)}</b> — {L(x.basis)}</p>)}
+                  <ul>{p.setup.sig.why.map((w, i) => <li key={i}>{L(w)}</li>)}</ul>
+                  <small>{T(`The signal was read from the ${p.setup.tf} candle that closed at ${p.setup.sig.closed}. The live reading below also counts the candle that is still forming, so its volume and candle shape can look different.`, `سیگنال از کندل ${p.setup.tf} که ${p.setup.sig.closed} بسته شد خوانده شده. تحلیل زنده‌ی پایین کندلِ در حال شکل‌گیری را هم می‌شمارد، پس حجم و شکل کندل می‌تواند فرق کند.`)}</small>
+                </div>
+              )}
               <small>{T("These levels are drawn on the chart.", "این سطوح روی چارت کشیده شده‌اند.")}</small>
             </section>
           )}
@@ -122,7 +130,7 @@ export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; se
           <h4>{T("Why", "چرا")}</h4>
           <ul>{a.why.map((x, i) => <li key={i}>{L(x)}</li>)}</ul>
           <h4>{T("Strategies matching now", "استراتژی‌های منطبق")}</h4>
-          {!ms.length && <p className="muted">{T("None of the momentum strategies match this coin right now.", "فعلاً هیچ‌کدام از استراتژی‌های مومنتوم با این ارز نمی‌خواند.")}</p>}
+          {!ms.length && <p className="muted">{p.setup?.sig ? T("The Agent signal above uses its own rules; these older presets do not apply.", "سیگنال ایجنت (بالا) قواعد خودش را دارد؛ این پیش‌تنظیم‌های قدیمی‌تر اینجا کاربرد ندارند.") : T("None of the momentum strategies match this coin right now.", "فعلاً هیچ‌کدام از استراتژی‌های مومنتوم با این ارز نمی‌خواند.")}</p>}
           {ms.map((m) => (
             <div key={m.sid + m.side} className={"an-m " + m.side}>
               <b><span className={"ag-badge " + m.side}>{sd(m.side)}</span> {L(STRATEGIES.find((x) => x.id === m.sid)!.name)} <em>{m.q}</em></b>
