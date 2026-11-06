@@ -132,6 +132,8 @@ export function AgentTab(p: {
   const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag2.hist", []));
   const [now, setNow] = useState(Date.now());
   const [msg, setMsg] = useState("");
+  const [minGrade, setMinGrade] = useState<"any" | "B" | "A">("any");
+  const [view, setView] = useState<"signals" | "journal" | "settings">("signals");
   const [openId, setOpenId] = useState<string | null>(null);
   const [perm, setPerm] = useState<string>(() => ("Notification" in window ? Notification.permission : "unsupported"));
   const ctl = useRef<AbortController | null>(null);
@@ -411,6 +413,7 @@ export function AgentTab(p: {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jver]);
+  const isStrong = (x: Grp) => isTop(x) || x.grade === "A" || (x.grade === "B" && isHot(x));
   const csv = () => {
     const rows = [["symbol", "tf", "side", "strategies", "grade", "score", "entry", "stop", "1R", "2R", "3R"]].concat(
       merged.map((g) => [g.symbol, g.tf, g.side, g.all.map((x) => x.strat.id).join("+"), g.grade, String(g.score), String(g.entry), String(g.stop), String(g.t[0]), String(g.t[1]), String(g.t[2])]),
@@ -421,7 +424,9 @@ export function AgentTab(p: {
     a.download = "arcus-signals.csv";
     a.click();
   };
-  const shown = merged.filter((x) => !(mktMode === "hide" && counter(x)) && !(minRR > 0 && x.tgt && x.tgt.rr < minRR) && (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
+  const shown0 = merged.filter((x) => (minGrade === "any" || x.grade === "A" || (minGrade === "B" && x.grade === "B")) && !(mktMode === "hide" && counter(x)) && !(minRR > 0 && x.tgt && x.tgt.rr < minRR) && (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
+  const shown = shown0.slice().sort((a, b) => Number(isStrong(b)) - Number(isStrong(a)) || rank(a, b));
+  const nStrong = shown.filter(isStrong).length;
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -445,97 +450,18 @@ export function AgentTab(p: {
             <button key={tf} type="button" className={tfs.includes(tf) ? "on" : ""} onClick={() => toggleTf(tf)}>{tf}</button>
           ))}
         </span>
-        <label className="sg-min">{T("Tell me", "اطلاع")}
-          <select value={mins} onChange={(e) => setMins(Number(e.target.value))}>
-            {[1, 2, 3, 5, 10].map((m) => <option key={m} value={m}>{m} {T("min before", "دقیقه قبل")}</option>)}
-          </select>
-        </label>
-        <label className="sg-min">{T("Auto-scan", "اسکن خودکار")}
-          <select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
-            <option value={0}>{T("off", "خاموش")}</option>
-            {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + " " + T("h", "ساعت") : m + " " + T("min", "دقیقه")}</option>)}
-          </select>
-        </label>
         {on && nextClose && <span className="sg-cd" title={T("Next close", "بسته‌شدن بعدی")}>⏱ {nextClose.tf} · {left(nextClose.at, now)}</span>}
         <span className="sg-sp" />
         <button type="button" className="sg-go" disabled={!!prog} onClick={async () => { for (const tf of tfs) await runScan(tf, false); }}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
         <button type="button" className="sg-go" onClick={csv} disabled={!merged.length} title="CSV">⬇ CSV</button>
-        <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 4 signals are available from the latest scan.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۴ سیگنال از اسکن اخیر موجود است." }} />
-        <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
-      <div className="sg-sub">
-        <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
-        <label className="sg-nt"><input type="checkbox" checked={notifyTop} onChange={(e) => setNotifyTop(e.target.checked)} /> ⭐ {T("Notify me about top signals", "نوتیف برای سیگنال‌های ممتاز")}</label>
-        {(mkt || breadth) && (
-          <span className="sg-mk2">
-            {mkt && <em className={mkt}>₿ 1D {mkt === "up" ? "▲" : mkt === "down" ? "▼" : "▬"}</em>}
-            {breadth && <em className={breadth.up / breadth.n >= 0.5 ? "up" : "down"} title={T("Share of scanned symbols above their SMA50", "سهم نمادهای اسکن‌شده بالای SMA50")}>{T("Breadth", "عرض بازار")} {Math.round((breadth.up / breadth.n) * 100)}%</em>}
-          </span>
-        )}
-        {perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
-        {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
+      <div className="sg-tabs" role="tablist">
+        {([["signals", "📡", T("Signals", "سیگنال‌ها")], ["journal", "📊", T("Journal", "دفتر و ردیابی")], ["settings", "⚙", T("Settings", "تنظیمات")]] as const).map(([k, ic, nm]) => (
+          <button key={k} type="button" role="tab" aria-selected={view === k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{ic} {nm}{k === "signals" && shown.length ? <b>{shown.length}</b> : null}</button>
+        ))}
       </div>
-      <details className="sg-set">
-        <summary>⚙ {T("Strategies on / off", "فعال / غیرفعال کردن استراتژی‌ها")} ({STRAT_LIST.length - off.length}/{STRAT_LIST.length})</summary>
-        <div className="sg-set-list">
-          {STRAT_LIST.map((x) => (
-            <label key={x.id} className={"sg-set-row " + x.id}>
-              <input type="checkbox" checked={!off.includes(x.id)} onChange={(e) => setOff((o) => (e.target.checked ? o.filter((y) => y !== x.id) : [...o, x.id]))} />
-              <span><b>{L(x.name)}</b><small>{L(x.basis)}</small></span>
-            </label>
-          ))}
-        </div>
-      </details>
-      <details className="sg-set">
-        <summary>🛡 {T("Filters & position size", "فیلترها و اندازه‌ی پوزیشن")}</summary>
-        <div className="sg-form">
-          <label>{T("Account size ($)", "اندازه‌ی حساب ($)")}<input type="number" min={0} value={acct} onChange={(e) => setAcct(Math.max(0, Number(e.target.value)))} /></label>
-          <label>{T("Risk per trade (%)", "ریسک هر معامله (٪)")}<input type="number" min={0.1} step={0.1} value={riskPct} onChange={(e) => setRiskPct(Math.max(0.1, Number(e.target.value)))} /></label>
-          <label>{T("Min traded value per candle", "حداقل ارزش معامله در هر کندل")}
-            <select value={minLiq} onChange={(e) => setMinLiq(Number(e.target.value))}>
-              <option value={0}>{T("No filter", "بدون فیلتر")}</option>
-              {[1000, 10000, 50000, 200000, 1000000].map((v) => <option key={v} value={v}>${v.toLocaleString()}</option>)}
-            </select>
-          </label>
-          <label>{T("Against BTC daily trend", "خلاف روند روزانه‌ی بیت‌کوین")}
-            <select value={mktMode} onChange={(e) => setMktMode(e.target.value as any)}>
-              <option value="off">{T("Ignore", "نادیده")}</option>
-              <option value="warn">{T("Warn", "هشدار")}</option>
-              <option value="hide">{T("Hide", "پنهان")}</option>
-            </select>
-          </label>
-          <label>{T("Hide if next level is closer than (R)", "پنهان اگر سطح بعدی نزدیک‌تر از (R)")}
-            <select value={minRR} onChange={(e) => setMinRR(Number(e.target.value))}>
-              <option value={0}>{T("Off", "خاموش")}</option>
-              {[1, 1.5, 2, 3].map((v) => <option key={v} value={v}>{v}R</option>)}
-            </select>
-          </label>
-          <label>{T("Warn if stop is wider than (%)", "هشدار اگر حد ضرر دورتر از (٪)")}
-            <select value={maxStop} onChange={(e) => setMaxStop(Number(e.target.value))}>
-              <option value={0}>{T("Off", "خاموش")}</option>
-              {[2, 3, 5, 8, 12].map((v) => <option key={v} value={v}>{v}%</option>)}
-            </select>
-          </label>
-        </div>
-        {mkt && <p className="sg-mk">₿ {T("BTC daily trend", "روند روزانه‌ی بیت‌کوین")}: <b className={mkt}>{mkt === "up" ? T("Up", "صعودی") : mkt === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی")}</b></p>}
-      </details>
-      <details className="sg-set">
-        <summary>📊 {T("Results journal (which strategies work?)", "دفتر نتایج (کدام استراتژی جواب می‌دهد؟)")} · {stats._all ? stats._all.n + stats._all.open : 0}</summary>
-        <p className="sg-jn">{T("Every signal from a closed-candle scan is tracked automatically: win = reaches 1R before the stop; loss = stop first; after 30 candles it expires at its current R. Sample sizes are small at first — wait for 30+ per strategy.", "هر سیگنال اسکنِ کندل بسته به‌طور خودکار دنبال می‌شود: برد = رسیدن به 1R پیش از حد ضرر؛ باخت = اول حد ضرر؛ بعد از ۳۰ کندل با R همان لحظه بسته می‌شود. در ابتدا نمونه‌ها کم‌اند — منتظر ۳۰+ سیگنال برای هر استراتژی بمان.")}</p>
-        <div className="sg-jt">
-          <div className="h"><span>{T("Strategy", "استراتژی")}</span><span>{T("Closed", "بسته")}</span><span>{T("Win %", "برد ٪")}</span><span>{T("Avg R", "میانگین R")}</span><span>{T("Open", "باز")}</span></div>
-          {[{ id: "_top", name: { en: "⭐ Top signals", fa: "⭐ سیگنال‌های ممتاز" } }, ...STRAT_LIST.map((x) => ({ id: x.id as string, name: x.name })), { id: "_all", name: { en: "All", fa: "همه" } }].map((x) => {
-            const o = stats[x.id] || { n: 0, w: 0, sum: 0, open: 0 };
-            return (
-              <div key={x.id} className={x.id.startsWith("_") ? "tot" : ""}>
-                <span>{L(x.name)}</span><span>{o.n}</span><span>{o.n ? Math.round((o.w / o.n) * 100) + "%" : "—"}</span>
-                <span className={o.n && o.sum / o.n > 0 ? "g" : o.n ? "r" : ""}>{o.n ? (o.sum / o.n).toFixed(2) : "—"}</span><span>{o.open}</span>
-              </div>
-            );
-          })}
-        </div>
-        <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the journal?", "دفتر پاک شود؟"))) { jr.current = []; jset("arcus.ag2.journal", []); setJver((v) => v + 1); } }}>{T("Clear journal", "پاک کردن دفتر")}</button>
-      </details>
+      {view === "signals" && (
+      <div className="sg-pane">
       {prog && (
         <div className="sg-prog" role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done}>
           <i style={{ width: (prog.done / Math.max(1, prog.total)) * 100 + "%" }} />
@@ -547,6 +473,11 @@ export function AgentTab(p: {
         <span className="sg-chips">
           {(["all", "hot", "long", "short"] as const).map((k) => (
             <button key={k} type="button" className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "all" ? T("All", "همه") : k === "hot" ? "🔥 " + T("Momentum", "مومنتوم") : k === "long" ? T("Long", "خرید") : T("Short", "فروش")}</button>
+          ))}
+        </span>
+        <span className="sg-chips" aria-label="Quality">
+          {(["any", "B", "A"] as const).map((k) => (
+            <button key={k} type="button" className={minGrade === k ? "on" : ""} onClick={() => setMinGrade(k)}>{k === "any" ? T("Any grade", "هر درجه") : k === "B" ? "B+" : T("A only", "فقط A")}</button>
           ))}
         </span>
         <select className="sg-strat" value={strat} onChange={(e) => setStrat(e.target.value)} aria-label="Strategy">
@@ -562,7 +493,10 @@ export function AgentTab(p: {
         return k >= 4 ? <p key={sd} className="sg-msg">⚠ {T(`${k} ${sd} signals at once — they are probably one correlated bet; size them together, not separately.`, `${k} سیگنال ${sd === "long" ? "خرید" : "فروش"} هم‌زمان — احتمالاً یک شرط همبسته‌اند؛ ریسک را روی مجموعشان حساب کن، نه تک‌تک.`)}</p> : null;
       })}
       <div className="sg-list">
-        {shown.map((s) => (
+        {shown.map((s, i) => (
+          <React.Fragment key={s.symbol + s.tf + s.side}>
+          {i === 0 && nStrong > 0 && <h4 className="sg-sec strong">💪 {T("Strong — everything lines up", "قوی — همه‌چیز هم‌خوان است")} <small>{nStrong}</small></h4>}
+          {i === nStrong && shown.length > nStrong && <h4 className="sg-sec rest">{T("The rest — weaker or missing a confirmation", "بقیه — ضعیف‌تر یا بدون یک تأیید")} <small>{shown.length - nStrong}</small></h4>}
           <article key={s.symbol + s.tf + s.side} className={"sg-card " + (openId === s.symbol + s.tf + s.side ? "open " : "") + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "") + (isTop(s) ? " top" : "")}>
             <header role="button" tabIndex={0} aria-expanded={openId === s.symbol + s.tf + s.side} onClick={() => setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side)} onKeyDown={(e: any) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side))}>
               <Ring v={s.score} g={s.grade} />
@@ -622,8 +556,30 @@ export function AgentTab(p: {
             <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
             </div>}
           </article>
+          </React.Fragment>
         ))}
       </div>
+      </div>
+      )}
+      {view === "journal" && (
+      <div className="sg-pane">
+      <details className="sg-set">
+        <summary>📊 {T("Results journal (which strategies work?)", "دفتر نتایج (کدام استراتژی جواب می‌دهد؟)")} · {stats._all ? stats._all.n + stats._all.open : 0}</summary>
+        <p className="sg-jn">{T("Every signal from a closed-candle scan is tracked automatically: win = reaches 1R before the stop; loss = stop first; after 30 candles it expires at its current R. Sample sizes are small at first — wait for 30+ per strategy.", "هر سیگنال اسکنِ کندل بسته به‌طور خودکار دنبال می‌شود: برد = رسیدن به 1R پیش از حد ضرر؛ باخت = اول حد ضرر؛ بعد از ۳۰ کندل با R همان لحظه بسته می‌شود. در ابتدا نمونه‌ها کم‌اند — منتظر ۳۰+ سیگنال برای هر استراتژی بمان.")}</p>
+        <div className="sg-jt">
+          <div className="h"><span>{T("Strategy", "استراتژی")}</span><span>{T("Closed", "بسته")}</span><span>{T("Win %", "برد ٪")}</span><span>{T("Avg R", "میانگین R")}</span><span>{T("Open", "باز")}</span></div>
+          {[{ id: "_top", name: { en: "⭐ Top signals", fa: "⭐ سیگنال‌های ممتاز" } }, ...STRAT_LIST.map((x) => ({ id: x.id as string, name: x.name })), { id: "_all", name: { en: "All", fa: "همه" } }].map((x) => {
+            const o = stats[x.id] || { n: 0, w: 0, sum: 0, open: 0 };
+            return (
+              <div key={x.id} className={x.id.startsWith("_") ? "tot" : ""}>
+                <span>{L(x.name)}</span><span>{o.n}</span><span>{o.n ? Math.round((o.w / o.n) * 100) + "%" : "—"}</span>
+                <span className={o.n && o.sum / o.n > 0 ? "g" : o.n ? "r" : ""}>{o.n ? (o.sum / o.n).toFixed(2) : "—"}</span><span>{o.open}</span>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the journal?", "دفتر پاک شود؟"))) { jr.current = []; jset("arcus.ag2.journal", []); setJver((v) => v + 1); } }}>{T("Clear journal", "پاک کردن دفتر")}</button>
+      </details>
       <details className="sg-hist">
         <summary>📌 {T("Tracked signals (live status)", "سیگنال‌های ردیابی‌شده (وضعیت زنده)")} ({jr.current.length})</summary>
         <div className="sg-trk">
@@ -649,6 +605,83 @@ export function AgentTab(p: {
           <summary>{T("Announcements", "اعلان‌های گذشته")} ({hist.length})</summary>
           {hist.map((h) => <p key={h.at}><small>{new Date(h.at).toLocaleString()}</small> {fa ? h.fa : h.en}</p>)}
         </details>
+      )}
+      </div>
+      )}
+      {view === "settings" && (
+      <div className="sg-pane">
+        <div className="sg-grp">
+        <label className="sg-min">{T("Tell me", "اطلاع")}
+          <select value={mins} onChange={(e) => setMins(Number(e.target.value))}>
+            {[1, 2, 3, 5, 10].map((m) => <option key={m} value={m}>{m} {T("min before", "دقیقه قبل")}</option>)}
+          </select>
+        </label>
+        <label className="sg-min">{T("Auto-scan", "اسکن خودکار")}
+          <select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+            <option value={0}>{T("off", "خاموش")}</option>
+            {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + " " + T("h", "ساعت") : m + " " + T("min", "دقیقه")}</option>)}
+          </select>
+        </label>
+        <VoiceControl chan="agent" label={T("Voice", "صدا")} sample={{ en: "4-hour candle closes in 2 minutes. 4 signals are available from the latest scan.", fa: "کندل ۴ ساعته تا ۲ دقیقه دیگر بسته می‌شود. ۴ سیگنال از اسکن اخیر موجود است." }} />
+        <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
+        </div>
+      <div className="sg-sub">
+        <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
+        <label className="sg-nt"><input type="checkbox" checked={notifyTop} onChange={(e) => setNotifyTop(e.target.checked)} /> ⭐ {T("Notify me about top signals", "نوتیف برای سیگنال‌های ممتاز")}</label>
+        {(mkt || breadth) && (
+          <span className="sg-mk2">
+            {mkt && <em className={mkt}>₿ 1D {mkt === "up" ? "▲" : mkt === "down" ? "▼" : "▬"}</em>}
+            {breadth && <em className={breadth.up / breadth.n >= 0.5 ? "up" : "down"} title={T("Share of scanned symbols above their SMA50", "سهم نمادهای اسکن‌شده بالای SMA50")}>{T("Breadth", "عرض بازار")} {Math.round((breadth.up / breadth.n) * 100)}%</em>}
+          </span>
+        )}
+        {perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
+        {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
+      </div>
+      <details className="sg-set">
+        <summary>⚙ {T("Strategies on / off", "فعال / غیرفعال کردن استراتژی‌ها")} ({STRAT_LIST.length - off.length}/{STRAT_LIST.length})</summary>
+        <div className="sg-set-list">
+          {STRAT_LIST.map((x) => (
+            <label key={x.id} className={"sg-set-row " + x.id}>
+              <input type="checkbox" checked={!off.includes(x.id)} onChange={(e) => setOff((o) => (e.target.checked ? o.filter((y) => y !== x.id) : [...o, x.id]))} />
+              <span><b>{L(x.name)}</b><small>{L(x.basis)}</small></span>
+            </label>
+          ))}
+        </div>
+      </details>
+      <details className="sg-set">
+        <summary>🛡 {T("Filters & position size", "فیلترها و اندازه‌ی پوزیشن")}</summary>
+        <div className="sg-form">
+          <label>{T("Account size ($)", "اندازه‌ی حساب ($)")}<input type="number" min={0} value={acct} onChange={(e) => setAcct(Math.max(0, Number(e.target.value)))} /></label>
+          <label>{T("Risk per trade (%)", "ریسک هر معامله (٪)")}<input type="number" min={0.1} step={0.1} value={riskPct} onChange={(e) => setRiskPct(Math.max(0.1, Number(e.target.value)))} /></label>
+          <label>{T("Min traded value per candle", "حداقل ارزش معامله در هر کندل")}
+            <select value={minLiq} onChange={(e) => setMinLiq(Number(e.target.value))}>
+              <option value={0}>{T("No filter", "بدون فیلتر")}</option>
+              {[1000, 10000, 50000, 200000, 1000000].map((v) => <option key={v} value={v}>${v.toLocaleString()}</option>)}
+            </select>
+          </label>
+          <label>{T("Against BTC daily trend", "خلاف روند روزانه‌ی بیت‌کوین")}
+            <select value={mktMode} onChange={(e) => setMktMode(e.target.value as any)}>
+              <option value="off">{T("Ignore", "نادیده")}</option>
+              <option value="warn">{T("Warn", "هشدار")}</option>
+              <option value="hide">{T("Hide", "پنهان")}</option>
+            </select>
+          </label>
+          <label>{T("Hide if next level is closer than (R)", "پنهان اگر سطح بعدی نزدیک‌تر از (R)")}
+            <select value={minRR} onChange={(e) => setMinRR(Number(e.target.value))}>
+              <option value={0}>{T("Off", "خاموش")}</option>
+              {[1, 1.5, 2, 3].map((v) => <option key={v} value={v}>{v}R</option>)}
+            </select>
+          </label>
+          <label>{T("Warn if stop is wider than (%)", "هشدار اگر حد ضرر دورتر از (٪)")}
+            <select value={maxStop} onChange={(e) => setMaxStop(Number(e.target.value))}>
+              <option value={0}>{T("Off", "خاموش")}</option>
+              {[2, 3, 5, 8, 12].map((v) => <option key={v} value={v}>{v}%</option>)}
+            </select>
+          </label>
+        </div>
+        {mkt && <p className="sg-mk">₿ {T("BTC daily trend", "روند روزانه‌ی بیت‌کوین")}: <b className={mkt}>{mkt === "up" ? T("Up", "صعودی") : mkt === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی")}</b></p>}
+      </details>
+      </div>
       )}
       <p className="sg-note">{T("Signals come from standard technical-analysis rules (trend, support/resistance breaks, candle shape, volume, RSI, SMA). They are leads to review, not advice.", "سیگنال‌ها از قواعد استاندارد تحلیل تکنیکال می‌آیند (روند، شکست حمایت/مقاومت، شکل کندل، حجم، RSI، SMA). فقط سرنخ برای بررسی‌اند، نه توصیه.")}</p>
     </div>

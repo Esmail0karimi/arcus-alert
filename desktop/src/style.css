@@ -914,3 +914,14 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sg-tg{margin:0;display:flex;flex-direction:column;gap:4px;padding:7px 10px;border-radius:10px;background:#0c1f35;font-size:11.5px;color:#9fb5cf}.sg-tg b{color:#fff}.sg-tg .w{color:#ffb877}.sg-tg small{color:#6f86a3}
 .sg-watch{width:100%;padding:8px 12px;border-radius:12px;border:1px dashed #3a5a7c;background:transparent;color:#cfe0f2;font-size:12.5px;cursor:pointer}.sg-watch:hover{background:#0c1f35}
 .sg-trk{display:flex;flex-direction:column;gap:3px;margin-top:6px}.sg-trk div{display:grid;grid-template-columns:70px 90px 1fr auto;gap:8px;padding:5px 8px;border-radius:8px;background:#0a1a2e;font-size:12px;align-items:center}.sg-trk em{font-style:normal;font-variant-numeric:tabular-nums}.sg-trk .win em{color:#3ddc97}.sg-trk .loss em{color:#ff7a7a}.sg-trk b{color:#fff}
+
+/* ---- Agent sub-tabs & sections ---- */
+.sg-tabs{display:flex;gap:4px;margin:10px 0 4px;padding:4px;border-radius:14px;background:#0a1a2e;border:1px solid #1c3048}
+.sg-tabs button{flex:1;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:#8aa0bb;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.sg-tabs button.on{background:#0e5f58;color:#fff;box-shadow:0 2px 10px rgba(0,201,181,.25)}.sg-tabs button b{padding:0 7px;border-radius:99px;background:rgba(255,255,255,.18);font-size:11px}
+.sg-pane{display:flex;flex-direction:column;gap:4px}
+.sg-grp{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 12px;border:1px solid #1c3048;border-radius:14px;background:#0a1a2e;margin:6px 0}
+.sg-sec{margin:14px 4px 4px;font-size:13px;color:#fff;display:flex;align-items:center;gap:8px}.sg-sec small{color:#8aa0bb;font-weight:500}
+.sg-sec.strong{color:#ffd166}.sg-sec.rest{color:#8aa0bb;margin-top:22px;padding-top:12px;border-top:1px dashed #243c57}
+@media(max-width:560px){.sg-tabs button{padding:8px 4px;font-size:12px}}
+.sg-mini{max-width:440px;max-height:170px}
