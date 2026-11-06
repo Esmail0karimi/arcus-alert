@@ -31,6 +31,8 @@ export type Sig = {
   riskPct: number;
   forming: boolean;
   bars: number[][];
+  tgt: { price: number; rr: number } | null;
+  alt: { entry: number; rr: number } | null;
 };
 
 const sma = (v: number[], n: number) => (v.length < n ? NaN : v.slice(-n).reduce((a, x) => a + x, 0) / n);
@@ -262,8 +264,16 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
     if (Math.abs(entry - stop) > atr * 3) stop = L ? entry - atr * 3 : entry + atr * 3;
     const R = Math.abs(entry - stop);
     const t = [1, 2, 3].map((k) => (L ? entry + R * k : entry - R * k)) as [number, number, number];
+    // real target: the next level in the trade direction; alternative entry: wait for a retest of the broken level
+    const beyond = (L ? resL.filter((x) => x.p > entry + R * 0.3) : supL.filter((x) => x.p < entry - R * 0.3)).map((x) => x.p).sort((a, c) => (L ? a - c : c - a))[0];
+    const tgt = beyond != null ? { price: beyond, rr: Math.abs(beyond - entry) / R } : null;
+    let alt: Sig["alt"] = null;
+    if (h.level && h.level.state === "broken" && (L ? h.level.price < entry : h.level.price > entry) && Math.abs(entry - h.level.price) <= atr * 1.5) {
+      const e2 = h.level.price, R2 = Math.abs(e2 - stop);
+      if (R2 > 0) alt = { entry: e2, rr: Math.abs((tgt ? tgt.price : t[1]) - e2) / R2 };
+    }
     out.push({
-      symbol, base, tf, at: nowMs, side: h.side, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C",
+      tgt, alt, symbol, base, tf, at: nowMs, side: h.side, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C",
       price: last.close, htf, trend, level: h.level, candle, vol, rsi, sma: { v20: s20, v50: s50, above20, above50 }, sma7: s7,
       why, strat: STRATS[h.id], entry, stop, t, riskPct: (R / entry) * 100,
       forming, bars: rows.slice(-32).map((r) => [r.open, r.high, r.low, r.close]),

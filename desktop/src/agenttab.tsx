@@ -40,7 +40,7 @@ const sendNotification = (title: string, body: string, tag: string) => {
   } catch {}
 };
 export const isHot = (s: Sig) => s.grade !== "C" && s.vol.ratio >= 1.3;
-type Grp = Sig & { all: Sig[] };
+type Grp = Sig & { all: Sig[]; mtf: string[] };
 export const isTop = (g: { all?: Sig[]; score: number; vol: { ratio: number } }) => (nOf(g) > 1 && g.score >= 7) || (g.score >= 8 && g.vol.ratio >= 1.3);
 const nOf = (g: any): number => g.all?.length || 1;
 const rank = (a: Sig, b: Sig) => Number(isTop(b as any)) - Number(isTop(a as any)) || Number(nOf(b) > 1) - Number(nOf(a) > 1) || nOf(b) - nOf(a) || Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
@@ -112,6 +112,13 @@ export function AgentTab(p: {
   const [minLiq, setMinLiq] = useState<number>(() => jget("arcus.ag2.liq", 0));
   const [mktMode, setMktMode] = useState<"off" | "warn" | "hide">(() => jget("arcus.ag2.mkt", "warn"));
   const [maxStop, setMaxStop] = useState<number>(() => jget("arcus.ag2.maxstop", 5));
+  const [minRR, setMinRR] = useState<number>(() => jget("arcus.ag2.minrr", 0));
+  const [watch, setWatch] = useState<{ id: string; symbol: string; base: string; tf: string; side: "long" | "short"; at: number }[]>(() => jget("arcus.ag2.watch", []));
+  const [breadth, setBreadth] = useState<{ up: number; n: number } | null>(null);
+  const breadthAcc = useRef({ up: 0, n: 0 });
+  const trans = useRef<{ e: JE; to: "win" | "loss" }[]>([]);
+  const watchRef = useRef(watch);
+  watchRef.current = watch;
   const [mkt, setMkt] = useState<"up" | "down" | "flat" | null>(null);
   const jr = useRef<JE[]>(jget<JE[]>("arcus.ag2.journal", []));
   const [jver, setJver] = useState(0);
@@ -142,6 +149,8 @@ export function AgentTab(p: {
   useEffect(() => { jset("arcus.ag2.min", mins); }, [mins]);
   useEffect(() => { jset("arcus.ag2.every", every); }, [every]);
   useEffect(() => { jset("arcus.ag2.off", off); }, [off]);
+  useEffect(() => { jset("arcus.ag2.minrr", minRR); }, [minRR]);
+  useEffect(() => { jset("arcus.ag2.watch", watch); }, [watch]);
   useEffect(() => { jset("arcus.ag2.acct", acct); jset("arcus.ag2.risk", riskPct); jset("arcus.ag2.liq", minLiq); jset("arcus.ag2.mkt", mktMode); jset("arcus.ag2.maxstop", maxStop); }, [acct, riskPct, minLiq, mktMode, maxStop]);
   useEffect(() => { jset("arcus.ag2.notifyTop", notifyTop); }, [notifyTop]);
   const notifyRef = useRef(notifyTop);
@@ -165,8 +174,8 @@ export function AgentTab(p: {
         if (c.time < e.from || c.time + sec > nowS) continue;
         k++;
         const stopHit = dir > 0 ? c.low <= e.stop : c.high >= e.stop, tgtHit = dir > 0 ? c.high >= e.t1 : c.low <= e.t1;
-        if (stopHit) { e.st = "loss"; e.r = -1; e.bars = k; break; }
-        if (tgtHit) { e.st = "win"; e.r = 1; e.bars = k; break; }
+        if (stopHit) { e.st = "loss"; e.r = -1; e.bars = k; trans.current.push({ e, to: "loss" }); break; }
+        if (tgtHit) { e.st = "win"; e.r = 1; e.bars = k; trans.current.push({ e, to: "win" }); break; }
         if (k >= 30) { e.st = "exp"; e.r = Math.max(-1, Math.min(3, ((c.close - e.entry) / R) * dir)); e.bars = k; break; }
       }
     }
@@ -190,6 +199,7 @@ export function AgentTab(p: {
     }
     const out: Sig[] = [];
     let i = 0, finished = 0, got = 0;
+    breadthAcc.current = { up: 0, n: 0 };
     setProg({ done: 0, total: list.length, tf });
     const htfTf = HTF[tf];
     const worker = async () => {
@@ -202,6 +212,13 @@ export function AgentTab(p: {
           if (rows.length > 60) {
             got++;
             resolveJ(s.symbol, tf, rows);
+            {
+              const cl = closedOnly(rows, tf).map((x) => x.close);
+              if (cl.length >= 50) {
+                breadthAcc.current.n++;
+                if (cl[cl.length - 1] > cl.slice(-50).reduce((a, x) => a + x, 0) / 50) breadthAcc.current.up++;
+              }
+            }
             const lv = rows.slice(-20);
             const lowLiq = liqRef.current > 0 && lv.reduce((a, r) => a + r.close * r.volume, 0) / lv.length < liqRef.current;
             let h: QCandle[] | null = null;
@@ -234,7 +251,23 @@ export function AgentTab(p: {
     setSigs((old) => old.filter((x) => x.tf !== tf).concat(out).sort(rank));
     setScanned({ at: Date.now(), tf, n: got, live });
     setProg(null);
+    if (breadthAcc.current.n > 5) setBreadth({ ...breadthAcc.current });
     if (!live) {
+      const fa3 = localStorage.getItem("arcus.news.lang") === "fa";
+      const nm = (b: string) => (fa3 ? FA_NAME[b] || b : b);
+      for (const t of trans.current.splice(0)) {
+        if (!(t.e.top || t.e.n > 1)) continue;
+        sendNotification(
+          t.to === "win" ? (fa3 ? "🎯 به 1R رسید" : "🎯 Reached 1R") : (fa3 ? "🛑 حد ضرر خورد" : "🛑 Stopped out"),
+          `${nm(t.e.base)} ${t.e.side === "long" ? (fa3 ? "خرید" : "long") : fa3 ? "فروش" : "short"} ${t.e.tf}` + (t.to === "win" ? (fa3 ? " — حد ضرر را به نقطه‌ی ورود ببر" : " — move the stop to breakeven") : ""),
+          "ag2-res-" + t.e.id,
+        );
+      }
+      const hit = watchRef.current.filter((w) => out.some((x) => x.symbol === w.symbol && x.side === w.side && x.strat.id !== "dow"));
+      if (hit.length) {
+        sendNotification(fa3 ? "👁 سیگنال دیده‌بانی شد" : "👁 Watched setup triggered", hit.map((w) => nm(w.base) + " " + (w.side === "long" ? (fa3 ? "خرید" : "long") : fa3 ? "فروش" : "short")).join(" · "), "ag2-watch-" + Date.now());
+        setWatch((a) => a.filter((w) => !hit.some((h) => h.id === w.id)));
+      }
       const sec0 = TF_SEC[tf] || 1, from = Math.floor(Date.now() / 1000 / sec0) * sec0;
       const gm = new Map<string, number>();
       for (const x of out) gm.set(x.symbol + "|" + x.side, (gm.get(x.symbol + "|" + x.side) || 0) + 1);
@@ -361,7 +394,8 @@ export function AgentTab(p: {
       .map((g) => {
         const top = g.slice().sort((a, b) => b.score - a.score)[0];
         const sc = top.score + g.length - 1;
-        return { ...top, all: g, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C" } as Grp;
+        const mt = Array.from(new Set(sigs.filter((y) => y.symbol === top.symbol && y.side === top.side && tfs.includes(y.tf)).map((y) => y.tf)));
+        return { ...top, mtf: mt, all: g, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C" } as Grp;
       })
       .sort(rank);
   }, [sigs, off, tfs, Math.floor(now / 30000)]);
@@ -387,7 +421,7 @@ export function AgentTab(p: {
     a.download = "arcus-signals.csv";
     a.click();
   };
-  const shown = merged.filter((x) => !(mktMode === "hide" && counter(x)) && (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
+  const shown = merged.filter((x) => !(mktMode === "hide" && counter(x)) && !(minRR > 0 && x.tgt && x.tgt.rr < minRR) && (side === "all" || (side === "hot" ? isHot(x) : x.side === side)) && (strat === "all" || x.all.some((y) => y.strat.id === strat)));
   const trendTxt = (t: string) => (t === "up" ? T("Up", "صعودی") : t === "down" ? T("Down", "نزولی") : T("Sideways", "خنثی"));
   const arrow = (t: string) => (t === "up" ? "▲" : t === "down" ? "▼" : "▬");
   const askPerm = async () => {
@@ -432,6 +466,12 @@ export function AgentTab(p: {
       <div className="sg-sub">
         <span>{T("Checks every symbol of", "همه نمادهای")}: {groups.length ? groups.map(([e, n]) => <em key={e}>{e} {n}</em>) : <em>—</em>} <small>{T("(switch exchanges on/off at the top of the app)", "(صرافی‌ها را از بالای برنامه روشن/خاموش کن)")}</small></span>
         <label className="sg-nt"><input type="checkbox" checked={notifyTop} onChange={(e) => setNotifyTop(e.target.checked)} /> ⭐ {T("Notify me about top signals", "نوتیف برای سیگنال‌های ممتاز")}</label>
+        {(mkt || breadth) && (
+          <span className="sg-mk2">
+            {mkt && <em className={mkt}>₿ 1D {mkt === "up" ? "▲" : mkt === "down" ? "▼" : "▬"}</em>}
+            {breadth && <em className={breadth.up / breadth.n >= 0.5 ? "up" : "down"} title={T("Share of scanned symbols above their SMA50", "سهم نمادهای اسکن‌شده بالای SMA50")}>{T("Breadth", "عرض بازار")} {Math.round((breadth.up / breadth.n) * 100)}%</em>}
+          </span>
+        )}
         {perm === "default" && <button type="button" className="sg-perm" onClick={askPerm}>🔔 {T("Allow notifications", "اجازه‌ی اعلان")}</button>}
         {on && <span className="sg-hint">{T("Scans after each candle close and on the auto-scan timer; works while the app stays open (any tab).", "بعد از بسته‌شدن هر کندل و با تایمر اسکن خودکار کار می‌کند؛ تا وقتی برنامه باز است (در هر تب).")}</span>}
       </div>
@@ -462,6 +502,12 @@ export function AgentTab(p: {
               <option value="off">{T("Ignore", "نادیده")}</option>
               <option value="warn">{T("Warn", "هشدار")}</option>
               <option value="hide">{T("Hide", "پنهان")}</option>
+            </select>
+          </label>
+          <label>{T("Hide if next level is closer than (R)", "پنهان اگر سطح بعدی نزدیک‌تر از (R)")}
+            <select value={minRR} onChange={(e) => setMinRR(Number(e.target.value))}>
+              <option value={0}>{T("Off", "خاموش")}</option>
+              {[1, 1.5, 2, 3].map((v) => <option key={v} value={v}>{v}R</option>)}
             </select>
           </label>
           <label>{T("Warn if stop is wider than (%)", "هشدار اگر حد ضرر دورتر از (٪)")}
@@ -511,6 +557,10 @@ export function AgentTab(p: {
       </div>
       {msg && <p className="sg-msg">{msg}</p>}
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
+      {(["long", "short"] as const).map((sd) => {
+        const k = shown.filter((x) => x.side === sd).length;
+        return k >= 4 ? <p key={sd} className="sg-msg">⚠ {T(`${k} ${sd} signals at once — they are probably one correlated bet; size them together, not separately.`, `${k} سیگنال ${sd === "long" ? "خرید" : "فروش"} هم‌زمان — احتمالاً یک شرط همبسته‌اند؛ ریسک را روی مجموعشان حساب کن، نه تک‌تک.`)}</p> : null;
+      })}
       <div className="sg-list">
         {shown.map((s) => (
           <article key={s.symbol + s.tf + s.side} className={"sg-card " + (openId === s.symbol + s.tf + s.side ? "open " : "") + (s.side === "long" ? "up" : "dn") + (isHot(s) || s.all.length > 1 ? " hot" : "") + (s.all.length > 1 ? " multi" : "") + (isTop(s) ? " top" : "")}>
@@ -521,7 +571,7 @@ export function AgentTab(p: {
                 <em>{fmt(s.price)}</em>
               </div>
               <span className={"sg-side " + s.side}>{s.side === "long" ? "▲ " + T("LONG", "خرید") : "▼ " + T("SHORT", "فروش")}</span>
-              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
+              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.mtf.length > 1 && <b title="multi-timeframe">⏱{s.mtf.join("+")}</b>}{s.tgt && s.tgt.rr < 1.5 && <b className="w" title="next level is close">⚠</b>}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
               <span className="sg-strs">{s.all.map((x) => L(x.strat.name)).join(" · ")}</span>
               <i className="sg-chev">{openId === s.symbol + s.tf + s.side ? "▴" : "▾"}</i>
             </header>
@@ -547,6 +597,12 @@ export function AgentTab(p: {
             {s.all.map((x) => (
               <p key={x.strat.id} className={"sg-strat-l " + x.strat.id}><b>{L(x.strat.name)}</b> <span>{L(x.why[0] || x.strat.basis)}</span></p>
             ))}
+            {(s.tgt || s.alt) && (
+              <p className="sg-tg">
+                {s.tgt && <span className={s.tgt.rr < 1.5 ? "w" : ""}>🎯 {T("Next level", "سطح بعدی")} {fmt(s.tgt.price)} · R:R <b>{s.tgt.rr.toFixed(1)}</b>{s.tgt.rr < 1.5 ? " — " + T("little room to run", "جای حرکت کم است") : ""}</span>}
+                {s.alt && <span>↩ {T("Retest entry", "ورود با ریتست")} {fmt(s.alt.entry)} · R:R <b>{s.alt.rr.toFixed(1)}</b> <small>({T("limit order at the broken level", "سفارش حد در سطح شکسته‌شده")})</small></span>}
+              </p>
+            )}
             <div className="sg-lv">
               <div><dt>{T("Entry", "ورود")}</dt><dd>{fmt(s.entry)}</dd></div>
               <div className="r"><dt>{T("Stop", "حد ضرر")}</dt><dd>{fmt(s.stop)}<small>{s.riskPct.toFixed(1)}%</small></dd></div>
@@ -562,11 +618,32 @@ export function AgentTab(p: {
               <summary>{T("All reasons", "همه‌ی دلایل")}</summary>
               <ul>{Array.from(new Set(s.all.flatMap((x) => x.why.map((w) => L(w))))).map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
+            <button type="button" className="sg-watch" onClick={() => setWatch((a) => (a.some((w) => w.symbol === s.symbol && w.side === s.side) ? a : a.concat({ id: s.symbol + s.side + Date.now(), symbol: s.symbol, base: s.base, tf: s.tf, side: s.side, at: Date.now() })))}>👁 {T("Watch — notify me when it triggers", "دیده‌بانی — وقتی فعال شد خبر بده")}</button>
             <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
             </div>}
           </article>
         ))}
       </div>
+      <details className="sg-hist">
+        <summary>📌 {T("Tracked signals (live status)", "سیگنال‌های ردیابی‌شده (وضعیت زنده)")} ({jr.current.length})</summary>
+        <div className="sg-trk">
+          {jr.current.slice(-20).reverse().map((e) => (
+            <div key={e.id} className={e.st}>
+              <b>{fa ? FA_NAME[e.base] || e.base : e.base}</b><span>{e.tf} · {e.side === "long" ? T("long", "خرید") : T("short", "فروش")}</span>
+              <span>{STRAT_LIST.find((x) => x.id === e.strat)?.name[fa ? "fa" : "en"]}</span>
+              <em>{e.st === "open" ? "⏳ " + T("open", "باز") : e.st === "win" ? "✅ 1R · " + e.bars : e.st === "loss" ? "🛑 −1R · " + e.bars : "⌛ " + e.r.toFixed(1) + "R"}</em>
+            </div>
+          ))}
+        </div>
+      </details>
+      {watch.length > 0 && (
+        <details className="sg-hist" open>
+          <summary>👁 {T("Watching", "دیده‌بانی")} ({watch.length})</summary>
+          {watch.map((w) => (
+            <p key={w.id}>{fa ? FA_NAME[w.base] || w.base : w.base} {w.tf} {w.side === "long" ? T("long", "خرید") : T("short", "فروش")} <button type="button" className="sg-go" onClick={() => setWatch((a) => a.filter((x) => x.id !== w.id))}>✕</button></p>
+          ))}
+        </details>
+      )}
       {hist.length > 0 && (
         <details className="sg-hist">
           <summary>{T("Announcements", "اعلان‌های گذشته")} ({hist.length})</summary>
