@@ -258,14 +258,7 @@ export function AgentTab(p: {
     if (!live) {
       const fa3 = localStorage.getItem("arcus.news.lang") === "fa";
       const nm = (b: string) => (fa3 ? FA_NAME[b] || b : b);
-      for (const t of trans.current.splice(0)) {
-        if (!(t.e.top || t.e.n > 1)) continue;
-        sendNotification(
-          t.to === "win" ? (fa3 ? "🎯 به 1R رسید" : "🎯 Reached 1R") : (fa3 ? "🛑 حد ضرر خورد" : "🛑 Stopped out"),
-          `${nm(t.e.base)} ${t.e.side === "long" ? (fa3 ? "خرید" : "long") : fa3 ? "فروش" : "short"} ${t.e.tf}` + (t.to === "win" ? (fa3 ? " — حد ضرر را به نقطه‌ی ورود ببر" : " — move the stop to breakeven") : ""),
-          "ag2-res-" + t.e.id,
-        );
-      }
+      trans.current.length = 0; // results are recorded in the journal only; no alerts for 1R / stop
       const hit = watchRef.current.filter((w) => out.some((x) => x.symbol === w.symbol && x.side === w.side && x.strat.id !== "dow"));
       if (hit.length) {
         sendNotification(fa3 ? "👁 سیگنال دیده‌بانی شد" : "👁 Watched setup triggered", hit.map((w) => nm(w.base) + " " + (w.side === "long" ? (fa3 ? "خرید" : "long") : fa3 ? "فروش" : "short")).join(" · "), "ag2-watch-" + Date.now());
