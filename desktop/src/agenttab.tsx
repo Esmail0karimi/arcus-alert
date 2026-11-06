@@ -41,7 +41,7 @@ const sendNotification = (title: string, body: string, tag: string) => {
 };
 export const isHot = (s: Sig) => s.grade !== "C" && s.vol.ratio >= 1.3;
 type Grp = Sig & { all: Sig[]; mtf: string[] };
-export const isTop = (g: { all?: Sig[]; score: number; vol: { ratio: number } }) => (nOf(g) > 1 && g.score >= 7) || (g.score >= 8 && g.vol.ratio >= 1.3);
+export const isTop = (g: { all?: Sig[]; score: number; vol: { ratio: number }; tgt?: { rr: number } | null }) => !(g.tgt && g.tgt.rr < 1.5) && (nOf(g) > 1 && g.score >= 7) || (g.score >= 8 && g.vol.ratio >= 1.3);
 const nOf = (g: any): number => g.all?.length || 1;
 const rank = (a: Sig, b: Sig) => Number(isTop(b as any)) - Number(isTop(a as any)) || Number(nOf(b) > 1) - Number(nOf(a) > 1) || nOf(b) - nOf(a) || Number(isHot(b)) - Number(isHot(a)) || b.score - a.score || b.vol.ratio - a.vol.ratio;
 const fmt = (v: number) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
@@ -94,6 +94,7 @@ function Mini({ s }: { s: Sig }) {
 }
 
 export function AgentTab(p: {
+  priceOf?: (symbol: string) => number | undefined;
   syms: AgSym[];
   fetchCandles: (symbol: string, tf: string, signal: AbortSignal) => Promise<QCandle[]>;
   onOpenChart?: (symbol: string, tf: string, setup: SetupLines | null) => boolean;
@@ -277,7 +278,7 @@ export function AgentTab(p: {
         const id = [x.symbol, tf, x.side, x.strat.id, from].join("|");
         if (jr.current.some((e) => e.id === id)) continue;
         const n = gm.get(x.symbol + "|" + x.side) || 1;
-        jr.current.push({ id, sym: x.symbol, base: x.base, tf, side: x.side, strat: x.strat.id, top: isTop({ all: Array(n).fill(x), score: x.score + n - 1, vol: x.vol }), n, from, entry: x.entry, stop: x.stop, t1: x.t[0], st: "open", r: 0, bars: 0 });
+        jr.current.push({ id, sym: x.symbol, base: x.base, tf, side: x.side, strat: x.strat.id, top: isTop({ all: Array(n).fill(x), score: x.score + n - 1, vol: x.vol, tgt: x.tgt }), n, from, entry: x.entry, stop: x.stop, t1: x.t[0], st: "open", r: 0, bars: 0 });
       }
       jr.current = jr.current.slice(-600);
       jset("arcus.ag2.journal", jr.current);
@@ -292,7 +293,7 @@ export function AgentTab(p: {
       const fresh: { base: string; side: string; n: number }[] = [];
       for (const [k, arr] of g) {
         const top = arr.slice().sort((a, b) => b.score - a.score)[0];
-        const grp = { all: arr, score: top.score + arr.length - 1, vol: top.vol };
+        const grp = { all: arr, score: top.score + arr.length - 1, vol: top.vol, tgt: top.tgt };
         const id = k + "|" + tf + "|" + bucket;
         if (isTop(grp) && !seen.includes(id)) {
           seen.push(id);
@@ -382,16 +383,27 @@ export function AgentTab(p: {
     p.syms.forEach((s) => (m[s.ex] = (m[s.ex] || 0) + 1));
     return Object.entries(m);
   }, [p.syms]);
+  const dropRef = useRef(0);
   const merged: Grp[] = useMemo(() => {
+    let dropped = 0;
     const m = new Map<string, Sig[]>();
-    for (const x of sigs) {
+    for (let x of sigs) {
       if (off.includes(x.strat.id) || !tfs.includes(x.tf)) continue;
+      const lp = p.priceOf?.(x.symbol);
+      if (lp && lp > 0 && Math.abs(lp - x.entry) / x.entry < 0.2) { // a feed that disagrees by >20% is a different scale/source: ignore it
+        const Lg = x.side === "long";
+        const spent = Lg ? lp <= x.stop || lp >= x.t[0] : lp >= x.stop || lp <= x.t[0];
+        const failed = x.level?.state === "broken" && (Lg ? lp < x.level.price : lp > x.level.price);
+        if (spent || failed) { dropped++; continue; }
+        x = { ...x, price: lp };
+      }
       const secX = TF_SEC[x.tf] || 1;
       if (now > (Math.floor(x.at / 1000 / secX) + 2) * secX * 1000) continue; // older than one candle: wait for the next scan
       const k = x.symbol + "|" + x.tf + "|" + x.side;
       const cur = m.get(k) || [];
       if (!cur.some((y) => y.strat.id === x.strat.id)) m.set(k, cur.concat(x));
     }
+    dropRef.current = dropped;
     return Array.from(m.values())
       .map((g) => {
         const top = g.slice().sort((a, b) => b.score - a.score)[0];
@@ -400,7 +412,7 @@ export function AgentTab(p: {
         return { ...top, mtf: mt, all: g, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C" } as Grp;
       })
       .sort(rank);
-  }, [sigs, off, tfs, Math.floor(now / 30000)]);
+  }, [sigs, off, tfs, Math.floor(now / 5000)]);
   const counter = (x: Sig) => mktMode !== "off" && mkt != null && ((x.side === "long" && mkt === "down") || (x.side === "short" && mkt === "up"));
   const stats = useMemo(() => {
     const m: Record<string, { n: number; w: number; sum: number; open: number }> = {};
@@ -413,7 +425,7 @@ export function AgentTab(p: {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jver]);
-  const isStrong = (x: Grp) => isTop(x) || x.grade === "A" || (x.grade === "B" && isHot(x));
+  const isStrong = (x: Grp) => !(x.tgt && x.tgt.rr < 1.5) && (isTop(x) || x.grade === "A" || (x.grade === "B" && isHot(x)));
   const csv = () => {
     const rows = [["symbol", "tf", "side", "strategies", "grade", "score", "entry", "stop", "1R", "2R", "3R"]].concat(
       merged.map((g) => [g.symbol, g.tf, g.side, g.all.map((x) => x.strat.id).join("+"), g.grade, String(g.score), String(g.entry), String(g.stop), String(g.t[0]), String(g.t[1]), String(g.t[2])]),
@@ -487,6 +499,7 @@ export function AgentTab(p: {
         {scanned && <small className="sg-when">{T("Last scan", "آخرین اسکن")} {new Date(scanned.at).toLocaleTimeString()} · {scanned.tf} · {scanned.n} {T("symbols", "نماد")}{scanned.live ? " · " + T("candle still forming", "کندل هنوز بسته نشده") : ""}</small>}
       </div>
       {msg && <p className="sg-msg">{msg}</p>}
+      {dropRef.current > 0 && <p className="sg-drop">🧹 {T(`${dropRef.current} signal(s) hidden: price already hit the stop/first target or fell back below the broken level.`, `${dropRef.current} سیگنال پنهان شد: قیمت به حد ضرر/تارگت اول رسیده یا دوباره زیر سطح شکسته‌شده برگشته.`)}</p>}
       {!shown.length && <p className="sg-empty">{scanned ? T("No signal passed the checks. That is normal — most of the time there is nothing worth taking.", "هیچ سیگنالی از فیلترها رد نشد. طبیعی است — بیشتر وقت‌ها چیز خوبی نیست.") : T("Turn the Agent on, or press Scan now. Signals appear here for you to review.", "ایجنت را روشن کن یا اسکن بزن. سیگنال‌ها اینجا برای بررسی می‌آیند.")}</p>}
       {(["long", "short"] as const).map((sd) => {
         const k = shown.filter((x) => x.side === sd).length;
@@ -501,15 +514,16 @@ export function AgentTab(p: {
             <header role="button" tabIndex={0} aria-expanded={openId === s.symbol + s.tf + s.side} onClick={() => setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side)} onKeyDown={(e: any) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpenId(openId === s.symbol + s.tf + s.side ? null : s.symbol + s.tf + s.side))}>
               <Ring v={s.score} g={s.grade} />
               <div className="sg-id">
-                <b>{fa ? FA_NAME[s.base] || s.base : s.base} <small>{s.tf}{s.forming ? " · " + T("forming", "در حال شکل‌گیری") : ""}</small></b>
+                <b>{fa ? FA_NAME[s.base] || s.base : s.base} <span className="sg-tfc">{s.tf}</span>{s.forming && <small>{T("forming", "در حال شکل‌گیری")}</small>}</b>
                 <em>{fmt(s.price)}</em>
               </div>
               <span className={"sg-side " + s.side}>{s.side === "long" ? "▲ " + T("LONG", "خرید") : "▼ " + T("SHORT", "فروش")}</span>
-              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.mtf.length > 1 && <b title="multi-timeframe">⏱{s.mtf.join("+")}</b>}{s.tgt && s.tgt.rr < 1.5 && <b className="w" title="next level is close">⚠</b>}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
+              <span className="sg-mini-b">{isTop(s) && "⭐"}{s.mtf.length > 1 && <b title="multi-timeframe">⏱{s.mtf.join("+")}</b>}{s.tgt && <b className={s.tgt.rr < 1.5 ? "w" : "g"} title={T("Reward-to-risk to the next level", "نسبت سود به ریسک تا سطح بعدی")}>R:R {s.tgt.rr.toFixed(1)}</b>}{(() => { const rr0 = Math.abs(s.entry - s.stop) || 1, pr = ((s.price - s.entry) / rr0) * (s.side === "long" ? 1 : -1); return <b className={pr >= 0 ? "g" : "w"} title={T("Where price is now, in R from the entry", "قیمت الان چند R از نقطه‌ی ورود فاصله دارد")}>{pr >= 0 ? "+" : ""}{pr.toFixed(1)}R</b>; })()}{s.all.length > 1 && <b>✅{s.all.length}</b>}{isHot(s) && "🔥"}</span>
               <span className="sg-strs">{s.all.map((x) => L(x.strat.name)).join(" · ")}</span>
               <i className="sg-chev">{openId === s.symbol + s.tf + s.side ? "▴" : "▾"}</i>
             </header>
             {openId === s.symbol + s.tf + s.side && <div className="sg-more">
+            <p className="sg-an">🕒 {T("Analysed on the", "تحلیل روی چارت")} <b>{s.tf}</b> {T("chart", "")}{s.htf ? <> · {T("bigger trend from", "روند بزرگ‌تر از")} <b>{s.htf.tf}</b></> : null} · {s.forming ? T("candle still forming", "کندل هنوز بسته نشده") : <>{T("signal candle closed", "کندل سیگنال بسته شد")} {new Date(Math.floor(s.at / 1000 / (TF_SEC[s.tf] || 1)) * (TF_SEC[s.tf] || 1) * 1000).toLocaleTimeString()}</>} · {T("scanned", "اسکن")} {Math.max(0, Math.round((now - s.at) / 60000))} {T("min ago", "دقیقه پیش")}</p>
             <div className="sg-badges">
               {isTop(s) && <span className="sg-top">⭐ {T("Top signal", "سیگنال ممتاز")}</span>}
               {s.all.length > 1 && <span className="sg-multi">✅ {T(`${s.all.length} strategies confirm`, `${s.all.length} استراتژی تأیید کرده‌اند`)}</span>}

@@ -2816,7 +2816,7 @@ function App() {
         )}
         {tab === "News" && <News trackedBases={newsBases} onOpen={openBase} />}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />
