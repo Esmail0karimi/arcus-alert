@@ -360,7 +360,8 @@ export function AgentTab(p: {
     return Array.from(m.values())
       .map((g) => {
         const top = g.slice().sort((a, b) => b.score - a.score)[0];
-        return { ...top, all: g, score: top.score + g.length - 1 } as Grp;
+        const sc = top.score + g.length - 1;
+        return { ...top, all: g, score: sc, grade: sc >= 8 ? "A" : sc >= 6 ? "B" : "C" } as Grp;
       })
       .sort(rank);
   }, [sigs, off, tfs, Math.floor(now / 30000)]);
