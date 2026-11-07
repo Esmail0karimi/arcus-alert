@@ -209,10 +209,11 @@ export function AgentTab(p: {
     jset("arcus.ag3.watch", wt.slice(0, 120));
     jset("arcus.ag3.meta", mt);
     // new READY signals (never seen before) -> history + alerts. The same candle never alerts twice.
-    const seen = new Set(open.map((h) => h.key));
+    const seen = new Set<string>(jget<string[]>("arcus.ag3.seen", []));
     const fresh = rd.filter((x) => !seen.has(keyOf(x)));
-    for (const x of fresh) open.push({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0 });
-    const nh = open.slice(-300);
+    fresh.forEach((x) => seen.add(keyOf(x)));
+    jset("arcus.ag3.seen", Array.from(seen).slice(-600));
+    const nh = open; // journal entries only change when the user adds one; here only their outcomes are updated
     setHist(nh);
     jset("arcus.ag3.hist", nh);
     if (fresh.length) {
@@ -262,6 +263,18 @@ export function AgentTab(p: {
     };
     const ok = p.onOpenChart?.(s.symbol, s.tf, setup);
     setMsg(ok === false ? T("This symbol is not in the chart list right now.", "این نماد الان در لیست چارت نیست.") : "");
+  };
+  const inJ = (x: Sig2) => hist.some((h) => h.key === keyOf(x));
+  const addJ = (x: Sig2) => {
+    if (x.status2 || inJ(x)) return;
+    const nh = hist.concat({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0 }).slice(-300);
+    setHist(nh);
+    jset("arcus.ag3.hist", nh);
+  };
+  const delJ = (k: string) => {
+    const nh = hist.filter((h) => h.key !== k);
+    setHist(nh);
+    jset("arcus.ag3.hist", nh);
   };
   const askPerm = async () => {
     if (!("Notification" in window)) return setPerm("unsupported");
@@ -337,7 +350,7 @@ export function AgentTab(p: {
             <h5>{T("Technical explanation", "توضیح تکنیکال")}</h5>
             <ul className="sx-why">{s.why.map((w, i) => <li key={i}>{L(w)}</li>)}</ul>
             {s.missing.length > 0 && <p className="sx-miss">⚠ {T("Missing / incomplete data", "داده‌ی ناقص یا موجود‌نبودن")}: {s.missing.join(", ")}</p>}
-            <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
+            {!s.status2 && <button type="button" className="sg-open" disabled={inJ(s)} onClick={() => addJ(s)}>{inJ(s) ? "📒 " + T("In journal", "در دفتر است") : "📒 " + T("Add to journal", "افزودن به دفتر")}</button>} <button type="button" className="sg-open" onClick={() => open(s)}>📈 {T("Open chart & analysis", "باز کردن چارت و تحلیل")}</button>
           </div>
         )}
       </article>
@@ -351,7 +364,7 @@ export function AgentTab(p: {
     ["long", "▲", "LONG", longs.length],
     ["short", "▼", "SHORT", shorts.length],
     ["market", "🌐", T("Market", "بازار"), null],
-    ["history", "🕘", T("History", "تاریخچه"), hist.length || null],
+    ["history", "📒", T("Journal", "دفتر"), hist.length || null],
     ["settings", "⚙", T("Settings", "تنظیمات"), null],
   ];
 
@@ -437,7 +450,7 @@ export function AgentTab(p: {
       {view === "history" && (
         <div className="sg-pane">
           <div className="sx-stats">
-            <div><b>{hist.length}</b><span>{T("Signals", "سیگنال")}</span></div>
+            <div><b>{hist.length}</b><span>{T("Entries", "ورودی")}</span></div>
             <div><b>{stats.n ? Math.round((stats.w / stats.n) * 100) + "%" : "—"}</b><span>{T("Win rate", "درصد برد")}</span></div>
             <div><b className={stats.avg >= 0 ? "g" : "r"}>{stats.n ? stats.avg.toFixed(2) : "—"}</b><span>{T("Avg R", "میانگین R")}</span></div>
             <div><b>{stats.open}</b><span>{T("Open", "باز")}</span></div>
@@ -451,11 +464,11 @@ export function AgentTab(p: {
                 <span>{L(STRATS[h.strat as StratId].name)}</span>
                 <span>{fmt(h.entry)} → {fmt(h.tp)}</span>
                 <span>{h.score}</span>
-                <small>{new Date(h.time).toLocaleString()}</small>
+                <small>{new Date(h.time).toLocaleString()}</small><button type="button" aria-label="remove" className="sx-del" onClick={() => delJ(h.key)}>✕</button>
                 <em>{h.st === "open" ? "⏳" : h.st === "win" ? "✅ +" + h.r.toFixed(1) + "R" : h.st === "loss" ? "🛑 −1R" : "⌛ " + h.r.toFixed(1) + "R"}</em>
               </div>
             ))}
-            {!hist.length && <p className="sg-empty">{T("No confirmed signal yet.", "هنوز سیگنال تأییدشده‌ای ثبت نشده.")}</p>}
+            {!hist.length && <p className="sg-empty">{T("The journal is empty. Open a signal and press “Add to journal” — nothing is added automatically.", "دفتر خالی است. یک سیگنال را باز کن و «افزودن به دفتر» بزن — چیزی خودکار اضافه نمی‌شود.")}</p>}
           </div>
           {hist.length > 0 && <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the history?", "تاریخچه پاک شود؟"))) { setHist([]); jset("arcus.ag3.hist", []); } }}>{T("Clear history", "پاک کردن تاریخچه")}</button>}
         </div>

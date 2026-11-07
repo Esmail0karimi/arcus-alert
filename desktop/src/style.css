@@ -974,3 +974,5 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sx-hist>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px}
 .sx-hist .win em{color:#3ddc97}.sx-hist .loss em{color:#ff5c5c}.sx-hist em{margin-inline-start:auto;font-style:normal;font-weight:700}
 .sx-set{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;margin-bottom:8px}.sx-set h5{margin:0 0 6px;font-size:13px}
+.sx-del{background:none;border:0;color:#9fb5cf;cursor:pointer}
+.sx-more .sg-open:disabled{opacity:.6;cursor:default}
