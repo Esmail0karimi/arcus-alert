@@ -1,21 +1,26 @@
    3s ForexFactory nextweek HTTP 404
+  85s   fallback probe: GOOGL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"GOOGL Earnings Date","announcement":"Earnings announcement* for GOOGL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"
   85s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  85s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: MSFT nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"MSFT Earnings Date","announcement":"Earnings announcement* for MSFT: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  85s   fallback probe: MSFT finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: GOOG finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   85s   fallback probe: GOOGL finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  85s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  85s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  85s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  85s   fallback probe: GOOG finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   85s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  85s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
   85s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  85s   fallback probe: BRKB fromFinviz error: HTTP 404
   85s   fallback probe: BRK fromFinviz error: HTTP 404
-  85s   fallback probe: BRKB fromSA error: HTTP 404
+  85s   fallback probe: BRKB fromFinviz error: HTTP 404
+  85s   fallback probe: BRK fromSA error: HTTP 404
   85s earnings-date fallback: 46/109 tracked stocks found
   85s details: 415 companies, refreshing 110
  201s details written 110, empty 0
- 202s news.json: 507 events, 609 company files
+ 202s news.json: 507 events, 606 company files
 [
+ {
+  "name": "SEC EDGAR",
+  "ok": true,
+  "note": "10419 companies"
+ },
  {
   "name": "Fed calendar",
   "ok": true,
@@ -26,11 +31,6 @@
   "name": "Treasury yields",
   "ok": true,
   "note": "curve of 2026-11-06"
- },
- {
-  "name": "SEC EDGAR",
-  "ok": true,
-  "note": "10409 companies"
  },
  {
   "name": "ForexFactory",
@@ -77,13 +77,13 @@
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "1 write-ups for 100 recent events",
+  "note": "1 write-ups for 94 recent events",
   "n": 1
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "72 reported companies summarised",
-  "n": 72
+  "note": "74 reported companies summarised",
+  "n": 74
  }
 ]
