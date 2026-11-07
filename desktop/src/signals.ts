@@ -94,12 +94,14 @@ const STRATS = {
   rct: { id: "rct", name: b("Reaction at a level", "ری‌اکشن در سطح"), basis: b("Price returns to a level that held before (2+ touches) and reacts with a rejection candle", "قیمت به سطحی که قبلاً چند بار نگه داشته برمی‌گردد و با کندل پس‌زده‌شدن واکنش نشان می‌دهد") },
   pa: { id: "pa", name: b("Price action", "پرایس اکشن"), basis: b("Pure price patterns: inside-bar breakout, double bottom / double top with a neckline break", "الگوهای خالص قیمت: شکست اینساید بار، دوقلوی کف / سقف با شکست خط گردن") },
   ell: { id: "ell", name: b("Elliott wave (simplified)", "الیوت (ساده‌شده)"), basis: b("Wave 4 correction ends after a 5-wave-style impulse (wave 2 holds, wave 3 beyond wave 1, no overlap) — start of wave 5. Elliott is subjective; treat as a lead", "پایان موج ۴ بعد از ساختار پنج‌موجی (موج ۲ نگه داشته، موج ۳ فراتر از موج ۱، بدون همپوشانی) — شروع موج ۵. الیوت ذهنی است؛ فقط سرنخ"), },
+  mtf: { id: "mtf", name: b("Higher-timeframe level break", "شکست سطح تایم‌فریم بالاتر"), basis: b("A 15m / 1h candle closes beyond a level from the 4h or daily chart (tested 2+ times there) — the small chart triggers, the big chart gives the level", "کندل ۱۵ دقیقه یا ۱ ساعته بیرون سطحی از چارت ۴ ساعته یا روزانه (که آنجا دست‌کم ۲ بار تست شده) بسته می‌شود — چارت کوچک ماشه را می‌کشد و چارت بزرگ سطح را می‌دهد") },
+  prs: { id: "prs", name: b("Pressure on a higher-timeframe level", "فشار روی سطح تایم‌فریم بالاتر"), basis: b("Before the break: price squeezes against a 4h / daily level with higher lows (or lower highs) and rising volume — the level may give way soon", "پیش از شکست: قیمت با کف‌های بالاتر (یا سقف‌های پایین‌تر) و حجم رو‌به‌رشد به سطح ۴ ساعته / روزانه فشار می‌آورد — سطح ممکن است به‌زودی بشکند") },
   mom: { id: "mom", name: b("Momentum candle", "کندل مومنتوم"), basis: b("Engulfing / marubozu in the trend direction on above-average volume", "اینگالفینگ یا کندل بلند در جهت روند با حجم بالای میانگین") },
 };
 export const STRAT_LIST = Object.values(STRATS);
 
 /** Evaluate one symbol; returns one signal per strategy that fires. `rows` = chosen timeframe, `htf` = higher timeframe for context. */
-export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCandle[], htfIn: QCandle[] | null, htfTf: string | null, nowMs = Date.now(), forming = false): Sig[] {
+export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCandle[], htfIn: QCandle[] | null, htfTf: string | null, nowMs = Date.now(), forming = false, lvlIn: { tf: string; rows: QCandle[] }[] = []): Sig[] {
   const rows = forming ? rowsIn : closedOnly(rowsIn, tf, nowMs);
   if (rows.length < 60) return [];
   const n = rows.length, last = rows[n - 1], prev = rows[n - 2];
@@ -242,6 +244,44 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
     hits.push({ side: L ? "long" : "short", id: "vsg", bonus: 3, level: null, why: [b(`Volume is ${ratio.toFixed(1)}× its 20-candle average and price moved ${(bodyMove / atr).toFixed(1)} ATR ${L ? "up" : "down"} with it`, `حجم ${ratio.toFixed(1)} برابر میانگین ۲۰ کندل است و قیمت هم ${(bodyMove / atr).toFixed(1)} ATR ${L ? "بالا" : "پایین"} رفته`)] });
   }
 
+  // 10) levels from the 4h / daily charts, triggered on the 15m / 1h chart
+  type HL = { p: number; touches: number; tf: string };
+  const htfRes: HL[] = [], htfSup: HL[] = [];
+  for (const lv of lvlIn) {
+    const cr = closedOnly(lv.rows, lv.tf, nowMs);
+    if (cr.length < 40) continue;
+    const aH = atrOf(cr, 14);
+    if (!(aH > 0)) continue;
+    const pvH = pivots(cr.slice(-121), 3);
+    const cl2 = (arr: { p: number }[]) => arr.map((h) => { const nr = arr.filter((x) => Math.abs(x.p - h.p) <= aH * 0.3); return { p: nr.reduce((a, x) => a + x.p, 0) / nr.length, touches: nr.length, tf: lv.tf }; }).filter((x) => x.touches >= 2);
+    htfRes.push(...cl2(pvH.hi));
+    htfSup.push(...cl2(pvH.lo));
+  }
+  if ((tf === "15m" || tf === "1h") && (htfRes.length || htfSup.length)) {
+    const pref = (a: HL, c: HL) => (a.tf === "1d" ? 0 : 1) - (c.tf === "1d" ? 0 : 1) || c.touches - a.touches;
+    const brR = htfRes.filter((x) => prev.close <= x.p + buf && last.close > x.p + buf).sort(pref)[0];
+    const brS = htfSup.filter((x) => prev.close >= x.p - buf && last.close < x.p - buf).sort(pref)[0];
+    for (const [lv, L] of [[brR, true], [brS, false]] as const) {
+      if (!lv) continue;
+      const why: Bi[] = [b(`${tf} candle closed ${L ? "above" : "below"} the ${lv.tf} ${L ? "resistance" : "support"} ${fmtp(lv.p)} (tested ${lv.touches} times on the ${lv.tf} chart)`, `کندل ${tf} ${L ? "بالای" : "پایین"} ${L ? "مقاومت" : "حمایت"} ${lv.tf} یعنی ${fmtp(lv.p)} بسته شد (روی چارت ${lv.tf} ${lv.touches} بار تست شده)`)];
+      let bonus = lv.tf === "1d" ? 4 : 3;
+      if (ratio >= 1.3) { bonus += 1; why.push(b("Trigger candle has strong volume", "کندل ماشه حجم قوی دارد")); }
+      hits.push({ side: L ? "long" : "short", id: "mtf", bonus, why, level: { kind: L ? "resistance" : "support", price: lv.p, state: "broken" } });
+    }
+    // pressure before the break
+    const last6 = rows.slice(-6);
+    let ups = 0, downs = 0;
+    for (let i = 1; i < last6.length; i++) { if (last6[i].low > last6[i - 1].low) ups++; if (last6[i].high < last6[i - 1].high) downs++; }
+    const vRecent = rows.slice(-3).reduce((a, r) => a + r.volume, 0) / 3, vPrior = rows.slice(-13, -3).reduce((a, r) => a + r.volume, 0) / 10;
+    const volUp = vPrior > 0 && vRecent > vPrior * 1.1;
+    const prR = htfRes.filter((x) => x.p > last.close && x.p - last.close <= atr * 1.2).sort(pref)[0];
+    const prS = htfSup.filter((x) => x.p < last.close && last.close - x.p <= atr * 1.2).sort(pref)[0];
+    if (prR && ups >= 3 && volUp && !brR)
+      hits.push({ side: "long", id: "prs", bonus: 3, level: { kind: "resistance", price: prR.p, state: "near" }, why: [b(`Price is pressing on the ${prR.tf} resistance ${fmtp(prR.p)} (tested ${prR.touches} times) with higher lows and rising volume — a break may be near`, `قیمت با کف‌های بالاتر و حجم رو‌به‌رشد به مقاومت ${prR.tf} یعنی ${fmtp(prR.p)} (${prR.touches} بار تست‌شده) فشار می‌آورد — شکست ممکن است نزدیک باشد`)] });
+    if (prS && downs >= 3 && volUp && !brS)
+      hits.push({ side: "short", id: "prs", bonus: 3, level: { kind: "support", price: prS.p, state: "near" }, why: [b(`Price is pressing on the ${prS.tf} support ${fmtp(prS.p)} (tested ${prS.touches} times) with lower highs and rising volume — a break may be near`, `قیمت با سقف‌های پایین‌تر و حجم رو‌به‌رشد به حمایت ${prS.tf} یعنی ${fmtp(prS.p)} (${prS.touches} بار تست‌شده) فشار می‌آورد — شکست ممکن است نزدیک باشد`)] });
+  }
+
   const out: Sig[] = [];
   for (const h of hits) {
     const L = h.side === "long";
@@ -266,7 +306,7 @@ export function evaluate(symbol: string, base: string, tf: string, rowsIn: QCand
     const R = Math.abs(entry - stop);
     const t = [1, 2, 3].map((k) => (L ? entry + R * k : entry - R * k)) as [number, number, number];
     // real target: the next level in the trade direction; alternative entry: wait for a retest of the broken level
-    const beyond = (L ? resL.filter((x) => x.p > entry + R * 0.3) : supL.filter((x) => x.p < entry - R * 0.3)).map((x) => x.p).sort((a, c) => (L ? a - c : c - a))[0];
+    const beyond = (L ? resL.concat(htfRes).filter((x) => x.p > entry + R * 0.3) : supL.concat(htfSup).filter((x) => x.p < entry - R * 0.3)).map((x) => x.p).sort((a, c) => (L ? a - c : c - a))[0];
     const tgt = beyond != null ? { price: beyond, rr: Math.abs(beyond - entry) / R } : null;
     let alt: Sig["alt"] = null;
     if (h.level && h.level.state === "broken" && (L ? h.level.price < entry : h.level.price > entry) && Math.abs(entry - h.level.price) <= atr * 1.5) {

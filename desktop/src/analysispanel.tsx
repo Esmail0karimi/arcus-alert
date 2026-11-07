@@ -6,7 +6,7 @@ import { setLang, useLang } from "./lang";
 import { STRATEGIES, matchesFor, type Match } from "./strategies";
 import type { QCandle } from "./qfex";
 
-export type SetupLines = { base: string; tf: string; side: "long" | "short"; sid: string; entry: number; stop: number; t: [number, number, number]; sig?: { strats: { name: Bi; basis: Bi }[]; why: Bi[]; grade: string; score: number; rr: number | null; closed: string } };
+export type SetupLines = { base: string; tf: string; side: "long" | "short"; sid: string; entry: number; stop: number; t: number[]; labels?: string[]; sig?: { strats: { name: Bi; basis: Bi }[]; why: Bi[]; grade: string; score: number; rr: number | null; closed: string } };
 
 export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; setup: SetupLines | null; onClose: () => void; onTf: (tf: string) => void }) {
   const fa = useLang() === "fa";
@@ -104,9 +104,9 @@ export function AnalysisPanel(p: { base: string; tf: string; tradfi: boolean; se
               <dl className="ag-lv">
                 <div><dt>{T("Entry", "ورود")}</dt><dd>{fmtPrice(p.setup.entry)}</dd></div>
                 <div className="s"><dt>{T("Stop", "حدضرر")}</dt><dd>{fmtPrice(p.setup.stop)}</dd></div>
-                <div className="t"><dt>1R</dt><dd>{fmtPrice(p.setup.t[0])}</dd></div>
-                <div className="t"><dt>2R</dt><dd>{fmtPrice(p.setup.t[1])}</dd></div>
-                <div className="t"><dt>3R</dt><dd>{fmtPrice(p.setup.t[2])}</dd></div>
+                <div className="t"><dt>{p.setup.labels?.[0] || "1R"}</dt><dd>{fmtPrice(p.setup.t[0])}</dd></div>
+                {p.setup.t[1] != null && <div className="t"><dt>2R</dt><dd>{fmtPrice(p.setup.t[1])}</dd></div>}
+                {p.setup.t[2] != null && <div className="t"><dt>3R</dt><dd>{fmtPrice(p.setup.t[2])}</dd></div>}
               </dl>
               {p.setup.sig && (
                 <div className="an-sig">

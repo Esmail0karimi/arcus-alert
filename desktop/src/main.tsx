@@ -1682,7 +1682,7 @@ function App() {
           const a = adapterOf(s);
           return a ? exOn[a.id] !== false : exOn.arcus !== false;
         })
-        .map((s) => ({ symbol: s, base: String(assetBase(displayName(s))), ex: adapterOf(s)?.label || "Arcus" }))
+        .map((s) => ({ symbol: s, base: String(assetBase(displayName(s))), ex: adapterOf(s)?.label || "Arcus", market: String(classifySymbol(s, marketCategories.current)) }))
         .filter((x) => /^[A-Z0-9]{2,12}$/.test(x.base)),
     [prices, exOn],
   );
@@ -1711,7 +1711,7 @@ function App() {
     } catch (e: any) {
       if (e?.name === "AbortError") throw e;
     }
-    return (await externalCandles(base, frame, signal, catOfSymbol(sym) !== "Crypto")).rows;
+    return (await externalCandles(base, frame, signal, classifySymbol(sym, marketCategories.current) !== "Crypto")).rows;
   };
   useEffect(() => {
     if (setupLines && symbol && assetBase(dn(symbol)) !== setupLines.base) setSetupLines(null);
@@ -1735,7 +1735,7 @@ function App() {
       };
       add(setupLines.entry, "#00dcd2", "Entry");
       add(setupLines.stop, "#ff5c5c", "Stop");
-      setupLines.t.forEach((v, i) => add(v, "#3ddc97", i + 1 + "R"));
+      setupLines.t.forEach((v, i) => add(v, "#3ddc97", setupLines.labels?.[i] || i + 1 + "R"));
     }, 300);
     return () => {
       window.clearInterval(id);
