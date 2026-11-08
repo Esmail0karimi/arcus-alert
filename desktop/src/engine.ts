@@ -464,12 +464,8 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const risk = Math.abs(o.entry - stop);
     const D2 = (globalThis as any).__ARCUS_DBG as ((x: string) => void) | undefined;
     if (!(risk > 0) || risk > Math.max(atr1h * 7, atr4 * 3)) { D2?.(`${o.strat} ${o.side} rejected: risk ${(risk / atr1h).toFixed(1)} ATR1h`); return; } // structural stop but never absurdly wide
-    // target: the first zone that pays at least ~2.2R (nearer zones are only intermediate levels); open space -> measured 3R
-    const ahead = zones.filter((z) => (L ? z.lo > o.entry + risk * 2.2 : z.hi < o.entry - risk * 2.2)).sort((a, c) => (L ? a.lo - c.lo : c.hi - a.hi))[0];
-    const nearer = zones.filter((z) => (L ? z.lo > o.entry + risk * 0.3 && z.lo <= o.entry + risk * 2.2 : z.hi < o.entry - risk * 0.3 && z.hi >= o.entry - risk * 2.2)).length;
-    let tg: { tp: number; note: Bi } = ahead
-      ? { tp: L ? ahead.lo - atr1h * 0.05 : ahead.hi + atr1h * 0.05, note: b(`Target: ${L ? "resistance" : "support"} zone ${ahead.lo.toPrecision(5)}–${ahead.hi.toPrecision(5)}${nearer ? ` (${nearer} nearer level(s) on the way — partial profit there)` : ""}`, `هدف: ناحیه‌ی ${L ? "مقاومت" : "حمایت"} ${ahead.lo.toPrecision(5)}–${ahead.hi.toPrecision(5)}${nearer ? ` (${nearer} سطح نزدیک‌تر سر راه — حد سود جزئی همان‌جا)` : ""}`) }
-      : target(o.side, o.entry, risk, [], atr1h);
+    // target = the NEAREST opposing level (price must cross it first); if that pays less than 1:2 net the setup is rejected
+    let tg: { tp: number; note: Bi } = target(o.side, o.entry, risk, zones, atr1h);
     if (L ? tg.tp <= o.entry : tg.tp >= o.entry) {
       if (!o.lenient) return;
       tg = { tp: L ? o.entry + risk * 3 : o.entry - risk * 3, note: b("No level ahead — projected 3R (measured)", "سطحی جلوی قیمت نیست — هدف 3R (اندازه‌گیری‌شده)") };
