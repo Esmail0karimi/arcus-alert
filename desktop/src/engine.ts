@@ -8,18 +8,22 @@ import type { QCandle } from "./qfex";
 
 const b = (en: string, fa: string): Bi => ({ en, fa });
 export type Trend = "up" | "down" | "range";
-export type StratId = "brk" | "fbo" | "vsh" | "mom";
+export type StratId = "brk" | "fbo" | "vsh" | "mom" | "fbk" | "pbw" | "prz" | "box";
 export type Status = "ready" | "watch";
 export type TfKey = "1d" | "4h" | "1h" | "15m";
 export type Candles = Partial<Record<TfKey, QCandle[]>>;
-export const STRATS: Record<StratId, { name: Bi; basis: Bi }> = {
+export const STRATS = {
   brk: { name: b("Breakout", "شکست سطح"), basis: b("A candle CLOSED beyond a key support/resistance zone (a wick is not enough); immediate or retest entry", "بسته‌شدن کندل بیرون از ناحیه‌ی مهم حمایت/مقاومت (سایه کافی نیست)؛ ورود فوری یا با ریتست") },
   fbo: { name: b("False breakout", "شکست کاذب"), basis: b("Price closed beyond a level, then closed back inside it and was rejected — trade the failure", "قیمت بیرون سطح بسته شد، بعد دوباره داخل برگشت و پس زده شد — معامله روی شکست ناموفق") },
   vsh: { name: b("V-shaped reversal", "بازگشت V شکل"), basis: b("A fast, deep move then a fast reversal back toward the origin of the move", "حرکت سریع و عمیق و بعد برگشت سریع به‌سمت مبدأ همان حرکت") },
   mom: { name: b("Momentum shift", "تغییر مومنتوم"), basis: b("Structure flips on the 1H (BOS/CHoCH) and the 15M confirms — can be against the 1D/4H trend", "ساختار ۱ساعته می‌چرخد (BOS/CHoCH) و ۱۵ دقیقه تأیید می‌کند — می‌تواند خلاف روند ۱D/۴H باشد") },
-};
+} as unknown as Record<StratId, { name: Bi; basis: Bi }>;
+STRATS.fbk = { name: b("Fake break + 15M range break", "شکست کاذب + شکست رنج ۱۵ دقیقه"), basis: b("4H trend makes a new extreme by a CLOSE beyond the last swing, price closes back inside and ranges; a good 15M candle breaks the range in the direction of the failure", "روند ۴ساعته با بسته‌شدن بیرون از آخرین سقف/کف جدید می‌زند، قیمت برمی‌گردد و رنج می‌زند؛ کندل خوب ۱۵ دقیقه رنج را در جهت شکست‌خورده می‌شکند") };
+STRATS.pbw = { name: b("Weak pullback (trend entry)", "پولبک ضعیف (ورود با روند)"), basis: b("In a 4H Dow trend the pullback cannot reach the previous swing; a 15M box or a high-volume reversal candle at the top of the pullback joins the trend early", "در روند داوی ۴ساعته پولبک به سقف/کف قبلی نمی‌رسد؛ باکس ۱۵ دقیقه یا کندل برگشتی پرحجم در انتهای پولبک، ورود زودهنگام با روند است") };
+STRATS.prz = { name: b("Range at a major level (PRZ)", "رنج در سطح مهم (PRZ)"), basis: b("The trend runs into a major daily/weekly level or Fibonacci zone and starts to range; a strong 1H break up = LONG, a break down = trend continues (SHORT)", "روند به سطح مهم روزانه/هفتگی یا ناحیه‌ی فیبوناچی می‌رسد و رنج می‌زند؛ شکست قوی ۱ساعته به بالا = لانگ، به پایین = ادامه‌ی روند (شورت)") };
+STRATS.box = { name: b("Box", "باکس"), basis: b("Box = at least 2 touches of the top and 2 of the bottom (1% tolerance). A candle CLOSE outside the box = signal, the main-trend direction is preferred", "باکس = حداقل ۲ برخورد به سقف و ۲ برخورد به کف (تلورانس ۱٪). بسته‌شدن کندل بیرون باکس = سیگنال، جهت روند اصلی اولویت دارد") };
 export type Cfg = { triggers: ("1h" | "4h")[]; costPct: number; minRR: number; minScore: number; on: Record<StratId, boolean> };
-export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: true, fbo: true, vsh: true, mom: true } };
+export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true } };
 export type Sig2 = {
   id: string; symbol: string; base: string; market: string; ex: string;
   side: "long" | "short"; strat: StratId; status: Status; method: "immediate" | "retest" | "none"; tf: string;
@@ -27,9 +31,9 @@ export type Sig2 = {
   entry: number; stop: number; tp: number; tpNote: Bi; rr: number; rrGross: number;
   score: number; grade: "excellent" | "good" | "watchlist";
   parts: { structure: number; setup: number; pa: number; vol: number; rsi: number; macd: number; entryQ: number; rr: number };
-  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi;
+  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi; tag?: Bi;
 };
-export type SymInfo = { symbol: string; base: string; market: string; ex: string; d1: Trend | null; h4: Trend | null; h1: Trend | null; issues: string[]; stale: boolean; price: number | null };
+export type SymInfo = { symbol: string; base: string; market: string; ex: string; d1: Trend | null; h4: Trend | null; h1: Trend | null; issues: string[]; stale: boolean; price: number | null; need15?: boolean };
 
 /* ---------- small maths ---------- */
 const emaArr = (v: number[], n: number) => {
@@ -189,6 +193,44 @@ function macdScore(rows: QCandle[], side: "long" | "short") {
 }
 const trendTxt = (t: Trend | null): Bi => (t === "up" ? b("Up (HH + HL)", "صعودی (HH + HL)") : t === "down" ? b("Down (LH + LL)", "نزولی (LH + LL)") : t === "range" ? b("Range / transition", "رنج / گذار") : b("n/a", "نامشخص"));
 export { trendTxt };
+
+/* ---------- boxes ---------- */
+const goodCandle = (r: QCandle, side: "long" | "short") => {
+  const rng = Math.max(r.high - r.low, 1e-12), L = side === "long";
+  return (L ? r.close > r.open : r.close < r.open) && Math.abs(r.close - r.open) / rng >= 0.5 && (L ? (r.close - r.low) / rng : (r.high - r.close) / rng) >= 0.7;
+};
+/** Tight sideways window that ENDS at the candle before the last one (so the last candle can be tested as a breakout). */
+function tightBox(rows: QCandle[], atr: number, minW: number, maxW: number, maxH: number, since = 0) {
+  const n = rows.length;
+  let best: { lo: number; hi: number; w: number } | null = null;
+  if (!(atr > 0)) return best;
+  for (let w = minW; w <= maxW; w++) {
+    if (n - 1 - w < 0) break;
+    const seg = rows.slice(n - 1 - w, n - 1);
+    if (seg[0].time < since) break;
+    const hi = Math.max(...seg.map((r) => r.high)), lo = Math.min(...seg.map((r) => r.low));
+    if (hi - lo <= maxH * atr) best = { lo, hi, w };
+    else break;
+  }
+  return best;
+}
+/** User definition: >=2 touches of the top and >=2 of the bottom, 1% tolerance. Window ends before the last candle. */
+function touchBox(rows: QCandle[], tol = 0.01) {
+  const n = rows.length;
+  for (const W of [70, 48, 36, 24, 16]) {
+    if (n - 1 - W < 0) continue;
+    const seg = rows.slice(n - 1 - W, n - 1);
+    const hi = Math.max(...seg.map((r) => r.high)), lo = Math.min(...seg.map((r) => r.low)), mid = (hi + lo) / 2, h = hi - lo;
+    if (h / mid < 0.025 || h / mid > 0.3) continue;
+    let tops = 0, bots = 0, lt = -9, lb = -9;
+    seg.forEach((r, i) => {
+      if (r.high >= hi * (1 - tol)) { if (i - lt >= 3) tops++; lt = i; }
+      if (r.low <= lo * (1 + tol)) { if (i - lb >= 3) bots++; lb = i; }
+    });
+    if (tops >= 2 && bots >= 2 && Math.abs(seg[W - 1].close - seg[0].close) <= h * 0.7) return { lo, hi, w: W, tops, bots };
+  }
+  return null;
+}
 
 /* ---------- target + R:R (net of costs) ---------- */
 function target(side: "long" | "short", entry: number, risk: number, zones: Zone[], atr: number) {
@@ -396,6 +438,226 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     }
   };
   for (const t of cfg.triggers) mk(t);
+
+  // ================= user-defined setups: fake break, weak pullback, range at a major level, box =================
+  const n15 = c15.length, atr4 = atrAt(c4h), atr1d = atrAt(c1d), atr15 = n15 > 20 ? atrAt(c15) : 0;
+  let need15 = false;
+  const pxNow = live ?? c1h[c1h.length - 1].close;
+  const conf15 = (side: "long" | "short"): { ok: boolean | null; text: Bi } => {
+    if (!s15 || n15 < 40) return { ok: null, text: b("15M data unavailable", "داده‌ی ۱۵ دقیقه موجود نیست") };
+    const L = side === "long", cl = c15[n15 - 1];
+    const evOk = s15.ev && s15.ev.dir === (L ? "up" : "down") && s15.ev.age <= 4, trOk = s15.trend === (L ? "up" : "down"), candleOk = L ? cl.close > cl.open : cl.close < cl.open;
+    const ok = (evOk || trOk) && candleOk;
+    return { ok, text: ok ? b(`15M confirms: ${evOk ? s15.ev!.kind + " " + s15.ev!.dir : "structure " + s15.trend}, last candle ${L ? "green" : "red"}`, `۱۵ دقیقه تأیید می‌کند: ${evOk ? s15.ev!.kind + " " + s15.ev!.dir : "ساختار " + s15.trend}، کندل آخر ${L ? "سبز" : "قرمز"}`) : b("15M has not confirmed yet", "۱۵ دقیقه هنوز تأیید نکرده") };
+  };
+  const alignG = (side: "long" | "short") => {
+    const want: Trend = side === "long" ? "up" : "down";
+    return (s1h.trend === want ? 8 : s1h.trend === "range" ? 3 : 0) + (s4h.trend === want ? 6 : s4h.trend === "range" ? 2 : 0) + (s1d.trend === want ? 6 : s1d.trend === "range" ? 2 : 0);
+  };
+  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; c15?: { ok: boolean | null; text: Bi } };
+  const emit2 = (o: E2) => {
+    if (!cfg.on[o.strat]) return;
+    const L = o.side === "long", rows = o.rows, last = rows[rows.length - 1];
+    let stop = o.stop;
+    const minRisk = atr1h * 0.25;
+    if (Math.abs(o.entry - stop) < minRisk) stop = L ? o.entry - minRisk : o.entry + minRisk;
+    const risk = Math.abs(o.entry - stop);
+    const D2 = (globalThis as any).__ARCUS_DBG as ((x: string) => void) | undefined;
+    if (!(risk > 0) || risk > Math.max(atr1h * 7, atr4 * 3)) { D2?.(`${o.strat} ${o.side} rejected: risk ${(risk / atr1h).toFixed(1)} ATR1h`); return; } // structural stop but never absurdly wide
+    // target: the first zone that pays at least ~2.2R (nearer zones are only intermediate levels); open space -> measured 3R
+    const ahead = zones.filter((z) => (L ? z.lo > o.entry + risk * 2.2 : z.hi < o.entry - risk * 2.2)).sort((a, c) => (L ? a.lo - c.lo : c.hi - a.hi))[0];
+    const nearer = zones.filter((z) => (L ? z.lo > o.entry + risk * 0.3 && z.lo <= o.entry + risk * 2.2 : z.hi < o.entry - risk * 0.3 && z.hi >= o.entry - risk * 2.2)).length;
+    let tg: { tp: number; note: Bi } = ahead
+      ? { tp: L ? ahead.lo - atr1h * 0.05 : ahead.hi + atr1h * 0.05, note: b(`Target: ${L ? "resistance" : "support"} zone ${ahead.lo.toPrecision(5)}–${ahead.hi.toPrecision(5)}${nearer ? ` (${nearer} nearer level(s) on the way — partial profit there)` : ""}`, `هدف: ناحیه‌ی ${L ? "مقاومت" : "حمایت"} ${ahead.lo.toPrecision(5)}–${ahead.hi.toPrecision(5)}${nearer ? ` (${nearer} سطح نزدیک‌تر سر راه — حد سود جزئی همان‌جا)` : ""}`) }
+      : target(o.side, o.entry, risk, [], atr1h);
+    if (L ? tg.tp <= o.entry : tg.tp >= o.entry) {
+      if (!o.lenient) return;
+      tg = { tp: L ? o.entry + risk * 3 : o.entry - risk * 3, note: b("No level ahead — projected 3R (measured)", "سطحی جلوی قیمت نیست — هدف 3R (اندازه‌گیری‌شده)") };
+    }
+    const rr = netRR(o.entry, stop, tg.tp, cfg.costPct);
+    if (rr.net < cfg.minRR && !o.lenient) { D2?.(`${o.strat} ${o.side} rejected: net R:R ${rr.net.toFixed(2)} (${tg.note.en})`); return; }
+    const pa = paScore(rows, o.side, o.rej), rs = rsiScore(rows, o.side), mc = macdScore(rows, o.side), vol = volScore(rows);
+    const c = o.c15 ?? conf15(o.side);
+    const entryQ = o.method === "retest" ? 8 : Math.abs(pxNow - o.entry) <= atr1h * 0.5 ? 8 : Math.abs(pxNow - o.entry) <= atr1h ? 5 : 2;
+    const parts = { structure: clamp(o.structure, 0, 20), setup: clamp(o.setup, 0, 20), pa: pa.pts, vol: vol.pts, rsi: rs.pts, macd: mc.pts, entryQ, rr: rr.net >= 4 ? 8 : rr.net >= 3 ? 6 : rr.net >= cfg.minRR ? 4 : 0 };
+    const score = Math.round(clamp(Object.values(parts).reduce((a, v) => a + v, 0) - (c.ok === null && !o.no15 ? 5 : 0), 0, 100));
+    const ready = o.confirmed && rr.net >= cfg.minRR && score >= cfg.minScore && (o.no15 || c.ok !== false);
+    const sec = TF_SEC[o.tf], candleTime = last.time;
+    sigs.push({
+      id: [m.symbol, o.strat, o.side, o.tf, candleTime, ready ? "r" : "w"].join("|"), symbol: m.symbol, base: m.base, market: m.market, ex: m.ex, side: o.side, strat: o.strat, status: ready ? "ready" : "watch", method: o.method, tf: o.tf,
+      d1: s1d.trend, h4: s4h.trend, h1: s1h.trend, m15: c, entry: o.entry, stop, tp: tg.tp, tpNote: tg.note, rr: rr.net, rrGross: rr.gross, score, grade: score >= 85 ? "excellent" : score >= 70 ? "good" : "watchlist", parts,
+      time: (candleTime + sec) * 1000, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
+      why: [...o.why, ...pa.notes, vol.note, rs.note, mc.note, c.text, tg.note],
+      wait: !ready ? o.wait || (o.confirmed ? b(`Setup confirmed but ${rr.net < cfg.minRR ? `net R:R ${rr.net.toFixed(1)} is below ${cfg.minRR}` : `quality ${score}/100 is below ${cfg.minScore}`} — watch only`, `ستاپ تأیید شده ولی ${rr.net < cfg.minRR ? `R:R خالص ${rr.net.toFixed(1)} زیر ${cfg.minRR} است` : `کیفیت ${score} از ۱۰۰ زیر ${cfg.minScore} است`} — فقط مراقبت`) : b("Waiting for the confirming candle close", "منتظر بسته‌شدن کندل تأییدکننده")) : undefined,
+    });
+  };
+  const SIDES = ["long", "short"] as const;
+
+  // ---- 1. fake break of the last swing in a 4H trend, then a 15M range break back in the trend-reversing direction ----
+  if (cfg.on.fbk && c4h.length >= 60) {
+    for (const side of SIDES) {
+      const L = side === "long", faked: Trend = L ? "down" : "up", want: Trend = L ? "up" : "down";
+      if (s4h.trend !== faked) continue;
+      const n4 = c4h.length;
+      let R = NaN, jb = -1, stillBeyond = false;
+      for (const sw of s4h.sw.filter((x) => x.t === (L ? "L" : "H")).slice(-4).reverse()) {
+        let j = -1;
+        for (let q = sw.i + 1; q < n4; q++) if (L ? c4h[q].close < sw.p : c4h[q].close > sw.p) { j = q; break; }
+        if (j >= 0 && j >= n4 - 18) { R = sw.p; jb = j; stillBeyond = L ? c4h[n4 - 1].close < sw.p : c4h[n4 - 1].close > sw.p; break; }
+      }
+      if (jb < 0 || stillBeyond) continue;
+      const seg4 = c4h.slice(jb), E = L ? Math.min(...seg4.map((r) => r.low)) : Math.max(...seg4.map((r) => r.high));
+      need15 = true;
+      const depth = Math.abs(R - E) / (atr4 || 1), reclaim = Math.abs(c4h[n4 - 1].close - R) / (atr4 || 1);
+      const base0: Bi[] = [b(`4H trend is ${faked === "down" ? "DOWN (LH + LL)" : "UP (HH + HL)"}; the last swing ${L ? "low" : "high"} ${R.toPrecision(5)} was broken by a 4H CLOSE and price then closed back ${L ? "above" : "below"} it — a failed break (${E.toPrecision(5)} is the fake ${L ? "low" : "high"})`, `روند ۴ساعته ${faked === "down" ? "نزولی (LH + LL)" : "صعودی (HH + HL)"} است؛ آخرین ${L ? "کف" : "سقف"} ${R.toPrecision(5)} با کلوز ۴ساعته شکسته شد و قیمت دوباره ${L ? "بالای" : "پایین"} آن بسته شد — شکست کاذب (${E.toPrecision(5)} ${L ? "کف" : "سقف"}ِ فیک است)`)];
+      const sSetup = 12 + (depth >= 0.3 ? 2 : 0) + (reclaim >= 0.3 ? 3 : 0) + (reclaim >= 0.8 ? 2 : 0);
+      const sStruct = 8 + (s1h.trend === want ? 5 : s1h.trend === "range" ? 2 : 0) + (s1d.trend === want ? 5 : s1d.trend === "range" ? 2 : 0);
+      const l15 = n15 >= 40 ? c15[n15 - 1] : null, p15 = n15 >= 40 ? c15[n15 - 2] : null;
+      const box = l15 ? tightBox(c15, atr15, 6, 40, 4, c4h[jb].time) : null;
+      const stop0 = L ? Math.min(E, box ? box.lo : E) - atr1h * 0.2 : Math.max(E, box ? box.hi : E) + atr1h * 0.2;
+      const brk = !!(box && l15 && p15 && (L ? l15.close > box.hi && p15.close <= box.hi : l15.close < box.lo && p15.close >= box.lo) && goodCandle(l15, side));
+      if (brk && l15 && box) {
+        emit2({ side, strat: "fbk", tf: "15m", rows: c15, method: "immediate", entry: l15.close, stop: stop0, confirmed: true, structure: sStruct, setup: sSetup, rej: true, zone: { lo: box.lo, hi: box.hi }, c15: { ok: true, text: b(`15M range ${box.lo.toPrecision(5)}–${box.hi.toPrecision(5)} (${box.w} candles) broken by a CLOSE ${L ? "up" : "down"} with a strong candle`, `رنج ۱۵ دقیقه ${box.lo.toPrecision(5)}–${box.hi.toPrecision(5)} (${box.w} کندل) با کلوز و کندل قوی به ${L ? "بالا" : "پایین"} شکست`) }, why: base0 });
+      } else if (n15 >= 40 || true) {
+        emit2({ side, strat: "fbk", tf: n15 >= 40 ? "15m" : "1h", rows: n15 >= 40 ? c15 : c1h, method: "none", entry: box ? (L ? box.hi : box.lo) : pxNow, stop: stop0, confirmed: false, structure: sStruct, setup: sSetup, rej: true, lenient: true, zone: box ? { lo: box.lo, hi: box.hi } : undefined, trigLvl: box ? (L ? box.hi : box.lo) : undefined, why: base0,
+          wait: box ? b(`Price is ranging ${box.lo.toPrecision(5)}–${box.hi.toPrecision(5)} on 15M — wait for a strong candle CLOSE ${L ? "above" : "below"} ${(L ? box.hi : box.lo).toPrecision(5)}`, `قیمت در ۱۵ دقیقه رنج ${box.lo.toPrecision(5)}–${box.hi.toPrecision(5)} می‌زند — منتظر کلوز قوی ${L ? "بالای" : "پایین"} ${(L ? box.hi : box.lo).toPrecision(5)} باش`) : b(`Failed break confirmed on 4H — wait for a 15M range to form and then break ${L ? "up" : "down"}`, `شکست کاذب روی ۴ساعته تأیید شد — منتظر رنج ۱۵ دقیقه و شکست آن به ${L ? "بالا" : "پایین"} باش`) });
+      }
+    }
+  }
+
+  // ---- 2. weak pullback inside a 4H Dow trend: join the trend early on a 15M box or a high-volume reversal candle ----
+  if (cfg.on.pbw && s4h.sw.length >= 4 && c4h.length >= 60) {
+    for (const side of ["short", "long"] as const) {
+      const S = side === "short", need: Trend = S ? "down" : "up";
+      if (s4h.trend !== need) continue;
+      const sw = s4h.sw, ls = sw[sw.length - 1], pbT = S ? "H" : "L", legT = S ? "L" : "H";
+      let ext: number, leg: number, ref: number;
+      if (ls.t === legT) {
+        const prev = sw[sw.length - 2];
+        if (!prev || prev.t !== pbT) continue;
+        leg = ls.p; ref = prev.p;
+        const after = c4h.slice(ls.i + 1);
+        if (!after.length) continue;
+        ext = S ? Math.max(...after.map((r) => r.high)) : Math.min(...after.map((r) => r.low));
+      } else {
+        const l2 = sw[sw.length - 2], r2 = sw[sw.length - 3];
+        if (!l2 || !r2 || l2.t !== legT || r2.t !== pbT) continue;
+        ext = ls.p; leg = l2.p; ref = r2.p;
+      }
+      const fails = S ? ext < ref - 0.1 * atr4 : ext > ref + 0.1 * atr4;
+      const retr = S ? (ext - leg) / (ref - leg) : (leg - ext) / (leg - ref);
+      if (!fails || !(retr >= 0.15 && retr <= 0.98)) continue;
+      const pos = S ? (pxNow - leg) / (ext - leg) : (leg - pxNow) / (leg - ext);
+      if (!(pos >= 0.6 && pos <= 1.15)) continue;
+      need15 = true;
+      const why0 = b(`4H Dow trend is ${S ? "DOWN (LH + LL)" : "UP (HH + HL)"}; the pullback reached only ${(retr * 100).toFixed(0)}% of the last leg and failed to reach the previous ${S ? "high" : "low"} ${ref.toPrecision(5)} (pullback ${S ? "high" : "low"} ${ext.toPrecision(5)}) — the ${S ? "buyers" : "sellers"} are weak`, `روند داوی ۴ساعته ${S ? "نزولی (LH + LL)" : "صعودی (HH + HL)"} است؛ پولبک فقط ${(retr * 100).toFixed(0)}٪ ساق قبلی را برگشته و به ${S ? "سقف" : "کف"} قبلی ${ref.toPrecision(5)} نرسیده (${S ? "سقف" : "کف"} پولبک ${ext.toPrecision(5)}) — ${S ? "خریداران" : "فروشندگان"} ضعیف‌اند`);
+      const sStruct = 10 + (s1d.trend === need ? 6 : s1d.trend === "range" ? 2 : 0) + (s1h.trend === need ? 4 : 0), sSetup = 10 + (retr <= 0.8 ? 3 : 0) + (pos >= 0.8 ? 3 : 0) + 2;
+      let trig: { text: Bi; stop: number } | null = null;
+      if (n15 >= 40) {
+        const l = c15[n15 - 1], p = c15[n15 - 2], rng = Math.max(l.high - l.low, 1e-12);
+        const wick = S ? (l.high - Math.max(l.open, l.close)) / rng : (Math.min(l.open, l.close) - l.low) / rng;
+        const dirOk = S ? l.close < l.open : l.close > l.open;
+        const engulf = S ? l.close < p.open && l.open >= p.close && p.close > p.open : l.close > p.open && l.open <= p.close && p.close < p.open;
+        const vr = volScore(c15).ratio;
+        const hiZone = S ? l.high >= leg + 0.6 * (ext - leg) : l.low <= leg - 0.6 * (leg - ext);
+        const loc = S ? Math.max(...c15.slice(-6).map((r) => r.high)) : Math.min(...c15.slice(-6).map((r) => r.low));
+        if (dirOk && (wick >= 0.4 || engulf) && vr >= 1.5 && hiZone) trig = { stop: loc + (S ? 1 : -1) * atr1h * 0.2, text: b(`15M reversal candle (${engulf ? "engulfing" : "long rejection wick"}) with ${vr.toFixed(1)}× volume at the top of the pullback`, `کندل برگشتی ۱۵ دقیقه (${engulf ? "انگالف" : "سایه‌ی بلند"}) با حجم ${vr.toFixed(1)} برابر در انتهای پولبک`) };
+        if (!trig) {
+          const bx = tightBox(c15, atr15, 6, 30, 3.5);
+          if (bx && (S ? l.close < bx.lo && p.close >= bx.lo && bx.hi >= leg + 0.5 * (ext - leg) : l.close > bx.hi && p.close <= bx.hi && bx.lo <= leg - 0.5 * (leg - ext)) && goodCandle(l, side))
+            trig = { stop: (S ? bx.hi : bx.lo) + (S ? 1 : -1) * atr1h * 0.2, text: b(`15M box ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} formed at the top of the pullback and broke ${S ? "down" : "up"} with a strong candle`, `باکس ۱۵ دقیقه ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} در انتهای پولبک ساخته شد و با کندل قوی به ${S ? "پایین" : "بالا"} شکست`) };
+        }
+        if (trig) {
+          emit2({ side, strat: "pbw", tf: "15m", rows: c15, method: "immediate", entry: l.close, stop: trig.stop, confirmed: true, structure: sStruct, setup: sSetup, rej: true, c15: { ok: true, text: trig.text }, why: [why0] });
+          continue;
+        }
+      }
+      emit2({ side, strat: "pbw", tf: n15 >= 40 ? "15m" : "1h", rows: n15 >= 40 ? c15 : c1h, method: "none", entry: pxNow, stop: ext + (S ? 1 : -1) * atr1h * 0.2, confirmed: false, structure: sStruct, setup: sSetup, lenient: true, why: [why0],
+        wait: b(`Price is in the ${S ? "upper" : "lower"} part of the weak pullback — wait for a 15M box break ${S ? "down" : "up"} or a high-volume reversal candle`, `قیمت در ${S ? "بالای" : "پایین"} پولبک ضعیف است — منتظر شکست باکس ۱۵ دقیقه به ${S ? "پایین" : "بالا"} یا کندل برگشتی پرحجم باش`) });
+    }
+  }
+
+  // ---- 3. trend runs into a major daily level / Fibonacci zone, starts to range, then a strong 1H break decides ----
+  if (cfg.on.prz && c1d.length >= 60 && c1h.length >= 60 && atr1d > 0) {
+    const sw1d = swings(c1d, 5), n1 = c1h.length;
+    for (const sup of [true, false]) {
+      const need: Trend = sup ? "down" : "up";
+      if (s4h.trend !== need && s1d.trend !== need) continue;
+      const lv: { p: number; src: string; srcFa: string }[] = [];
+      sw1d.filter((x) => x.t === (sup ? "L" : "H")).slice(-6).forEach((x) => lv.push({ p: x.p, src: `major daily swing ${sup ? "low" : "high"}`, srcFa: `${sup ? "کف" : "سقف"} مهم روزانه` }));
+      const lastX = sw1d[sw1d.length - 1], prevX = sw1d[sw1d.length - 2];
+      for (let q = sw1d.length - 1; q >= 1; q--) {
+        const a = sw1d[q], bb = sw1d[q - 1];
+        if (sup && a.t === "H" && bb.t === "L" && a.p - bb.p >= atr1d * 3 && pxNow < a.p) { [0.618, 0.786].forEach((r) => lv.push({ p: a.p - r * (a.p - bb.p), src: `Fibonacci ${r}`, srcFa: `فیبوناچی ${r}` })); break; }
+        if (!sup && a.t === "L" && bb.t === "H" && bb.p - a.p >= atr1d * 3 && pxNow > a.p) { [0.618, 0.786].forEach((r) => lv.push({ p: a.p + r * (bb.p - a.p), src: `Fibonacci ${r}`, srcFa: `فیبوناچی ${r}` })); break; }
+      }
+      void lastX; void prevX;
+      const hw = atr1d * 0.5, e1h = sup ? Math.min(...c1h.slice(-36).map((r) => r.low)) : Math.max(...c1h.slice(-36).map((r) => r.high));
+      const hit = lv.filter((x) => Math.abs(e1h - x.p) <= hw * 1.6 && (sup ? pxNow >= x.p - hw * 1.6 : pxNow <= x.p + hw * 1.6)).sort((a, c) => Math.abs(e1h - a.p) - Math.abs(e1h - c.p));
+      if (!hit.length) continue;
+      need15 = true;
+      const lvl = hit[0], conf = hit.filter((x) => Math.abs(x.p - lvl.p) <= hw * 1.6).length;
+      const bx = tightBox(c1h, atr1h, 6, 36, 3.5);
+      const near = !!bx && Math.abs((sup ? bx.lo : bx.hi) - lvl.p) <= hw * 3;
+      const why0 = b(`${sup ? "Downtrend" : "Uptrend"} reached a major ${sup ? "support" : "resistance"} (PRZ) near ${lvl.p.toPrecision(5)} — ${lvl.src}${conf > 1 ? ` + ${conf - 1} more level(s) in the same area` : ""}; momentum is fading`, `${sup ? "روند نزولی" : "روند صعودی"} به ${sup ? "حمایت" : "مقاومت"} مهم (PRZ) نزدیک ${lvl.p.toPrecision(5)} رسید — ${lvl.srcFa}${conf > 1 ? ` + ${conf - 1} سطح دیگر در همین محدوده` : ""}؛ مومنتوم در حال افت است`);
+      const l1 = c1h[n1 - 1], p1 = c1h[n1 - 2];
+      const tag = b("PRZ", "PRZ");
+      if (bx && near) {
+        const up = l1.close > bx.hi && p1.close <= bx.hi && goodCandle(l1, "long"), dn = l1.close < bx.lo && p1.close >= bx.lo && goodCandle(l1, "short");
+        const mkSide = (side: "long" | "short") => {
+          const L = side === "long", reversal = L === sup, want: Trend = L ? "up" : "down";
+          const struct = reversal ? 8 + (conf > 1 ? 4 : 0) + (s1h.trend === want ? 4 : 0) : 8 + (s4h.trend === want ? 5 : 0) + (s1d.trend === want ? 5 : 0);
+          const stop = L ? bx.lo - atr1h * 0.2 : bx.hi + atr1h * 0.2;
+          const fired = L ? up : dn;
+          const nm: Bi = reversal ? b(`Range at the ${sup ? "support" : "resistance"} broke ${L ? "UP" : "DOWN"} with a strong candle — ${sup ? "buyers" : "sellers"} took over (reversal)`, `رنج در ${sup ? "حمایت" : "مقاومت"} با کندل قوی به ${L ? "بالا" : "پایین"} شکست — ${sup ? "خریداران" : "فروشندگان"} قدرت گرفتند (برگشت)`) : b(`Range at the ${sup ? "support" : "resistance"} broke ${L ? "UP" : "DOWN"} — the ${sup ? "sellers" : "buyers"} regained control, the trend continues`, `رنج در ${sup ? "حمایت" : "مقاومت"} به ${L ? "بالا" : "پایین"} شکست — ${sup ? "فروشندگان" : "خریداران"} دوباره غالب شدند، روند ادامه دارد`);
+          emit2({ side, strat: "prz", tf: "1h", rows: c1h, method: fired ? "immediate" : "none", entry: fired ? l1.close : L ? bx.hi : bx.lo, stop, confirmed: fired, structure: struct, setup: 12 + (conf > 1 ? 3 : 0) + (bx.w >= 12 ? 3 : 0), rej: reversal, zone: { lo: bx.lo, hi: bx.hi }, trigLvl: fired ? undefined : L ? bx.hi : bx.lo, tag, lenient: !fired, why: fired ? [why0, nm] : [why0],
+            wait: fired ? undefined : b(`Ranging ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} on 1H at the level — a strong CLOSE ${L ? "above" : "below"} ${(L ? bx.hi : bx.lo).toPrecision(5)} = ${L ? "LONG" : "SHORT"}`, `رنج ۱ساعته ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} در سطح — کلوز قوی ${L ? "بالای" : "پایین"} ${(L ? bx.hi : bx.lo).toPrecision(5)} = ${L ? "لانگ" : "شورت"}`) });
+        };
+        mkSide("long");
+        mkSide("short");
+      }
+    }
+  }
+
+  // ---- 4. boxes: >=2 touches of the top and >=2 of the bottom (1% tolerance); a CLOSE outside = signal, main-trend direction preferred ----
+  if (cfg.on.box) {
+    for (const trig of cfg.triggers) {
+      const rows = trig === "1h" ? c1h : c4h, atrT = atrAt(rows);
+      if (rows.length < 40 || !(atrT > 0)) continue;
+      const bx = touchBox(rows);
+      if (!bx) continue;
+      const n = rows.length, last = rows[n - 1], prev = rows[n - 2], h = bx.hi - bx.lo, mid = bx.lo + h * 0.5;
+      const bias: Trend = s1d.trend !== "range" ? s1d.trend : s4h.trend;
+      const label = b(`Box ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} on ${trig.toUpperCase()}: ${bx.tops} touches of the top, ${bx.bots} of the bottom (1% tolerance), ${bx.w} candles`, `باکس ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} در ${trig.toUpperCase()}: ${bx.tops} برخورد به سقف، ${bx.bots} به کف (تلورانس ۱٪)، ${bx.w} کندل`);
+      const tag = b("Box", "باکس");
+      const recent = rows.slice(-4, -1);
+      const failedUp = recent.some((r) => r.close > bx.hi) && prev.close <= bx.hi && last.close <= bx.hi, failedDn = recent.some((r) => r.close < bx.lo) && prev.close >= bx.lo && last.close >= bx.lo;
+      const fire = (side: "long" | "short") => {
+        const L = side === "long", out = L ? last.close > bx.hi && prev.close <= bx.hi : last.close < bx.lo && prev.close >= bx.lo;
+        if (!out) return false;
+        if (L ? failedUp : failedDn) return false;
+        const want: Trend = L ? "up" : "down", withTrend = bias === want, against = bias !== "range" && !withTrend;
+        const over = Math.abs(last.close - (L ? bx.hi : bx.lo)) > atrT * 1.2;
+        const c = conf15(side);
+        const stop = L ? mid - atrT * 0.2 : mid + atrT * 0.2;
+        const trendWhy = withTrend ? b(`With the main trend (${want === "up" ? "1D/4H up" : "1D/4H down"}) — higher reliability`, `هم‌جهت با روند اصلی (${want === "up" ? "۱D/۴H صعودی" : "۱D/۴H نزولی"}) — اعتبار بیشتر`) : against ? b("AGAINST the main trend — needs the 15M to confirm", "خلاف روند اصلی — نیاز به تأیید ۱۵ دقیقه") : b("Main trend is a range", "روند اصلی رنج است");
+        const ok = !over && goodCandle(last, side) && (!against || c.ok === true);
+        emit2({ side, strat: "box", tf: trig, rows, method: over ? "retest" : "immediate", entry: over ? (L ? bx.hi : bx.lo) : last.close, stop, confirmed: ok, structure: alignG(side) + (withTrend ? 2 : 0), setup: 10 + Math.min(6, bx.tops + bx.bots) + (bx.w >= 36 ? 2 : 0), zone: { lo: bx.lo, hi: bx.hi }, trigLvl: over ? (L ? bx.hi : bx.lo) : undefined, tag, lenient: !ok, no15: !against, why: [label, b(`A ${trig.toUpperCase()} candle CLOSED ${L ? "above the top" : "below the bottom"} of the box`, `کندل ${trig.toUpperCase()} ${L ? "بالای سقف" : "پایین کف"} باکس بسته شد`), trendWhy],
+          wait: over ? b(`Broke out but already extended — wait for a retest of ${(L ? bx.hi : bx.lo).toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${(L ? bx.hi : bx.lo).toPrecision(5)} باش که نگه دارد`) : against && c.ok !== true ? b("Against the main trend — waiting for the 15M to confirm", "خلاف روند اصلی — منتظر تأیید ۱۵ دقیقه") : undefined });
+        return true;
+      };
+      if (fire("long") || fire("short")) continue;
+      if (last.close <= bx.hi && last.close >= bx.lo) {
+        const pos = (last.close - bx.lo) / (h || 1);
+        const side: "long" | "short" = bias === "up" ? "long" : bias === "down" ? "short" : pos >= 0.5 ? "long" : "short", L = side === "long";
+        need15 = need15 || pos > 0.8 || pos < 0.2;
+        emit2({ side, strat: "box", tf: trig, rows, method: "none", entry: L ? bx.hi : bx.lo, stop: L ? mid - atrT * 0.2 : mid + atrT * 0.2, confirmed: false, structure: alignG(side), setup: 10 + Math.min(6, bx.tops + bx.bots), lenient: true, zone: { lo: bx.lo, hi: bx.hi }, trigLvl: L ? bx.hi : bx.lo, tag,
+          why: [label, b(`Price is inside the box (${(pos * 100).toFixed(0)}% from the bottom); main trend: ${bias === "up" ? "up" : bias === "down" ? "down" : "range"}`, `قیمت داخل باکس است (${(pos * 100).toFixed(0)}٪ از کف)؛ روند اصلی: ${bias === "up" ? "صعودی" : bias === "down" ? "نزولی" : "رنج"}`)],
+          wait: b(`Waiting for a candle CLOSE ${L ? "above" : "below"} ${(L ? bx.hi : bx.lo).toPrecision(5)} (the main-trend side is preferred; a close ${L ? "below" : "above"} ${(L ? bx.lo : bx.hi).toPrecision(5)} gives the opposite signal)`, `منتظر کلوز کندل ${L ? "بالای" : "پایین"} ${(L ? bx.hi : bx.lo).toPrecision(5)} (سمت روند اصلی اولویت دارد؛ کلوز ${L ? "پایین" : "بالای"} ${(L ? bx.lo : bx.hi).toPrecision(5)} سیگنال مخالف می‌دهد)`) });
+      }
+    }
+  }
+  info.need15 = need15;
 
   // keep the best signal per (symbol, strategy, side, status); ready beats watch
   const best = new Map<string, Sig2>();

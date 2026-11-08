@@ -987,3 +987,4 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .zn-tags em.acc{background:rgba(61,220,151,.2);color:#3ddc97}.zn-tags em.dist{background:rgba(255,92,92,.2);color:#ff8a8a}.zn-tags em.box{background:rgba(0,220,210,.18);color:#00dcd2}
 .zn-box{position:relative;height:8px;border-radius:4px;background:rgba(255,255,255,.1)}.zn-box i{position:absolute;top:-2px;width:6px;height:12px;border-radius:3px;background:#fff}
 .zn-sc{grid-row:span 2;font-weight:800;text-align:center}
+.sx-tag.bx{background:rgba(0,220,210,.2);color:#00dcd2;font-weight:700}

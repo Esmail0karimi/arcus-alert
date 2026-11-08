@@ -74,7 +74,11 @@ export function AgentTab(p: {
   const T = (en: string, f: string) => (fa ? f : en);
   const L = (x: Bi) => (fa ? x.fa : x.en);
   const [on, setOn] = useState<boolean>(() => jget("arcus.ag3.on", false));
-  const [cfg, setCfg] = useState<Cfg>(() => ({ ...DEF_CFG, ...jget<Partial<Cfg>>("arcus.ag3.cfg", {}), on: { ...DEF_CFG.on, ...(jget<Partial<Cfg>>("arcus.ag3.cfg", {}).on || {}) }, minRR: 2, minScore: 70 }));
+  const [cfg, setCfg] = useState<Cfg>(() => {
+    const st = jget<Partial<Cfg> & { ver?: number }>("arcus.ag3.cfg", {});
+    const keep = st.ver === 2;
+    return { ...DEF_CFG, ...(keep ? st : {}), on: { ...DEF_CFG.on, ...(keep ? st.on || {} : {}) }, minRR: 2, minScore: 70 };
+  });
   const [acct, setAcct] = useState<number>(() => jget("arcus.ag3.acct", 1000));
   const [riskPct, setRiskPct] = useState<number>(() => jget("arcus.ag3.risk", 1));
   const [soundOn, setSoundOn] = useState<boolean>(() => jget("arcus.ag3.sound", true));
@@ -109,7 +113,7 @@ export function AgentTab(p: {
   const lastKey = useRef<number>(jget("arcus.ag3.lastKey", 0));
 
   useEffect(() => { jset("arcus.ag3.on", on); }, [on]);
-  useEffect(() => { jset("arcus.ag3.cfg", cfg); }, [cfg]);
+  useEffect(() => { jset("arcus.ag3.cfg", { ...cfg, ver: 2 }); }, [cfg]);
   useEffect(() => { jset("arcus.ag3.acct", acct); jset("arcus.ag3.risk", riskPct); jset("arcus.ag3.sound", soundOn); jset("arcus.ag3.notif", notifOn); }, [acct, riskPct, soundOn, notifOn]);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -157,7 +161,7 @@ export function AgentTab(p: {
           if (h4) data["4h"] = h4;
           if (h1) data["1h"] = h1;
           let r = analyzeSymbol(s, data, Date.now(), cf);
-          if (r.sigs.length) {
+          if (r.sigs.length || r.info.need15) {
             const m15 = await getRows(s.symbol, "15m", c.signal);
             if (m15) {
               data["15m"] = m15;
@@ -308,7 +312,7 @@ export function AgentTab(p: {
           <span className={"sx-score " + s.grade} title={T("Quality score", "امتیاز کیفیت")}>{s.status2 ? "—" : s.score}</span>
           <div className="sx-id"><b>{fa ? FA_NAME[s.base] || s.base : s.base}</b><span className="sx-mk">{s.market}</span></div>
           <span className={"sg-side " + s.side}>{Lg ? "▲ LONG" : "▼ SHORT"}</span>
-          <span className="sx-tag">{L(STRATS[s.strat].name)}{s.status2 ? " · " + L(s.status2) : ""}</span>
+          <span className="sx-tag">{L(STRATS[s.strat].name)}{s.status2 ? " · " + L(s.status2) : ""}</span>{s.tag && <span className="sx-tag bx">{L(s.tag)}</span>}
           <span className="sg-tfc">{s.tf}</span>
           {!s.status2 && <span className={"sx-rr " + (s.rr >= 3 ? "g" : "")} title={T("Net reward-to-risk after costs", "نسبت سود به ریسک خالص پس از هزینه")}>R:R {s.rr.toFixed(1)}</span>}
           <span className="sx-px">{fmt(lp)}</span>
