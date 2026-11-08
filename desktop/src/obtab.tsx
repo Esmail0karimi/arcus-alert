@@ -187,7 +187,7 @@ export function OrderBook(p: { bases: string[]; initial?: string }) {
           );
         })}
       </div>
-      {!lad && !busy && <div className="empty">No order book could be loaded for “{base}”. Try another symbol, or turn on more exchanges.</div>}
+      {!lad && !busy && <div className="empty">No order book could be loaded for “{base}”. {states.some((x) => /blocked|no answer/.test(x.msg)) ? "Some exchanges are unreachable from this network (Binance is often blocked — a VPN may help). " : ""}{states.length > 0 && states.every((x) => x.ok || /not listed|no such|no public/.test(x.msg) || /blocked|no answer/.test(x.msg)) ? "“" + base + "” may simply not be listed on the exchanges that answered — order books here mostly cover crypto, not stocks/ETFs/commodities. " : ""}Try another symbol, or turn on more exchanges.</div>}
       {!lad && busy && <div className="empty">Loading order books…</div>}
       {lad && (
         <div className="ob-main">

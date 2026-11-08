@@ -125,7 +125,7 @@ export function loadBooks(base: string, rangePct: number, ids: string[], onState
     } catch (e: any) {
       if (signal?.aborted) return;
       const m = String(e?.message || e);
-      onState({ id: ex.id, label: ex.label, color: ex.color, ok: false, msg: timedOut ? "no answer (blocked?)" : /HTTP 4(00|51)/.test(m) ? "no such market" : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "blocked / unreachable" : m.slice(0, 40) });
+      onState({ id: ex.id, label: ex.label, color: ex.color, ok: false, msg: timedOut ? "no answer (blocked?)" : /HTTP (4(00|04|51)|500)/.test(m) && ex.id !== "arcus" ? "not listed here" : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "blocked / unreachable" : m.slice(0, 40) });
     } finally {
       window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
