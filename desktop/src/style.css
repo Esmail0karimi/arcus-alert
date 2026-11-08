@@ -976,3 +976,14 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .sx-set{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;margin-bottom:8px}.sx-set h5{margin:0 0 6px;font-size:13px}
 .sx-del{background:none;border:0;color:#9fb5cf;cursor:pointer}
 .sx-more .sg-open:disabled{opacity:.6;cursor:default}
+/* ---- zones panel (order book tab) ---- */
+.zn{border:1px solid rgba(255,255,255,.1);border-radius:12px;margin:8px;background:rgba(255,255,255,.03)}
+.zn-h{display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;font-size:13px}.zn-h span{color:#9fb5cf;font-size:11px;margin-inline-start:auto}
+.zn-b{padding:4px 12px 12px}.zn-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.zn-list{display:flex;flex-direction:column;max-height:420px;overflow:auto}
+.zn-row{display:grid;grid-template-columns:70px 1fr 90px 40px;gap:2px 10px;align-items:center;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;font-size:12px}
+.zn-row small{grid-column:2/4;color:#9fb5cf;font-size:11px}.zn-row b{grid-row:span 2}
+.zn-tags em{font-style:normal;font-size:10px;border-radius:6px;padding:1px 6px;margin-inline-end:4px;background:rgba(255,255,255,.08)}
+.zn-tags em.acc{background:rgba(61,220,151,.2);color:#3ddc97}.zn-tags em.dist{background:rgba(255,92,92,.2);color:#ff8a8a}.zn-tags em.box{background:rgba(0,220,210,.18);color:#00dcd2}
+.zn-box{position:relative;height:8px;border-radius:4px;background:rgba(255,255,255,.1)}.zn-box i{position:absolute;top:-2px;width:6px;height:12px;border-radius:3px;background:#fff}
+.zn-sc{grid-row:span 2;font-weight:800;text-align:center}
