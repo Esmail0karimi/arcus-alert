@@ -8,7 +8,7 @@ import type { QCandle } from "./qfex";
 
 const b = (en: string, fa: string): Bi => ({ en, fa });
 export type Trend = "up" | "down" | "range";
-export type StratId = "brk" | "fbo" | "vsh" | "mom" | "fbk" | "pbw" | "prz" | "box";
+export type StratId = "brk" | "fbo" | "vsh" | "mom" | "fbk" | "pbw" | "prz" | "box" | "tca" | "tcb" | "tcf";
 export type Status = "ready" | "watch";
 export type TfKey = "1d" | "4h" | "1h" | "15m";
 export type Candles = Partial<Record<TfKey, QCandle[]>>;
@@ -22,8 +22,11 @@ STRATS.fbk = { name: b("Fake break + 15M range break", "شکست کاذب + شک
 STRATS.pbw = { name: b("Weak pullback (trend entry)", "پولبک ضعیف (ورود با روند)"), basis: b("In a 4H Dow trend the pullback cannot reach the previous swing; a 15M box or a high-volume reversal candle at the top of the pullback joins the trend early", "در روند داوی ۴ساعته پولبک به سقف/کف قبلی نمی‌رسد؛ باکس ۱۵ دقیقه یا کندل برگشتی پرحجم در انتهای پولبک، ورود زودهنگام با روند است") };
 STRATS.prz = { name: b("Range at a major level (PRZ)", "رنج در سطح مهم (PRZ)"), basis: b("The trend runs into a major daily/weekly level or Fibonacci zone and starts to range; a strong 1H break up = LONG, a break down = trend continues (SHORT)", "روند به سطح مهم روزانه/هفتگی یا ناحیه‌ی فیبوناچی می‌رسد و رنج می‌زند؛ شکست قوی ۱ساعته به بالا = لانگ، به پایین = ادامه‌ی روند (شورت)") };
 STRATS.box = { name: b("Box", "باکس"), basis: b("Box = at least 2 touches of the top and 2 of the bottom (1% tolerance). A candle CLOSE outside the box = signal, the main-trend direction is preferred", "باکس = حداقل ۲ برخورد به سقف و ۲ برخورد به کف (تلورانس ۱٪). بسته‌شدن کندل بیرون باکس = سیگنال، جهت روند اصلی اولویت دارد") };
+STRATS.tca = { name: b("Tradecity · Level breakout", "تریدسیتی · شکست سطح"), basis: b("1D and 4H both HH+HL (long) / LH+LL (short); a 1H CLOSE beyond the last pivot with volume ≥ 1.5× its 20-bar average; stop behind the last pivot; target 4R or trail under each new higher low", "۱D و ۴H هر دو HH+HL (لانگ) / LH+LL (شورت)؛ کلوز ۱ساعته بیرون از آخرین پیوت با حجم ≥ ۱.۵ برابر میانگین ۲۰ کندل؛ حد ضرر پشت آخرین پیوت؛ هدف 4R یا تریلینگ زیر هر کف بالاتر") };
+STRATS.tcb = { name: b("Tradecity · Momentum candle setup", "تریدسیتی · ستاپ کندل مومنتوم"), basis: b("Trend direction on 1D+4H, a pullback with falling volume, then an engulfing candle on 1H with returning volume and RSI on the trend side of 50", "جهت روند ۱D+۴H، پولبک با حجم کاهشی، سپس کندل انگالف ۱ساعته با بازگشت حجم و RSI سمت روند نسبت به ۵۰") };
+STRATS.tcf = { name: b("Tradecity · Fake-out of a level", "تریدسیتی · فیک‌اوت سطح"), basis: b("In a 1D+4H trend a 1H pivot level is broken by a close, fails, and price returns with an engulfing / V candle — enter back in the trend direction", "در روند ۱D+۴H یک سطح پیوت ۱ساعته با کلوز شکسته می‌شود، شکست ناموفق است و قیمت با کندل انگالف / V برمی‌گردد — ورود در جهت روند") };
 export type Cfg = { triggers: ("1h" | "4h")[]; costPct: number; minRR: number; minScore: number; on: Record<StratId, boolean> };
-export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true } };
+export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true, tca: true, tcb: true, tcf: true } };
 export type Sig2 = {
   id: string; symbol: string; base: string; market: string; ex: string;
   side: "long" | "short"; strat: StratId; status: Status; method: "immediate" | "retest" | "none"; tf: string;
@@ -454,7 +457,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const want: Trend = side === "long" ? "up" : "down";
     return (s1h.trend === want ? 8 : s1h.trend === "range" ? 3 : 0) + (s4h.trend === want ? 6 : s4h.trend === "range" ? 2 : 0) + (s1d.trend === want ? 6 : s1d.trend === "range" ? 2 : 0);
   };
-  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; lvl?: number; c15?: { ok: boolean | null; text: Bi } };
+  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; lvl?: number; tc?: boolean; c15?: { ok: boolean | null; text: Bi } };
   /** Hard rule: nothing is READY until a 1H level has been broken by a CLOSE with a good candle and above-average volume. */
   const break1h = (side: "long" | "short", extra?: number): { ok: boolean; text: Bi } => {
     const L = side === "long", n = c1h.length;
@@ -486,6 +489,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
       if (!o.lenient) return;
       tg = { tp: L ? o.entry + risk * 3 : o.entry - risk * 3, note: b("No level ahead — projected 3R (measured)", "سطحی جلوی قیمت نیست — هدف 3R (اندازه‌گیری‌شده)") };
     }
+    if (o.tc && tg.note.en.startsWith("No level")) tg = { tp: L ? o.entry + risk * 4 : o.entry - risk * 4, note: b("Open space ahead — 4R target (or trail the stop under each new higher low / above each lower high)", "فضای باز جلوی قیمت — هدف 4R (یا تریلینگ زیر هر کف بالاتر / بالای هر سقف پایین‌تر)") };
     const rr = netRR(o.entry, stop, tg.tp, cfg.costPct);
     if (rr.net < cfg.minRR && !o.lenient) { D2?.(`${o.strat} ${o.side} rejected: net R:R ${rr.net.toFixed(2)} (${tg.note.en})`); return; }
     const pa = paScore(rows, o.side, o.rej), rs = rsiScore(rows, o.side), mc = macdScore(rows, o.side), vol = volScore(rows);
@@ -667,6 +671,55 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
         emit2({ side, strat: "box", tf: trig, rows, method: "none", entry: L ? bx.hi : bx.lo, stop: L ? mid - atrT * 0.2 : mid + atrT * 0.2, confirmed: false, structure: alignG(side), setup: 10 + Math.min(6, bx.tops + bx.bots), lenient: true, zone: { lo: bx.lo, hi: bx.hi }, trigLvl: L ? bx.hi : bx.lo, tag,
           why: [label, b(`Price is inside the box (${(pos * 100).toFixed(0)}% from the bottom); main trend: ${bias === "up" ? "up" : bias === "down" ? "down" : "range"}`, `قیمت داخل باکس است (${(pos * 100).toFixed(0)}٪ از کف)؛ روند اصلی: ${bias === "up" ? "صعودی" : bias === "down" ? "نزولی" : "رنج"}`)],
           wait: b(`Waiting for a candle CLOSE ${L ? "above" : "below"} ${(L ? bx.hi : bx.lo).toPrecision(5)} (the main-trend side is preferred; a close ${L ? "below" : "above"} ${(L ? bx.lo : bx.hi).toPrecision(5)} gives the opposite signal)`, `منتظر کلوز کندل ${L ? "بالای" : "پایین"} ${(L ? bx.hi : bx.lo).toPrecision(5)} (سمت روند اصلی اولویت دارد؛ کلوز ${L ? "پایین" : "بالای"} ${(L ? bx.lo : bx.hi).toPrecision(5)} سیگنال مخالف می‌دهد)`) });
+      }
+    }
+  }
+  // ---- Tradecity swing price-action skill (codable subset): level breakout, momentum candle setup, fake-out ----
+  if ((cfg.on.tca || cfg.on.tcb || cfg.on.tcf) && c1h.length >= 60) {
+    const tcTag = b("Tradecity", "تریدسیتی"), n = c1h.length, last = c1h[n - 1], prev = c1h[n - 2];
+    const pv = swings(c1h, 5);
+    const avg20 = c1h.slice(n - 21, n - 1).reduce((a, r) => a + r.volume, 0) / 20, vr = avg20 > 0 ? last.volume / avg20 : 0;
+    for (const side of SIDES) {
+      const L = side === "long", want: Trend = L ? "up" : "down";
+      if (s1d.trend !== want || s4h.trend !== want) continue; // strict: never trade against the 1D + 4H trend
+      const sgn = L ? 1 : -1;
+      const trendWhy = b(`1D and 4H are both ${L ? "HH + HL (uptrend)" : "LH + LL (downtrend)"} — only ${L ? "longs" : "shorts"} are allowed`, `۱D و ۴H هر دو ${L ? "HH + HL (صعودی)" : "LH + LL (نزولی)"} هستند — فقط ${L ? "لانگ" : "شورت"} مجاز است`);
+      const lastPivStop = pv.filter((x) => x.t === (L ? "L" : "H") && (L ? x.p < last.close : x.p > last.close)).slice(-1)[0];
+      // A. breakout of the last pivot with volume
+      const lvA = pv.filter((x) => x.t === (L ? "H" : "L")).slice(-1)[0];
+      if (cfg.on.tca && lvA && lastPivStop) {
+        const brk = L ? last.close > lvA.p && prev.close <= lvA.p : last.close < lvA.p && prev.close >= lvA.p;
+        const over = Math.abs(last.close - lvA.p) > atr1h * 1.2, near = Math.abs(last.close - lvA.p) <= atr1h * 1.0 && (L ? last.close <= lvA.p : last.close >= lvA.p);
+        const stop = lastPivStop.p - sgn * atr1h * 0.2;
+        if (brk) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: over ? "retest" : "immediate", entry: over ? lvA.p : last.close, stop, confirmed: vr >= 1.5 && !over, structure: 16 + 2, setup: 12 + (vr >= 2 ? 4 : 0) + (vr >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: vr < 1.5 || over, trigLvl: over ? lvA.p : undefined, why: [trendWhy, b(`1H CLOSE ${L ? "above" : "below"} the last pivot ${lvA.p.toPrecision(5)} with ${vr.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×)`, `کلوز ۱ساعته ${L ? "بالای" : "پایین"} آخرین پیوت ${lvA.p.toPrecision(5)} با حجم ${vr.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵ لازم است)`)], wait: over ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`Closed beyond the pivot but volume is only ${vr.toFixed(1)}× (need ≥ 1.5×)`, `بیرون پیوت بسته شد ولی حجم فقط ${vr.toFixed(1)} برابر است (حداقل ۱.۵)`) });
+        else if (near) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: "none", entry: lvA.p, stop, confirmed: false, structure: 16, setup: 10, tag: tcTag, tc: true, lvl: lvA.p, lenient: true, trigLvl: lvA.p, why: [trendWhy, b(`Price is within 1 ATR of the last 1H pivot ${lvA.p.toPrecision(5)}`, `قیمت کمتر از ۱ ATR تا آخرین پیوت ۱ساعته ${lvA.p.toPrecision(5)} فاصله دارد`)], wait: b(`Wait for a 1H CLOSE ${L ? "above" : "below"} ${lvA.p.toPrecision(5)} with volume ≥ 1.5× average`, `منتظر کلوز ۱ساعته ${L ? "بالای" : "پایین"} ${lvA.p.toPrecision(5)} با حجم ≥ ۱.۵ برابر میانگین باش`) });
+      }
+      // B. momentum candle setup: pullback on falling volume, then an engulfing candle with returning volume, RSI on the trend side of 50
+      if (cfg.on.tcb && lastPivStop) {
+        const eng = L ? last.close > prev.open && last.open <= prev.close && prev.close < prev.open && last.close > last.open : last.close < prev.open && last.open >= prev.close && prev.close > prev.open && last.close < last.open;
+        const pb = L ? c1h[n - 2].close < c1h[n - 7].close : c1h[n - 2].close > c1h[n - 7].close;
+        const v1 = c1h.slice(n - 4, n - 1).reduce((a, r) => a + r.volume, 0) / 3, v0 = c1h.slice(n - 7, n - 4).reduce((a, r) => a + r.volume, 0) / 3;
+        const rsiV = rsiArr(c1h.map((r) => r.close)).slice(-1)[0], rsiOk = L ? rsiV > 50 : rsiV < 50;
+        if (eng && pb && v1 < v0 && vr >= 1 && rsiOk) {
+          const stop = Math.min(L ? last.low : Infinity, L ? prev.low : Infinity, ...(L ? [lastPivStop.p] : [])) - (L ? atr1h * 0.2 : 0);
+          const stopS = L ? stop : Math.max(last.high, prev.high) + atr1h * 0.2;
+          emit2({ side, strat: "tcb", tf: "1h", rows: c1h, method: "immediate", entry: last.close, stop: L ? stop : stopS, confirmed: true, structure: 18, setup: 12 + (vr >= 1.5 ? 3 : 0) + (Math.abs(last.close - last.open) >= atr1h * 0.8 ? 3 : 0), tag: tcTag, tc: true, why: [trendWhy, b(`Pullback on falling volume (${v1.toFixed(0)} vs ${v0.toFixed(0)}), then a 1H ${L ? "bullish" : "bearish"} engulfing candle with ${vr.toFixed(1)}× volume; RSI ${rsiV.toFixed(0)} is on the trend side of 50`, `پولبک با حجم کاهشی (${v1.toFixed(0)} در برابر ${v0.toFixed(0)})، سپس کندل انگالف ${L ? "صعودی" : "نزولی"} ۱ساعته با حجم ${vr.toFixed(1)} برابر؛ RSI ${rsiV.toFixed(0)} سمت روند نسبت به ۵۰ است`)] });
+        }
+      }
+      // C. fake-out of a pivot level, entering back in the trend direction
+      if (cfg.on.tcf) {
+        for (const lv of pv.filter((x) => x.t === (L ? "L" : "H")).slice(-6).reverse()) {
+          let jb = -1;
+          for (let q = Math.max(lv.i + 1, n - 9); q < n - 1; q++) if (L ? c1h[q].close < lv.p : c1h[q].close > lv.p) { jb = q; break; }
+          if (jb < 0) continue;
+          const back = L ? last.close > lv.p : last.close < lv.p;
+          const engF = L ? last.close > prev.open && last.close > last.open : last.close < prev.open && last.close < last.open;
+          if (!back || !engF || !goodCandle(last, side)) continue;
+          const seg = c1h.slice(jb), ext = L ? Math.min(...seg.map((r) => r.low)) : Math.max(...seg.map((r) => r.high));
+          const rsiV = rsiArr(c1h.map((r) => r.close)).slice(-1)[0];
+          emit2({ side, strat: "tcf", tf: "1h", rows: c1h, method: "immediate", entry: last.close, stop: ext - sgn * atr1h * 0.2, confirmed: true, structure: 18, setup: 12 + (vr >= 1.3 ? 3 : 0) + ((L ? rsiV > 45 : rsiV < 55) ? 3 : 0), rej: true, tag: tcTag, tc: true, lvl: lv.p, why: [trendWhy, b(`Fake-out: a 1H close broke the pivot ${lv.p.toPrecision(5)} (extreme ${ext.toPrecision(5)}), failed, and a strong ${L ? "bullish" : "bearish"} candle brought price back ${L ? "above" : "below"} it — RSI ${rsiV.toFixed(0)}`, `فیک‌اوت: کلوز ۱ساعته پیوت ${lv.p.toPrecision(5)} را شکست (انتها ${ext.toPrecision(5)})، ناموفق بود و کندل قوی ${L ? "صعودی" : "نزولی"} قیمت را ${L ? "بالای" : "پایین"} آن برگرداند — RSI ${rsiV.toFixed(0)}`)] });
+          break;
+        }
       }
     }
   }

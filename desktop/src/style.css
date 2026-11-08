@@ -989,3 +989,4 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .zn-sc{grid-row:span 2;font-weight:800;text-align:center}
 .sx-tag.bx{background:rgba(0,220,210,.2);color:#00dcd2;font-weight:700}
 .sg-side.ghost{background:transparent!important;border:1px dashed currentColor;font-weight:600}
+.sx-tag.bx{white-space:nowrap}
