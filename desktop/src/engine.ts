@@ -457,7 +457,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const want: Trend = side === "long" ? "up" : "down";
     return (s1h.trend === want ? 8 : s1h.trend === "range" ? 3 : 0) + (s4h.trend === want ? 6 : s4h.trend === "range" ? 2 : 0) + (s1d.trend === want ? 6 : s1d.trend === "range" ? 2 : 0);
   };
-  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; lvl?: number; tc?: boolean; c15?: { ok: boolean | null; text: Bi } };
+  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; lvl?: number; tc?: boolean; at15?: number; c15?: { ok: boolean | null; text: Bi } };
   /** Hard rule: nothing is READY until a 1H level has been broken by a CLOSE with a good candle and above-average volume. */
   const break1h = (side: "long" | "short", extra?: number): { ok: boolean; text: Bi } => {
     const L = side === "long", n = c1h.length;
@@ -472,7 +472,17 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
       if (vr < 1.3) return { ok: false, text: b(`1H closed ${L ? "above" : "below"} ${hit.p.toPrecision(5)} but volume is only ${vr.toFixed(1)}× average (need ≥ 1.3×)`, `۱ساعته ${L ? "بالای" : "پایین"} ${hit.p.toPrecision(5)} بسته شد ولی حجم فقط ${vr.toFixed(1)} برابر میانگین است (حداقل ۱.۳ لازم است)`) };
       return { ok: true, text: b(`1H BREAK: a strong candle CLOSED ${L ? "above" : "below"} ${hit.p.toPrecision(5)} with ${vr.toFixed(1)}× average volume`, `شکست ۱ساعته: کندل قوی ${L ? "بالای" : "پایین"} ${hit.p.toPrecision(5)} بسته شد با حجم ${vr.toFixed(1)} برابر میانگین`) };
     }
-    return { ok: false, text: b(`No 1H level has been broken yet — wait for a strong 1H candle CLOSE ${L ? "above the last 1H high" : "below the last 1H low"} with ≥ 1.3× volume`, `هنوز هیچ سطح ۱ساعته شکسته نشده — منتظر کلوز کندل قوی ۱ساعته ${L ? "بالای آخرین سقف" : "پایین آخرین کف"} با حجم ≥ ۱.۳ برابر باش`) };
+    // the level is a 1H level, but the confirming candle may be a closed 15M candle (earlier signal)
+    if (n15 >= 40) {
+      for (let j = n15 - 1; j >= n15 - 2; j--) {
+        const cj = c15[j], pj = c15[j - 1];
+        const hit = lv.filter((x) => (L ? cj.close > x.p && pj.close <= x.p : cj.close < x.p && pj.close >= x.p)).sort((a, c) => (L ? c.p - a.p : a.p - c.p))[0];
+        if (!hit || !goodCandle(cj, side)) continue;
+        const av = c15.slice(j - 20, j).reduce((a, r) => a + r.volume, 0) / 20, v15 = av > 0 ? cj.volume / av : 0;
+        if (v15 >= 1.3) return { ok: true, text: b(`15M BREAK of the 1H level: a strong 15M candle CLOSED ${L ? "above" : "below"} ${hit.p.toPrecision(5)} with ${v15.toFixed(1)}× average volume`, `شکست ۱۵ دقیقه‌ای سطح ۱ساعته: کندل قوی ۱۵ دقیقه ${L ? "بالای" : "پایین"} ${hit.p.toPrecision(5)} بسته شد با حجم ${v15.toFixed(1)} برابر میانگین`) };
+      }
+    }
+    return { ok: false, text: b(`No 1H level has been broken yet — wait for a strong 1H candle CLOSE ${L ? "above the last 1H high" : "below the last 1H low"} with ≥ 1.3× volume (a 15M close is enough)`, `هنوز هیچ سطح ۱ساعته شکسته نشده — منتظر کلوز کندل قوی ۱ساعته یا ۱۵ دقیقه ${L ? "بالای آخرین سقف" : "پایین آخرین کف"} با حجم ≥ ۱.۳ برابر باش`) };
   };
   const emit2 = (o: E2) => {
     if (!cfg.on[o.strat]) return;
@@ -499,11 +509,11 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const score = Math.round(clamp(Object.values(parts).reduce((a, v) => a + v, 0) - (c.ok === null && !o.no15 ? 5 : 0), 0, 100));
     const bk = break1h(o.side, o.lvl);
     const ready = o.confirmed && bk.ok && rr.net >= cfg.minRR && score >= cfg.minScore && (o.no15 || c.ok !== false);
-    const sec = TF_SEC[o.tf], candleTime = last.time;
+    const sec = TF_SEC[o.tf], candleTime = o.at15 != null ? Math.floor(o.at15 / 3600) * 3600 : last.time; // a 15M-close trigger keeps the 1H candle's id so the later 1H close is not a second signal
     sigs.push({
       id: [m.symbol, o.strat, o.side, o.tf, candleTime, ready ? "r" : "w"].join("|"), symbol: m.symbol, base: m.base, market: m.market, ex: m.ex, side: o.side, strat: o.strat, status: ready ? "ready" : "watch", method: o.method, tf: o.tf,
       d1: s1d.trend, h4: s4h.trend, h1: s1h.trend, m15: c, entry: o.entry, stop, tp: tg.tp, tpNote: tg.note, rr: rr.net, rrGross: rr.gross, score, grade: score >= 85 ? "excellent" : score >= 70 ? "good" : "watchlist", parts,
-      time: (candleTime + sec) * 1000, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
+      time: o.at15 != null ? (o.at15 + 900) * 1000 : (candleTime + sec) * 1000, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
       why: [bk.text, ...o.why, ...pa.notes, vol.note, rs.note, mc.note, c.text, tg.note],
       wait: !ready ? (o.confirmed && !bk.ok ? bk.text : o.wait) || (o.confirmed ? b(`Setup confirmed but ${rr.net < cfg.minRR ? `net R:R ${rr.net.toFixed(1)} is below ${cfg.minRR}` : `quality ${score}/100 is below ${cfg.minScore}`} — watch only`, `ستاپ تأیید شده ولی ${rr.net < cfg.minRR ? `R:R خالص ${rr.net.toFixed(1)} زیر ${cfg.minRR} است` : `کیفیت ${score} از ۱۰۰ زیر ${cfg.minScore} است`} — فقط مراقبت`) : b("Waiting for the confirming candle close", "منتظر بسته‌شدن کندل تأییدکننده")) : undefined,
     });
@@ -663,6 +673,21 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
           wait: over ? b(`Broke out but already extended — wait for a retest of ${(L ? bx.hi : bx.lo).toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${(L ? bx.hi : bx.lo).toPrecision(5)} باش که نگه دارد`) : against && c.ok !== true ? b("Against the main trend — waiting for the 15M to confirm", "خلاف روند اصلی — منتظر تأیید ۱۵ دقیقه") : undefined });
         return true;
       };
+      if (trig === "1h" && n15 >= 40 && last.close <= bx.hi && last.close >= bx.lo) {
+        const l15 = c15[n15 - 1], p15 = c15[n15 - 2], av15 = c15.slice(n15 - 21, n15 - 1).reduce((a, r) => a + r.volume, 0) / 20, v15 = av15 > 0 ? l15.volume / av15 : 0;
+        let done = false;
+        for (const side of SIDES) {
+          const L = side === "long", out = L ? l15.close > bx.hi && p15.close <= bx.hi : l15.close < bx.lo && p15.close >= bx.lo;
+          if (!out || (L ? failedUp : failedDn) || done) continue;
+          const want: Trend = L ? "up" : "down", withTrend = bias === want, against = bias !== "range" && !withTrend, c = conf15(side);
+          const ok = goodCandle(l15, side) && v15 >= 1.3 && Math.abs(l15.close - (L ? bx.hi : bx.lo)) <= atrT * 1.2 && (!against || c.ok === true);
+          emit2({ side, strat: "box", tf: "1h", at15: l15.time, rows: c15, method: "immediate", entry: l15.close, stop: L ? mid - atrT * 0.2 : mid + atrT * 0.2, confirmed: ok, structure: alignG(side) + (withTrend ? 2 : 0), setup: 10 + Math.min(6, bx.tops + bx.bots) + (bx.w >= 36 ? 2 : 0), zone: { lo: bx.lo, hi: bx.hi }, lvl: L ? bx.hi : bx.lo, tag, lenient: !ok, no15: !against,
+            why: [label, b(`A 15M candle CLOSED ${L ? "above the top" : "below the bottom"} of the 1H box with ${v15.toFixed(1)}× volume — earlier than waiting for the 1H close`, `کندل ۱۵ دقیقه ${L ? "بالای سقف" : "پایین کف"} باکس ۱ساعته بسته شد با حجم ${v15.toFixed(1)} برابر — زودتر از انتظار برای کلوز ۱ساعته`)],
+            wait: against && c.ok !== true ? b("Against the main trend — waiting for the 15M to confirm", "خلاف روند اصلی — منتظر تأیید ۱۵ دقیقه") : b(`15M closed outside the box but volume/candle is not strong enough yet (volume ${v15.toFixed(1)}×, need ≥ 1.3×)`, `۱۵ دقیقه بیرون باکس بسته شد ولی حجم/کندل هنوز قوی نیست (حجم ${v15.toFixed(1)} برابر، حداقل ۱.۳)`) });
+          done = true;
+        }
+        if (done) continue;
+      }
       if (fire("long") || fire("short")) continue;
       if (last.close <= bx.hi && last.close >= bx.lo) {
         const pos = (last.close - bx.lo) / (h || 1);
@@ -692,7 +717,11 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
         const over = Math.abs(last.close - lvA.p) > atr1h * 1.2, near = Math.abs(last.close - lvA.p) <= atr1h * 1.0 && (L ? last.close <= lvA.p : last.close >= lvA.p);
         const stop = lastPivStop.p - sgn * atr1h * 0.2;
         if (brk) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: over ? "retest" : "immediate", entry: over ? lvA.p : last.close, stop, confirmed: vr >= 1.5 && !over, structure: 16 + 2, setup: 12 + (vr >= 2 ? 4 : 0) + (vr >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: vr < 1.5 || over, trigLvl: over ? lvA.p : undefined, why: [trendWhy, b(`1H CLOSE ${L ? "above" : "below"} the last pivot ${lvA.p.toPrecision(5)} with ${vr.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×)`, `کلوز ۱ساعته ${L ? "بالای" : "پایین"} آخرین پیوت ${lvA.p.toPrecision(5)} با حجم ${vr.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵ لازم است)`)], wait: over ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`Closed beyond the pivot but volume is only ${vr.toFixed(1)}× (need ≥ 1.5×)`, `بیرون پیوت بسته شد ولی حجم فقط ${vr.toFixed(1)} برابر است (حداقل ۱.۵)`) });
-        else if (near) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: "none", entry: lvA.p, stop, confirmed: false, structure: 16, setup: 10, tag: tcTag, tc: true, lvl: lvA.p, lenient: true, trigLvl: lvA.p, why: [trendWhy, b(`Price is within 1 ATR of the last 1H pivot ${lvA.p.toPrecision(5)}`, `قیمت کمتر از ۱ ATR تا آخرین پیوت ۱ساعته ${lvA.p.toPrecision(5)} فاصله دارد`)], wait: b(`Wait for a 1H CLOSE ${L ? "above" : "below"} ${lvA.p.toPrecision(5)} with volume ≥ 1.5× average`, `منتظر کلوز ۱ساعته ${L ? "بالای" : "پایین"} ${lvA.p.toPrecision(5)} با حجم ≥ ۱.۵ برابر میانگین باش`) });
+        else if (n15 >= 40 && (L ? c15[n15 - 1].close > lvA.p && c15[n15 - 2].close <= lvA.p : c15[n15 - 1].close < lvA.p && c15[n15 - 2].close >= lvA.p)) {
+          const l15 = c15[n15 - 1], av15 = c15.slice(n15 - 21, n15 - 1).reduce((a, r) => a + r.volume, 0) / 20, v15 = av15 > 0 ? l15.volume / av15 : 0, over15 = Math.abs(l15.close - lvA.p) > atr1h * 1.2;
+          emit2({ side, strat: "tca", tf: "1h", at15: l15.time, rows: c15, method: over15 ? "retest" : "immediate", entry: over15 ? lvA.p : l15.close, stop, confirmed: v15 >= 1.5 && !over15, structure: 18, setup: 12 + (v15 >= 2 ? 4 : 0) + (v15 >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: v15 < 1.5 || over15, trigLvl: over15 ? lvA.p : undefined, why: [trendWhy, b(`15M CLOSE ${L ? "above" : "below"} the 1H pivot ${lvA.p.toPrecision(5)} with ${v15.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×) — earlier than waiting for the 1H close`, `کلوز ۱۵ دقیقه ${L ? "بالای" : "پایین"} پیوت ۱ساعته ${lvA.p.toPrecision(5)} با حجم ${v15.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵) — زودتر از انتظار برای کلوز ۱ساعته`)], wait: over15 ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`15M closed beyond the pivot but volume is only ${v15.toFixed(1)}× (need ≥ 1.5×)`, `۱۵ دقیقه بیرون پیوت بسته شد ولی حجم فقط ${v15.toFixed(1)} برابر است (حداقل ۱.۵)`) });
+        }
+        else if (near) { need15 = true; emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: "none", entry: lvA.p, stop, confirmed: false, structure: 16, setup: 10, tag: tcTag, tc: true, lvl: lvA.p, lenient: true, trigLvl: lvA.p, why: [trendWhy, b(`Price is within 1 ATR of the last 1H pivot ${lvA.p.toPrecision(5)}`, `قیمت کمتر از ۱ ATR تا آخرین پیوت ۱ساعته ${lvA.p.toPrecision(5)} فاصله دارد`)], wait: b(`Wait for a 1H CLOSE ${L ? "above" : "below"} ${lvA.p.toPrecision(5)} with volume ≥ 1.5× average`, `منتظر کلوز ۱ساعته ${L ? "بالای" : "پایین"} ${lvA.p.toPrecision(5)} با حجم ≥ ۱.۵ برابر میانگین باش`) }); }
       }
       // B. momentum candle setup: pullback on falling volume, then an engulfing candle with returning volume, RSI on the trend side of 50
       if (cfg.on.tcb && lastPivStop) {
