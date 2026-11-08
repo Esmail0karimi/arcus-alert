@@ -11,6 +11,12 @@ export const EXCHANGES: { id: string; label: string; color: string }[] = [
   { id: "coinbase", label: "Coinbase", color: "#3b82f6" },
   { id: "hl", label: "Hyperliquid", color: "#3ddc97" },
   { id: "lighter", label: "Lighter", color: "#b388ff" },
+  { id: "bybit", label: "Bybit", color: "#f7a600" },
+  { id: "okx", label: "OKX", color: "#9aa4b2" },
+  { id: "gate", label: "Gate", color: "#2354e6" },
+  { id: "kucoin", label: "KuCoin", color: "#23af91" },
+  { id: "mexc", label: "MEXC", color: "#2f7de1" },
+  { id: "bitget", label: "Bitget", color: "#00c2ff" },
   { id: "arcus", label: "Arcus", color: "#00dcd2" },
 ];
 
@@ -35,6 +41,32 @@ async function binance(base: string, signal?: AbortSignal): Promise<{ bids: Leve
 async function binancePerp(base: string, signal?: AbortSignal) {
   const j = await getJson("https://fapi.binance.com/fapi/v1/depth?symbol=" + base + "USDT&limit=1000", signal);
   return { bids: pairs(j.bids), asks: pairs(j.asks) };
+}
+/* Spot / linear books from exchanges that are usually reachable when Binance is not (all plain public REST). */
+const bk = (bids: any, asks: any) => ({ bids: pairs(bids), asks: pairs(asks) });
+async function bybit(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://api.bybit.com/v5/market/orderbook?category=linear&symbol=" + base + "USDT&limit=500", signal);
+  return bk(j?.result?.b, j?.result?.a);
+}
+async function okx(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://www.okx.com/api/v5/market/books?instId=" + base + "-USDT&sz=400", signal);
+  return bk(j?.data?.[0]?.bids, j?.data?.[0]?.asks);
+}
+async function gate(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://api.gateio.ws/api/v4/spot/order_book?currency_pair=" + base + "_USDT&limit=100", signal);
+  return bk(j?.bids, j?.asks);
+}
+async function kucoin(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://api.kucoin.com/api/v1/market/orderbook/level2_100?symbol=" + base + "-USDT", signal);
+  return bk(j?.data?.bids, j?.data?.asks);
+}
+async function mexc(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://api.mexc.com/api/v3/depth?symbol=" + base + "USDT&limit=1000", signal);
+  return bk(j?.bids, j?.asks);
+}
+async function bitget(base: string, signal?: AbortSignal) {
+  const j = await getJson("https://api.bitget.com/api/v2/spot/market/orderbook?symbol=" + base + "USDT&type=step0&limit=150", signal);
+  return bk(j?.data?.bids, j?.data?.asks);
 }
 async function coinbase(base: string, signal?: AbortSignal) {
   const j = await getJson("https://api.exchange.coinbase.com/products/" + base + "-USD/book?level=2", signal);
@@ -117,6 +149,12 @@ export function loadBooks(base: string, rangePct: number, ids: string[], onState
       else if (ex.id === "coinbase") b = await coinbase(base, ctl.signal);
       else if (ex.id === "hl") b = await hyperliquid(base, rangePct, ctl.signal);
       else if (ex.id === "lighter") b = await lighter(base, ctl.signal);
+      else if (ex.id === "bybit") b = await bybit(base, ctl.signal);
+      else if (ex.id === "okx") b = await okx(base, ctl.signal);
+      else if (ex.id === "gate") b = await gate(base, ctl.signal);
+      else if (ex.id === "kucoin") b = await kucoin(base, ctl.signal);
+      else if (ex.id === "mexc") b = await mexc(base, ctl.signal);
+      else if (ex.id === "bitget") b = await bitget(base, ctl.signal);
       else b = await arcus(base, ctl.signal);
       if (!b.bids.length && !b.asks.length) throw new Error("empty");
       b.bids.sort((x, y) => y[0] - x[0]);
@@ -125,7 +163,7 @@ export function loadBooks(base: string, rangePct: number, ids: string[], onState
     } catch (e: any) {
       if (signal?.aborted) return;
       const m = String(e?.message || e);
-      onState({ id: ex.id, label: ex.label, color: ex.color, ok: false, msg: timedOut ? "no answer (blocked?)" : /HTTP (4(00|04|51)|500)/.test(m) && ex.id !== "arcus" ? "not listed here" : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "blocked / unreachable" : m.slice(0, 40) });
+      onState({ id: ex.id, label: ex.label, color: ex.color, ok: false, msg: m === "empty" ? "not listed here" : timedOut ? "no answer (blocked?)" : /HTTP (4(00|04|51)|500)/.test(m) && ex.id !== "arcus" ? "not listed here" : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "blocked / unreachable" : m.slice(0, 40) });
     } finally {
       window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
