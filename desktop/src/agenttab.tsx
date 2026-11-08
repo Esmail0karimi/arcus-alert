@@ -311,7 +311,11 @@ export function AgentTab(p: {
         <header role="button" tabIndex={0} aria-expanded={o} onClick={() => setOpenId(o ? null : id)} onKeyDown={(e: any) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpenId(o ? null : id))}>
           <span className={"sx-score " + s.grade} title={T("Quality score", "امتیاز کیفیت")}>{s.status2 ? "—" : s.score}</span>
           <div className="sx-id"><b>{fa ? FA_NAME[s.base] || s.base : s.base}</b><span className="sx-mk">{s.market}</span></div>
-          <span className={"sg-side " + s.side}>{Lg ? "▲ LONG" : "▼ SHORT"}</span>
+          {s.status === "watch" ? (
+            <span className={"sg-side ghost " + s.side} title={T("Not a signal yet — this is the side to take IF the trigger happens", "هنوز سیگنال نیست — سمتی که اگر ماشه بخورد باید گرفت")}>👁 {s.trig ? `${T("close", "کلوز")} ${Lg ? ">" : "<"} ${fmt(s.trig)} → ` : T("if confirmed → ", "اگر تأیید شد → ")}{Lg ? "LONG" : "SHORT"}</span>
+          ) : (
+            <span className={"sg-side " + s.side}>{Lg ? "▲ LONG" : "▼ SHORT"}</span>
+          )}
           <span className="sx-tag">{L(STRATS[s.strat].name)}{s.status2 ? " · " + L(s.status2) : ""}</span>{s.tag && <span className="sx-tag bx">{L(s.tag)}</span>}
           <span className="sg-tfc">{s.tf}</span>
           {!s.status2 && <span className={"sx-rr " + (s.rr >= 3 ? "g" : "")} title={T("Net reward-to-risk after costs", "نسبت سود به ریسک خالص پس از هزینه")}>R:R {s.rr.toFixed(1)}</span>}
