@@ -11,7 +11,7 @@ import type { SetupLines } from "./analysispanel";
 import type { QCandle } from "./qfex";
 
 export type AgSym = { symbol: string; base: string; ex: string; market: string };
-type Hist = { key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number };
+type Hist = { key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number; auto?: boolean };
 type Toast = { id: number; text: string; side?: "long" | "short" };
 type View = "ready" | "watch" | "long" | "short" | "market" | "history" | "settings";
 const jget = <T,>(k: string, d: T): T => {
@@ -103,6 +103,10 @@ export function AgentTab(p: {
   cfgRef.current = cfg;
   const histRef = useRef(hist);
   histRef.current = hist;
+  const [autoJ, setAutoJ] = useState<boolean>(() => jget("arcus.ag3.autoj", true));
+  const autoRef = useRef(autoJ);
+  autoRef.current = autoJ;
+  useEffect(() => { jset("arcus.ag3.autoj", autoJ); }, [autoJ]);
   const soundRef = useRef(soundOn), notifRef = useRef(notifOn), faRef = useRef(fa);
   soundRef.current = soundOn;
   notifRef.current = notifOn;
@@ -217,7 +221,12 @@ export function AgentTab(p: {
     const fresh = rd.filter((x) => !seen.has(keyOf(x)));
     fresh.forEach((x) => seen.add(keyOf(x)));
     jset("arcus.ag3.seen", Array.from(seen).slice(-600));
-    const nh = open; // journal entries only change when the user adds one; here only their outcomes are updated
+    // READY signals go into the journal automatically (switchable in Settings) so their outcome is tracked; watch items never do
+    if (autoRef.current) {
+      const have = new Set(open.map((h) => h.key));
+      for (const x of rd) if (!have.has(keyOf(x))) open.push({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0, auto: true });
+    }
+    const nh = open.slice(-300);
     setHist(nh);
     jset("arcus.ag3.hist", nh);
     if (fresh.length) {
@@ -469,14 +478,14 @@ export function AgentTab(p: {
               <div key={h.key} className={h.st}>
                 <b>{fa ? FA_NAME[h.base] || h.base : h.base}</b>
                 <span className={"sg-side " + h.side}>{h.side === "long" ? "LONG" : "SHORT"}</span>
-                <span>{L(STRATS[h.strat as StratId].name)}</span>
+                <span>{L(STRATS[h.strat as StratId].name)}{h.auto ? " · " + T("auto", "خودکار") : ""}</span>
                 <span>{fmt(h.entry)} → {fmt(h.tp)}</span>
                 <span>{h.score}</span>
                 <small>{new Date(h.time).toLocaleString()}</small><button type="button" aria-label="remove" className="sx-del" onClick={() => delJ(h.key)}>✕</button>
                 <em>{h.st === "open" ? "⏳" : h.st === "win" ? "✅ +" + h.r.toFixed(1) + "R" : h.st === "loss" ? "🛑 −1R" : "⌛ " + h.r.toFixed(1) + "R"}</em>
               </div>
             ))}
-            {!hist.length && <p className="sg-empty">{T("The journal is empty. Open a signal and press “Add to journal” — nothing is added automatically.", "دفتر خالی است. یک سیگنال را باز کن و «افزودن به دفتر» بزن — چیزی خودکار اضافه نمی‌شود.")}</p>}
+            {!hist.length && <p className="sg-empty">{T("The journal is empty. New READY signals are added automatically (Settings → Journal); you can also add one by hand from its card.", "دفتر خالی است. سیگنال‌های آماده‌ی جدید خودکار اضافه می‌شوند (تنظیمات ← دفتر)؛ از روی کارت هم می‌توانی دستی اضافه کنی.")}</p>}
           </div>
           {hist.length > 0 && <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the history?", "تاریخچه پاک شود؟"))) { setHist([]); jset("arcus.ag3.hist", []); } }}>{T("Clear history", "پاک کردن تاریخچه")}</button>}
         </div>
@@ -510,6 +519,11 @@ export function AgentTab(p: {
                 </label>
               ))}
             </div>
+          </section>
+          <section className="sx-set">
+            <h5>{T("Journal", "دفتر")}</h5>
+            <label className="sg-nt"><input type="checkbox" checked={autoJ} onChange={(e) => setAutoJ(e.target.checked)} /> 📒 {T("Add every new READY signal to the journal automatically (to track its result)", "هر سیگنال آماده‌ی جدید خودکار وارد دفتر شود (برای پیگیری نتیجه)")}</label>
+            <p className="sx-hint">{T("Watchlist items are never added automatically. You can still add or remove entries by hand.", "موارد مراقبت هیچ‌وقت خودکار اضافه نمی‌شوند. دستی هم می‌توانی اضافه یا حذف کنی.")}</p>
           </section>
           <section className="sx-set">
             <h5>{T("Alerts", "هشدارها")}</h5>
