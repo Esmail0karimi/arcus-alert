@@ -454,7 +454,23 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const want: Trend = side === "long" ? "up" : "down";
     return (s1h.trend === want ? 8 : s1h.trend === "range" ? 3 : 0) + (s4h.trend === want ? 6 : s4h.trend === "range" ? 2 : 0) + (s1d.trend === want ? 6 : s1d.trend === "range" ? 2 : 0);
   };
-  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; c15?: { ok: boolean | null; text: Bi } };
+  type E2 = { side: "long" | "short"; strat: StratId; tf: "15m" | "1h" | "4h"; rows: QCandle[]; method: "immediate" | "retest" | "none"; entry: number; stop: number; confirmed: boolean; structure: number; setup: number; rej?: boolean; why: Bi[]; wait?: Bi; trigLvl?: number; zone?: { lo: number; hi: number }; tag?: Bi; lenient?: boolean; no15?: boolean; lvl?: number; c15?: { ok: boolean | null; text: Bi } };
+  /** Hard rule: nothing is READY until a 1H level has been broken by a CLOSE with a good candle and above-average volume. */
+  const break1h = (side: "long" | "short", extra?: number): { ok: boolean; text: Bi } => {
+    const L = side === "long", n = c1h.length;
+    const lv: { p: number; i: number }[] = swings(c1h, 2).filter((x) => x.t === (L ? "H" : "L")).slice(-8).map((x) => ({ p: x.p, i: x.i }));
+    if (extra != null) lv.push({ p: extra, i: -1 });
+    for (let j = n - 1; j >= n - 2 && j >= 22; j--) {
+      const cj = c1h[j], pj = c1h[j - 1];
+      const hit = lv.filter((x) => x.i < j - 1 && (L ? cj.close > x.p && pj.close <= x.p : cj.close < x.p && pj.close >= x.p)).sort((a, c) => (L ? c.p - a.p : a.p - c.p))[0];
+      if (!hit) continue;
+      const avg = c1h.slice(j - 20, j).reduce((a, r) => a + r.volume, 0) / 20, vr = avg > 0 ? cj.volume / avg : 0;
+      if (!goodCandle(cj, side)) continue;
+      if (vr < 1.3) return { ok: false, text: b(`1H closed ${L ? "above" : "below"} ${hit.p.toPrecision(5)} but volume is only ${vr.toFixed(1)}× average (need ≥ 1.3×)`, `۱ساعته ${L ? "بالای" : "پایین"} ${hit.p.toPrecision(5)} بسته شد ولی حجم فقط ${vr.toFixed(1)} برابر میانگین است (حداقل ۱.۳ لازم است)`) };
+      return { ok: true, text: b(`1H BREAK: a strong candle CLOSED ${L ? "above" : "below"} ${hit.p.toPrecision(5)} with ${vr.toFixed(1)}× average volume`, `شکست ۱ساعته: کندل قوی ${L ? "بالای" : "پایین"} ${hit.p.toPrecision(5)} بسته شد با حجم ${vr.toFixed(1)} برابر میانگین`) };
+    }
+    return { ok: false, text: b(`No 1H level has been broken yet — wait for a strong 1H candle CLOSE ${L ? "above the last 1H high" : "below the last 1H low"} with ≥ 1.3× volume`, `هنوز هیچ سطح ۱ساعته شکسته نشده — منتظر کلوز کندل قوی ۱ساعته ${L ? "بالای آخرین سقف" : "پایین آخرین کف"} با حجم ≥ ۱.۳ برابر باش`) };
+  };
   const emit2 = (o: E2) => {
     if (!cfg.on[o.strat]) return;
     const L = o.side === "long", rows = o.rows, last = rows[rows.length - 1];
@@ -477,14 +493,15 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
     const entryQ = o.method === "retest" ? 8 : Math.abs(pxNow - o.entry) <= atr1h * 0.5 ? 8 : Math.abs(pxNow - o.entry) <= atr1h ? 5 : 2;
     const parts = { structure: clamp(o.structure, 0, 20), setup: clamp(o.setup, 0, 20), pa: pa.pts, vol: vol.pts, rsi: rs.pts, macd: mc.pts, entryQ, rr: rr.net >= 4 ? 8 : rr.net >= 3 ? 6 : rr.net >= cfg.minRR ? 4 : 0 };
     const score = Math.round(clamp(Object.values(parts).reduce((a, v) => a + v, 0) - (c.ok === null && !o.no15 ? 5 : 0), 0, 100));
-    const ready = o.confirmed && rr.net >= cfg.minRR && score >= cfg.minScore && (o.no15 || c.ok !== false);
+    const bk = break1h(o.side, o.lvl);
+    const ready = o.confirmed && bk.ok && rr.net >= cfg.minRR && score >= cfg.minScore && (o.no15 || c.ok !== false);
     const sec = TF_SEC[o.tf], candleTime = last.time;
     sigs.push({
       id: [m.symbol, o.strat, o.side, o.tf, candleTime, ready ? "r" : "w"].join("|"), symbol: m.symbol, base: m.base, market: m.market, ex: m.ex, side: o.side, strat: o.strat, status: ready ? "ready" : "watch", method: o.method, tf: o.tf,
       d1: s1d.trend, h4: s4h.trend, h1: s1h.trend, m15: c, entry: o.entry, stop, tp: tg.tp, tpNote: tg.note, rr: rr.net, rrGross: rr.gross, score, grade: score >= 85 ? "excellent" : score >= 70 ? "good" : "watchlist", parts,
       time: (candleTime + sec) * 1000, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
-      why: [...o.why, ...pa.notes, vol.note, rs.note, mc.note, c.text, tg.note],
-      wait: !ready ? o.wait || (o.confirmed ? b(`Setup confirmed but ${rr.net < cfg.minRR ? `net R:R ${rr.net.toFixed(1)} is below ${cfg.minRR}` : `quality ${score}/100 is below ${cfg.minScore}`} — watch only`, `ستاپ تأیید شده ولی ${rr.net < cfg.minRR ? `R:R خالص ${rr.net.toFixed(1)} زیر ${cfg.minRR} است` : `کیفیت ${score} از ۱۰۰ زیر ${cfg.minScore} است`} — فقط مراقبت`) : b("Waiting for the confirming candle close", "منتظر بسته‌شدن کندل تأییدکننده")) : undefined,
+      why: [bk.text, ...o.why, ...pa.notes, vol.note, rs.note, mc.note, c.text, tg.note],
+      wait: !ready ? (o.confirmed && !bk.ok ? bk.text : o.wait) || (o.confirmed ? b(`Setup confirmed but ${rr.net < cfg.minRR ? `net R:R ${rr.net.toFixed(1)} is below ${cfg.minRR}` : `quality ${score}/100 is below ${cfg.minScore}`} — watch only`, `ستاپ تأیید شده ولی ${rr.net < cfg.minRR ? `R:R خالص ${rr.net.toFixed(1)} زیر ${cfg.minRR} است` : `کیفیت ${score} از ۱۰۰ زیر ${cfg.minScore} است`} — فقط مراقبت`) : b("Waiting for the confirming candle close", "منتظر بسته‌شدن کندل تأییدکننده")) : undefined,
     });
   };
   const SIDES = ["long", "short"] as const;
@@ -606,7 +623,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
           const stop = L ? bx.lo - atr1h * 0.2 : bx.hi + atr1h * 0.2;
           const fired = L ? up : dn;
           const nm: Bi = reversal ? b(`Range at the ${sup ? "support" : "resistance"} broke ${L ? "UP" : "DOWN"} with a strong candle — ${sup ? "buyers" : "sellers"} took over (reversal)`, `رنج در ${sup ? "حمایت" : "مقاومت"} با کندل قوی به ${L ? "بالا" : "پایین"} شکست — ${sup ? "خریداران" : "فروشندگان"} قدرت گرفتند (برگشت)`) : b(`Range at the ${sup ? "support" : "resistance"} broke ${L ? "UP" : "DOWN"} — the ${sup ? "sellers" : "buyers"} regained control, the trend continues`, `رنج در ${sup ? "حمایت" : "مقاومت"} به ${L ? "بالا" : "پایین"} شکست — ${sup ? "فروشندگان" : "خریداران"} دوباره غالب شدند، روند ادامه دارد`);
-          emit2({ side, strat: "prz", tf: "1h", rows: c1h, method: fired ? "immediate" : "none", entry: fired ? l1.close : L ? bx.hi : bx.lo, stop, confirmed: fired, structure: struct, setup: 12 + (conf > 1 ? 3 : 0) + (bx.w >= 12 ? 3 : 0), rej: reversal, zone: { lo: bx.lo, hi: bx.hi }, trigLvl: fired ? undefined : L ? bx.hi : bx.lo, tag, lenient: !fired, why: fired ? [why0, nm] : [why0],
+          emit2({ side, strat: "prz", tf: "1h", rows: c1h, method: fired ? "immediate" : "none", entry: fired ? l1.close : L ? bx.hi : bx.lo, stop, confirmed: fired, structure: struct, setup: 12 + (conf > 1 ? 3 : 0) + (bx.w >= 12 ? 3 : 0), rej: reversal, zone: { lo: bx.lo, hi: bx.hi }, lvl: L ? bx.hi : bx.lo, trigLvl: fired ? undefined : L ? bx.hi : bx.lo, tag, lenient: !fired, why: fired ? [why0, nm] : [why0],
             wait: fired ? undefined : b(`Ranging ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} on 1H at the level — a strong CLOSE ${L ? "above" : "below"} ${(L ? bx.hi : bx.lo).toPrecision(5)} = ${L ? "LONG" : "SHORT"}`, `رنج ۱ساعته ${bx.lo.toPrecision(5)}–${bx.hi.toPrecision(5)} در سطح — کلوز قوی ${L ? "بالای" : "پایین"} ${(L ? bx.hi : bx.lo).toPrecision(5)} = ${L ? "لانگ" : "شورت"}`) });
         };
         mkSide("long");
@@ -638,7 +655,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { 
         const stop = L ? mid - atrT * 0.2 : mid + atrT * 0.2;
         const trendWhy = withTrend ? b(`With the main trend (${want === "up" ? "1D/4H up" : "1D/4H down"}) — higher reliability`, `هم‌جهت با روند اصلی (${want === "up" ? "۱D/۴H صعودی" : "۱D/۴H نزولی"}) — اعتبار بیشتر`) : against ? b("AGAINST the main trend — needs the 15M to confirm", "خلاف روند اصلی — نیاز به تأیید ۱۵ دقیقه") : b("Main trend is a range", "روند اصلی رنج است");
         const ok = !over && goodCandle(last, side) && (!against || c.ok === true);
-        emit2({ side, strat: "box", tf: trig, rows, method: over ? "retest" : "immediate", entry: over ? (L ? bx.hi : bx.lo) : last.close, stop, confirmed: ok, structure: alignG(side) + (withTrend ? 2 : 0), setup: 10 + Math.min(6, bx.tops + bx.bots) + (bx.w >= 36 ? 2 : 0), zone: { lo: bx.lo, hi: bx.hi }, trigLvl: over ? (L ? bx.hi : bx.lo) : undefined, tag, lenient: !ok, no15: !against, why: [label, b(`A ${trig.toUpperCase()} candle CLOSED ${L ? "above the top" : "below the bottom"} of the box`, `کندل ${trig.toUpperCase()} ${L ? "بالای سقف" : "پایین کف"} باکس بسته شد`), trendWhy],
+        emit2({ side, strat: "box", tf: trig, rows, method: over ? "retest" : "immediate", entry: over ? (L ? bx.hi : bx.lo) : last.close, stop, confirmed: ok, structure: alignG(side) + (withTrend ? 2 : 0), setup: 10 + Math.min(6, bx.tops + bx.bots) + (bx.w >= 36 ? 2 : 0), zone: { lo: bx.lo, hi: bx.hi }, lvl: L ? bx.hi : bx.lo, trigLvl: over ? (L ? bx.hi : bx.lo) : undefined, tag, lenient: !ok, no15: !against, why: [label, b(`A ${trig.toUpperCase()} candle CLOSED ${L ? "above the top" : "below the bottom"} of the box`, `کندل ${trig.toUpperCase()} ${L ? "بالای سقف" : "پایین کف"} باکس بسته شد`), trendWhy],
           wait: over ? b(`Broke out but already extended — wait for a retest of ${(L ? bx.hi : bx.lo).toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${(L ? bx.hi : bx.lo).toPrecision(5)} باش که نگه دارد`) : against && c.ok !== true ? b("Against the main trend — waiting for the 15M to confirm", "خلاف روند اصلی — منتظر تأیید ۱۵ دقیقه") : undefined });
         return true;
       };
