@@ -12,7 +12,7 @@ import { ZonesPanel } from "./zonespanel";
 import type { QCandle } from "./qfex";
 
 export type AgSym = { symbol: string; base: string; ex: string; market: string };
-type Hist = { key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number; auto?: boolean };
+type Hist = { scalp?: boolean; key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number; auto?: boolean };
 type Toast = { id: number; text: string; side?: "long" | "short" };
 type View = "ready" | "watch" | "long" | "short" | "zones" | "market" | "history" | "settings";
 const jget = <T,>(k: string, d: T): T => {
@@ -68,6 +68,7 @@ function Ladder({ s, live }: { s: Sig2; live: number }) {
 export function AgentTab(p: {
   priceOf?: (symbol: string) => number | undefined;
   syms: AgSym[];
+  mySyms?: string[];
   fetchCandles: (symbol: string, tf: string, signal: AbortSignal) => Promise<QCandle[]>;
   onOpenChart?: (symbol: string, tf: string, setup: SetupLines | null) => boolean;
 }) {
@@ -84,9 +85,22 @@ export function AgentTab(p: {
   const [riskPct, setRiskPct] = useState<number>(() => jget("arcus.ag3.risk", 1));
   const [soundOn, setSoundOn] = useState<boolean>(() => jget("arcus.ag3.sound", true));
   const [notifOn, setNotifOn] = useState<boolean>(() => jget("arcus.ag3.notif", true));
+  const [scalp, setScalp] = useState<boolean>(() => jget("arcus.ag3.scalp", false));
+  const [scope, setScope] = useState<"mine" | "all">(() => jget("arcus.ag3.scope", "mine"));
+  const [rrScalp, setRrScalp] = useState<number>(() => jget("arcus.ag3.rrs", 1));
+  const scalpRef = useRef(scalp), scopeRef = useRef(scope), rrsRef = useRef(rrScalp), mineRef = useRef(p.mySyms);
+  scalpRef.current = scalp;
+  scopeRef.current = scope;
+  rrsRef.current = rrScalp;
+  mineRef.current = p.mySyms;
+  useEffect(() => { jset("arcus.ag3.scalp", scalp); jset("arcus.ag3.scope", scope); jset("arcus.ag3.rrs", rrScalp); }, [scalp, scope, rrScalp]);
   const [view, setView] = useState<View>("ready");
-  const [ready, setReady] = useState<Sig2[]>(() => jget("arcus.ag3.ready", []));
-  const [watch, setWatch] = useState<Sig2[]>(() => jget("arcus.ag3.watch", []));
+  const [readyAll, setReady] = useState<Sig2[]>(() => jget("arcus.ag3.ready", []));
+  const [watchAll, setWatch] = useState<Sig2[]>(() => jget("arcus.ag3.watch", []));
+  const ready = useMemo(() => readyAll.filter((x) => !!x.scalp === scalp), [readyAll, scalp]);
+  const watch = useMemo(() => watchAll.filter((x) => !!x.scalp === scalp), [watchAll, scalp]);
+  const watchAllRef = useRef<Sig2[]>([]);
+  watchAllRef.current = watchAll;
   const [infos, setInfos] = useState<SymInfo[]>([]);
   const [meta, setMeta] = useState<{ at: number; n: number; ms: number; failed: number } | null>(() => jget("arcus.ag3.meta", null));
   const [hist, setHist] = useState<Hist[]>(() => jget("arcus.ag3.hist", []));
@@ -104,7 +118,7 @@ export function AgentTab(p: {
   cfgRef.current = cfg;
   const histRef = useRef(hist);
   const readyRef = useRef<Sig2[]>([]);
-  readyRef.current = ready;
+  readyRef.current = readyAll;
   const priceRef = useRef(p.priceOf);
   priceRef.current = p.priceOf;
   histRef.current = hist;
@@ -130,7 +144,7 @@ export function AgentTab(p: {
   }, []);
   useEffect(() => () => ctl.current?.abort(), []);
 
-  const getRows = async (sym: string, tf: "1d" | "4h" | "1h" | "15m", sig: AbortSignal): Promise<QCandle[] | null> => {
+  const getRows = async (sym: string, tf: string, sig: AbortSignal): Promise<QCandle[] | null> => {
     const k = sym + "|" + tf, t = Date.now(), hit = cache.current.get(k);
     if (hit && hit.until > t) return hit.rows;
     const sec = TF_SEC[tf];
@@ -148,12 +162,18 @@ export function AgentTab(p: {
 
   const runScan = useCallback(async () => {
     if (busy.current) return;
-    const list = symsRef.current;
+    const sc = scalpRef.current;
+    let list = symsRef.current;
+    if (sc && scopeRef.current === "mine" && mineRef.current && mineRef.current.length) {
+      const mine = new Set(mineRef.current);
+      list = list.filter((x) => mine.has(x.symbol));
+    }
     if (!list.length) return;
     busy.current = true;
     const c = (ctl.current = new AbortController());
     const t0 = Date.now();
-    const cf = cfgRef.current;
+    const cf = { ...cfgRef.current, scalp: sc, minRRScalp: rrsRef.current };
+    const TR = sc ? ["1h", "15m", "5m", "1m"] : ["1d", "4h", "1h", "15m"];
     const allSigs: Sig2[] = [], allInfo: SymInfo[] = [];
     let i = 0, done = 0, failed = 0;
     const open: Hist[] = histRef.current.map((h) => ({ ...h }));
@@ -164,14 +184,14 @@ export function AgentTab(p: {
         if (k >= list.length) return;
         const s = list[k];
         try {
-          const [d1, h4, h1] = await Promise.all([getRows(s.symbol, "1d", c.signal), getRows(s.symbol, "4h", c.signal), getRows(s.symbol, "1h", c.signal)]);
+          const [d1, h4, h1] = await Promise.all([getRows(s.symbol, TR[0], c.signal), getRows(s.symbol, TR[1], c.signal), getRows(s.symbol, TR[2], c.signal)]);
           const data: any = {};
           if (d1) data["1d"] = d1;
           if (h4) data["4h"] = h4;
           if (h1) data["1h"] = h1;
           let r = analyzeSymbol(s, data, Date.now(), cf);
           if (r.sigs.length || r.info.need15) {
-            const m15 = await getRows(s.symbol, "15m", c.signal);
+            const m15 = await getRows(s.symbol, TR[3], c.signal);
             if (m15) {
               data["15m"] = m15;
               r = analyzeSymbol(s, data, Date.now(), cf);
@@ -183,10 +203,10 @@ export function AgentTab(p: {
           // resolve outcomes of signals already in the history with the freshly closed 1H candles
           if (h1) {
             for (const e of open) {
-              if (e.st !== "open" || e.symbol !== s.symbol) continue;
+              if (e.st !== "open" || e.symbol !== s.symbol || !!e.scalp !== sc) continue;
               const sec = TF_SEC[e.tf] || 3600, R = Math.abs(e.entry - e.stop) || 1, dir = e.side === "long" ? 1 : -1;
               let q = 0;
-              for (const cd of closedRows(h1, "1h", Date.now())) {
+              for (const cd of closedRows(h1, TR[2], Date.now())) {
                 if (cd.time < e.candleTime + sec) continue;
                 q++;
                 const sh = dir > 0 ? cd.low <= e.stop : cd.high >= e.stop, th = dir > 0 ? cd.high >= e.tp : cd.low <= e.tp;
@@ -218,7 +238,7 @@ export function AgentTab(p: {
     const seenNow = new Set(allSigs.map((x) => x.symbol + "|" + x.strat + "|" + x.side));
     const nowMs = Date.now();
     const kept = readyRef.current
-      .filter((x) => !seenNow.has(x.symbol + "|" + x.strat + "|" + x.side) && nowMs - x.time < 6 * 3600 * 1000)
+      .filter((x) => !!x.scalp === sc && !seenNow.has(x.symbol + "|" + x.strat + "|" + x.side) && nowMs - x.time < 6 * 3600 * 1000)
       .filter((x) => {
         const lp = priceRef.current?.(x.symbol);
         if (!lp || !(lp > 0) || Math.abs(lp - x.entry) / x.entry > 0.2) return true;
@@ -226,13 +246,16 @@ export function AgentTab(p: {
       })
       .map((x) => ({ ...x, kept: true }));
     const rd = rd0.concat(kept).sort((a, b) => b.score - a.score);
-    setReady(rd);
-    setWatch(wt);
+    // the other mode keeps its own results untouched
+    const readyOut = readyRef.current.filter((x) => !!x.scalp !== sc).concat(rd.slice(0, 120));
+    const watchOut = watchAllRef.current.filter((x) => !!x.scalp !== sc).concat(wt.slice(0, 120));
+    setReady(readyOut);
+    setWatch(watchOut);
     setInfos(allInfo);
     const mt = { at: Date.now(), n: list.length, ms: Date.now() - t0, failed };
     setMeta(mt);
-    jset("arcus.ag3.ready", rd.slice(0, 120));
-    jset("arcus.ag3.watch", wt.slice(0, 120));
+    jset("arcus.ag3.ready", readyOut);
+    jset("arcus.ag3.watch", watchOut);
     jset("arcus.ag3.meta", mt);
     // new READY signals (never seen before) -> history + alerts. The same candle never alerts twice.
     const seen = new Set<string>(jget<string[]>("arcus.ag3.seen", []));
@@ -242,7 +265,7 @@ export function AgentTab(p: {
     // READY signals go into the journal automatically (switchable in Settings) so their outcome is tracked; watch items never do
     if (autoRef.current) {
       const have = new Set(open.map((h) => h.key));
-      for (const x of rd) if (!have.has(keyOf(x))) open.push({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0, auto: true });
+      for (const x of rd) if (!have.has(keyOf(x))) open.push({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0, auto: true, scalp: sc });
     }
     const nh = open.slice(-300);
     setHist(nh);
@@ -261,7 +284,7 @@ export function AgentTab(p: {
 
   // Stage 2 schedule: once after every 15-minute candle close
   useEffect(() => {
-    if (!on || !p.syms.length || busy.current) return;
+    if (!on || scalp || !p.syms.length || busy.current) return;
     const t = Date.now(), lastClose = Math.floor(t / 1000 / 900) * 900 * 1000;
     if (lastKey.current !== lastClose && (t - lastClose >= 8000 || lastKey.current === 0)) {
       lastKey.current = lastClose;
@@ -269,7 +292,7 @@ export function AgentTab(p: {
       runScan();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, on, p.syms.length]);
+  }, [now, on, scalp, p.syms.length]);
 
   // Stage 1: live prices — drop signals that are spent, keep distances fresh
   const liveOf = (s: Sig2) => {
@@ -298,7 +321,7 @@ export function AgentTab(p: {
   const inJ = (x: Sig2) => hist.some((h) => h.key === keyOf(x));
   const addJ = (x: Sig2) => {
     if (x.status2 || inJ(x)) return;
-    const nh = hist.concat({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0 }).slice(-300);
+    const nh = hist.concat({ key: keyOf(x), symbol: x.symbol, base: x.base, side: x.side, strat: x.strat, tf: x.tf, entry: x.entry, stop: x.stop, tp: x.tp, rr: x.rr, score: x.score, time: x.time, candleTime: x.candleTime, st: "open", r: 0, scalp: !!x.scalp }).slice(-300);
     setHist(nh);
     jset("arcus.ag3.hist", nh);
   };
@@ -360,10 +383,10 @@ export function AgentTab(p: {
               <div><dt>{T("Market", "بازار")}</dt><dd>{s.market}</dd></div>
               <div><dt>{T("Direction", "جهت")}</dt><dd className={s.side}>{Lg ? "LONG" : "SHORT"}</dd></div>
               <div><dt>{T("Strategy", "استراتژی")}</dt><dd>{L(STRATS[s.strat].name)}</dd></div>
-              <div><dt>{T("Daily trend", "روند روزانه")}</dt><dd>{L(trendTxt(s.d1))}</dd></div>
-              <div><dt>{T("4H trend", "روند ۴ ساعته")}</dt><dd>{L(trendTxt(s.h4))}</dd></div>
-              <div><dt>{T("1H structure", "ساختار ۱ ساعته")}</dt><dd>{L(trendTxt(s.h1))}</dd></div>
-              <div className={s.m15.ok ? "g" : s.m15.ok === false ? "w" : ""}><dt>{T("15M confirmation", "تأیید ۱۵ دقیقه")}</dt><dd>{L(s.m15.text)}</dd></div>
+              <div><dt>{scalp ? T("1H trend", "روند ۱ ساعته") : T("Daily trend", "روند روزانه")}</dt><dd>{L(trendTxt(s.d1))}</dd></div>
+              <div><dt>{scalp ? T("15M structure", "ساختار ۱۵ دقیقه") : T("4H trend", "روند ۴ ساعته")}</dt><dd>{L(trendTxt(s.h4))}</dd></div>
+              <div><dt>{scalp ? T("5M structure", "ساختار ۵ دقیقه") : T("1H structure", "ساختار ۱ ساعته")}</dt><dd>{L(trendTxt(s.h1))}</dd></div>
+              <div className={s.m15.ok ? "g" : s.m15.ok === false ? "w" : ""}><dt>{scalp ? T("1M confirmation", "تأیید ۱ دقیقه") : T("15M confirmation", "تأیید ۱۵ دقیقه")}</dt><dd>{L(s.m15.text)}</dd></div>
               {!s.status2 && (
                 <>
                   <div><dt>{T("Entry", "ورود")}</dt><dd>{fmt(s.entry)} <small>{s.method === "retest" ? T("retest", "ریتست") : s.method === "immediate" ? T("immediate", "فوری") : T("planned", "برنامه‌ای")}</small></dd></div>
@@ -409,12 +432,16 @@ export function AgentTab(p: {
   return (
     <div className="sg sx" dir={fa ? "rtl" : "ltr"}>
       <div className={"sg-bar" + (on ? " on" : "")}>
-        <button type="button" role="switch" aria-checked={on} className={"sg-sw" + (on ? " on" : "")} onClick={() => setOn(!on)} title={T("Turn the scanner on or off", "روشن / خاموش کردن اسکنر")}><i /></button>
-        <b className="sg-t">🧠 {on ? T("Scanner on", "اسکنر روشن") : T("Scanner off", "اسکنر خاموش")}</b>
-        {on && <span className="sg-cd" title={T("Next 15-minute close (scan time)", "بسته‌شدن بعدی کندل ۱۵ دقیقه (زمان اسکن)")}>⏱ 15m · {cd}</span>}
+        <span className="sg-chips sx-mode">
+          <button type="button" className={!scalp ? "on" : ""} onClick={() => setScalp(false)} title={T("1D/4H/1H/15M — scans by itself after each 15-minute close", "۱D/۴H/۱H/۱۵M — بعد از هر کلوز ۱۵ دقیقه خودش اسکن می‌کند")}>{T("Swing", "سوینگ")}</button>
+          <button type="button" className={scalp ? "on" : ""} onClick={() => setScalp(true)} title={T("1H/15M/5M/1M — you press Scan", "۱H/۱۵M/۵M/۱M — خودت اسکن می‌زنی")}>⚡ {T("Scalp", "اسکالپ")}</button>
+        </span>
+        {!scalp && <button type="button" role="switch" aria-checked={on} className={"sg-sw" + (on ? " on" : "")} onClick={() => setOn(!on)} title={T("Turn the scanner on or off", "روشن / خاموش کردن اسکنر")}><i /></button>}
+        <b className="sg-t">{scalp ? "⚡ " + T("Scalp — manual scan", "اسکالپ — اسکن دستی") : "🧠 " + (on ? T("Scanner on", "اسکنر روشن") : T("Scanner off", "اسکنر خاموش"))}</b>
+        {on && !scalp && <span className="sg-cd" title={T("Next 15-minute close (scan time)", "بسته‌شدن بعدی کندل ۱۵ دقیقه (زمان اسکن)")}>⏱ 15m · {cd}</span>}
         {meta && <span className="sx-last">{T("Last scan", "آخرین اسکن")} {new Date(meta.at).toLocaleTimeString()} · {meta.n} {T("symbols", "نماد")} · {(meta.ms / 1000).toFixed(0)}s{meta.failed ? ` · ${meta.failed} ${T("with missing data", "با داده‌ی ناقص")}` : ""}</span>}
         <span className="sg-sp" />
-        <button type="button" className="sg-go" disabled={!!prog} onClick={() => runScan()}>{prog ? "…" : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
+        <button type="button" className="sg-go" disabled={!!prog} onClick={() => runScan()}>{prog ? "…" : "🔍 " + (scalp ? T("Scan 1M now", "اسکن ۱ دقیقه") : T("Scan now", "اسکن همین حالا"))}</button>
         <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
       </div>
       {prog && (
@@ -442,7 +469,7 @@ export function AgentTab(p: {
 
       {view === "ready" && (
         <div className="sg-pane">
-          <p className="sx-hint">{T("Confirmed on a CLOSED candle · stop is structural · net R:R ≥ 1:2 · score ≥ 70 · risk ≤ 5%.", "تأییدشده با کندل بسته‌شده · حد ضرر ساختاری · R:R خالص ≥ ۱:۲ · امتیاز ≥ ۷۰ · ریسک ≤ ۵٪.")}</p>
+          <p className="sx-hint">{scalp ? T(`SCALP (1H trend · 15M structure · 5M trigger · 1M confirm) · closed candles · net R:R ≥ 1:${rrScalp} · score ≥ 70 · risk ≤ 5%. Press Scan when you want fresh results.`, `اسکالپ (روند ۱H · ساختار ۱۵M · ماشه ۵M · تأیید ۱M) · کندل بسته‌شده · R:R خالص ≥ ۱:${rrScalp} · امتیاز ≥ ۷۰ · ریسک ≤ ۵٪. هر وقت نتیجه‌ی تازه خواستی اسکن بزن.`) : T("Confirmed on a CLOSED candle · stop is structural · net R:R ≥ 1:2 · score ≥ 70 · risk ≤ 5%.", "تأییدشده با کندل بسته‌شده · حد ضرر ساختاری · R:R خالص ≥ ۱:۲ · امتیاز ≥ ۷۰ · ریسک ≤ ۵٪.")}</p>
           {droppedN > 0 && <p className="sg-drop">🧹 {T(`${droppedN} signal(s) hidden: the live price already reached the stop or the target.`, `${droppedN} سیگنال پنهان شد: قیمت زنده به حد ضرر یا حد سود رسیده.`)}</p>}
           {List(readyLive, meta ? T("No confirmed signal right now. The scanner is selective on purpose — the goal is the best setups, not the most.", "فعلاً سیگنال تأییدشده‌ای نیست. اسکنر عمداً سخت‌گیر است — هدف بهترین ستاپ‌هاست نه بیشترین.") : T("Turn the scanner on or press Scan now.", "اسکنر را روشن کن یا اسکن بزن."))}
         </div>
@@ -506,7 +533,7 @@ export function AgentTab(p: {
               <div key={h.key} className={h.st}>
                 <b>{fa ? FA_NAME[h.base] || h.base : h.base}</b>
                 <span className={"sg-side " + h.side}>{h.side === "long" ? "LONG" : "SHORT"}</span>
-                <span>{L(STRATS[h.strat as StratId].name)}{h.auto ? " · " + T("auto", "خودکار") : ""}</span>
+                <span>{L(STRATS[h.strat as StratId].name)}{h.scalp ? " · ⚡" : ""}{h.auto ? " · " + T("auto", "خودکار") : ""}</span>
                 <span>{fmt(h.entry)} → {fmt(h.tp)}</span>
                 <span>{h.score}</span>
                 <small>{new Date(h.time).toLocaleString()}</small><button type="button" aria-label="remove" className="sx-del" onClick={() => delJ(h.key)}>✕</button>
@@ -527,7 +554,8 @@ export function AgentTab(p: {
               <label>{T("Account size ($)", "اندازه‌ی حساب ($)")}<input type="number" min={0} value={acct} onChange={(e) => setAcct(Math.max(0, Number(e.target.value)))} /></label>
               <label>{T("Risk per trade (%) — absolute max 5", "ریسک هر معامله (٪) — سقف مطلق ۵")}<input type="number" min={0.1} max={5} step={0.1} value={riskPct} onChange={(e) => setRiskPct(clampRisk(Number(e.target.value)))} /></label>
               <label>{T("Fees + spread + slippage (% round trip)", "کارمزد + اسپرد + لغزش (٪ رفت‌وبرگشت)")}<input type="number" min={0} max={2} step={0.05} value={cfg.costPct} onChange={(e) => setCfg((c) => ({ ...c, costPct: Math.max(0, Number(e.target.value)) }))} /></label>
-              <label>{T("Minimum R:R (fixed)", "حداقل R:R (ثابت)")}<input value="1 : 2" disabled /></label>
+              <label>{T("Minimum R:R — swing (fixed)", "حداقل R:R — سوینگ (ثابت)")}<input value="1 : 2" disabled /></label>
+              <label>{T("Minimum R:R — scalp (1 = 1:1)", "حداقل R:R — اسکالپ (۱ = ۱:۱)")}<input type="number" min={0.5} max={3} step={0.5} value={rrScalp} onChange={(e) => setRrScalp(Math.max(0.5, Math.min(3, Number(e.target.value) || 1)))} /></label>
             </div>
           </section>
           <section className="sx-set">
@@ -547,6 +575,14 @@ export function AgentTab(p: {
                 </label>
               ))}
             </div>
+          </section>
+          <section className="sx-set">
+            <h5>⚡ {T("Scalp scan scope", "محدوده‌ی اسکن اسکالپ")}</h5>
+            <span className="sg-chips">
+              <button type="button" className={scope === "mine" ? "on" : ""} onClick={() => setScope("mine")}>{T(`My lists (${(p.mySyms || []).length})`, `لیست‌های من (${(p.mySyms || []).length})`)}</button>
+              <button type="button" className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>{T(`All symbols (${p.syms.length})`, `همه‌ی نمادها (${p.syms.length})`)}</button>
+            </span>
+            <p className="sx-hint">{T("Scalp uses 4 timeframes per symbol, so scanning everything means thousands of requests and may hit exchange rate limits. “My lists” = Favorites + your watchlists. If those are empty, all symbols are scanned.", "اسکالپ برای هر نماد ۴ تایم‌فریم می‌خواهد؛ اسکن همه‌ی نمادها هزاران درخواست است و ممکن است به محدودیت سرعت صرافی بخورد. «لیست‌های من» = علاقه‌مندی‌ها + واچ‌لیست‌های خودت. اگر خالی باشند همه‌ی نمادها اسکن می‌شوند.")}</p>
           </section>
           <section className="sx-set">
             <h5>{T("Journal", "دفتر")}</h5>

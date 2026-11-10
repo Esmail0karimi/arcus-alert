@@ -3,7 +3,7 @@
 import type { QCandle } from "./qfex";
 
 export type Bi = { en: string; fa: string };
-export const TF_SEC: Record<string, number> = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
+export const TF_SEC: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
 export const TF_LIST = ["5m", "15m", "1h", "4h", "1d"];
 const b = (en: string, fa: string): Bi => ({ en, fa });
 

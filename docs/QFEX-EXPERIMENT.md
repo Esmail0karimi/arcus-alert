@@ -30,6 +30,9 @@ Test site: https://esmail0karimi.github.io/arcus-alert/qfex-test/ (deployed by `
 ## Update 2026-11-10
 Only the three Tradecity strategies (`tca`, `tcb`, `tcf`) are active in the Agent tab (`ACTIVE` in `src/engine.ts`). All other strategies are disabled in code and hidden from Settings; their code remains for reference and can be re-enabled by extending `ACTIVE`.
 
+## Scalp mode (added 2026-11-10)
+Agent tab has a Swing / ⚡ Scalp switch. Scalp reuses the same engine one level down (1H trend, 15M structure, 5M trigger, 1M confirmation; `cfg.scalp` remaps the candle keys), scans ONLY when the user presses the button (scope: favorites + watchlists, or all symbols), and has its own minimum net R:R (default 1:1, setting). Results/journal entries are tagged per mode (⚡ in the journal).
+
 ## Known limits (be honest with yourself)
 - Strategy rules are NOT backtested. Judge them from the Journal (needs 30+ entries to mean anything).
 - Scanning/alerts work only while the app is open.

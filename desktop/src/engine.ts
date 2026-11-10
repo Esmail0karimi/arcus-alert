@@ -25,7 +25,7 @@ STRATS.box = { name: b("Box", "باکس"), basis: b("Box = at least 2 touches of
 STRATS.tca = { name: b("Tradecity · Level breakout", "تریدسیتی · شکست سطح"), basis: b("1D and 4H both HH+HL (long) / LH+LL (short); a 1H CLOSE beyond the last pivot with volume ≥ 1.5× its 20-bar average; stop behind the last pivot; target 4R or trail under each new higher low", "۱D و ۴H هر دو HH+HL (لانگ) / LH+LL (شورت)؛ کلوز ۱ساعته بیرون از آخرین پیوت با حجم ≥ ۱.۵ برابر میانگین ۲۰ کندل؛ حد ضرر پشت آخرین پیوت؛ هدف 4R یا تریلینگ زیر هر کف بالاتر") };
 STRATS.tcb = { name: b("Tradecity · Momentum candle setup", "تریدسیتی · ستاپ کندل مومنتوم"), basis: b("Trend direction on 1D+4H, a pullback with falling volume, then an engulfing candle on 1H with returning volume and RSI on the trend side of 50", "جهت روند ۱D+۴H، پولبک با حجم کاهشی، سپس کندل انگالف ۱ساعته با بازگشت حجم و RSI سمت روند نسبت به ۵۰") };
 STRATS.tcf = { name: b("Tradecity · Fake-out of a level", "تریدسیتی · فیک‌اوت سطح"), basis: b("In a 1D+4H trend a 1H pivot level is broken by a close, fails, and price returns with an engulfing / V candle — enter back in the trend direction", "در روند ۱D+۴H یک سطح پیوت ۱ساعته با کلوز شکسته می‌شود، شکست ناموفق است و قیمت با کندل انگالف / V برمی‌گردد — ورود در جهت روند") };
-export type Cfg = { triggers: ("1h" | "4h")[]; costPct: number; minRR: number; minScore: number; on: Record<StratId, boolean> };
+export type Cfg = { triggers: ("1h" | "4h")[]; costPct: number; minRR: number; minScore: number; on: Record<StratId, boolean>; scalp?: boolean; minRRScalp?: number };
 export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true, tca: true, tcb: true, tcf: true } };
 export type Sig2 = {
   id: string; symbol: string; base: string; market: string; ex: string;
@@ -34,7 +34,7 @@ export type Sig2 = {
   entry: number; stop: number; tp: number; tpNote: Bi; rr: number; rrGross: number;
   score: number; grade: "excellent" | "good" | "watchlist";
   parts: { structure: number; setup: number; pa: number; vol: number; rsi: number; macd: number; entryQ: number; rr: number };
-  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi; tag?: Bi; kept?: boolean;
+  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi; tag?: Bi; kept?: boolean; scalp?: boolean;
 };
 export type SymInfo = { symbol: string; base: string; market: string; ex: string; d1: Trend | null; h4: Trend | null; h1: Trend | null; issues: string[]; stale: boolean; price: number | null; need15?: boolean; rejects?: string[] };
 
@@ -252,9 +252,11 @@ export type SymMeta = { symbol: string; base: string; ex: string; market: string
 /** Only the Tradecity strategies are active; the others stay in the code (see git history / docs) but can never run. */
 export const ACTIVE: StratId[] = ["tca", "tcb", "tcf"];
 export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): { sigs: Sig2[]; info: SymInfo } {
-  const cfg: Cfg = { ...cfg0, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: false, pbw: false, prz: false, box: false, tca: !!cfg0.on.tca, tcb: !!cfg0.on.tcb, tcf: !!cfg0.on.tcf } };
+  const cfg: Cfg = { ...cfg0, minRR: cfg0.scalp ? cfg0.minRRScalp ?? 1 : cfg0.minRR, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: false, pbw: false, prz: false, box: false, tca: !!cfg0.on.tca, tcb: !!cfg0.on.tcb, tcf: !!cfg0.on.tcf } };
   const issues: string[] = [];
-  const c1d = closedRows(d["1d"], "1d", now), c4h = closedRows(d["4h"], "4h", now), c1h = closedRows(d["1h"], "1h", now), c15 = closedRows(d["15m"], "15m", now);
+  // Scalp mode reuses the same engine one level down: the keys "1d/4h/1h/15m" then hold 1H / 15M / 5M / 1M candles.
+  const TFR = cfg.scalp ? ["1h", "15m", "5m", "1m"] : ["1d", "4h", "1h", "15m"];
+  const c1d = closedRows(d["1d"], TFR[0], now), c4h = closedRows(d["4h"], TFR[1], now), c1h = closedRows(d["1h"], TFR[2], now), c15 = closedRows(d["15m"], TFR[3], now);
   if (c1d.length < 40) issues.push("1D");
   if (c4h.length < 60) issues.push("4H");
   if (c1h.length < 60) issues.push("1H");
@@ -266,7 +268,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
   const sigs: Sig2[] = [];
   if (!s4h || !s1h || !s1d) return { sigs, info };
   const lastT = c1h[c1h.length - 1];
-  if ((lastT.time + 1 * 3600 * 3) * 1000 < now) { info.stale = true; issues.push("stale"); return { sigs, info }; }
+  if ((lastT.time + (cfg.scalp ? 300 : 3600) * 3) * 1000 < now) { info.stale = true; issues.push("stale"); return { sigs, info }; }
   const atr1h = atrAt(c1h);
   const zones = mergeZones([...zonesFrom(c1d, 3, 3, "1D"), ...zonesFrom(c4h, 3, 2, "4H"), ...zonesFrom(c1h, 2, 1, "1H")], atr1h * 0.4, atr1h * 1.5);
   const s15 = c15.length >= 40 ? structure(c15, 2) : null;
@@ -513,11 +515,12 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     const score = Math.round(clamp(Object.values(parts).reduce((a, v) => a + v, 0) - (c.ok === null && !o.no15 ? 5 : 0), 0, 100));
     const bk = break1h(o.side, o.lvl);
     const ready = o.confirmed && bk.ok && rr.net >= cfg.minRR && score >= cfg.minScore && (o.no15 || c.ok !== false);
-    const sec = TF_SEC[o.tf], candleTime = o.at15 != null ? Math.floor(o.at15 / 3600) * 3600 : last.time; // a 15M-close trigger keeps the 1H candle's id so the later 1H close is not a second signal
+    const tfl = cfg.scalp ? ({ "1h": "5m", "15m": "1m", "4h": "15m" } as Record<string, string>)[o.tf] : o.tf, trigSec = cfg.scalp ? 300 : 3600, confSec = cfg.scalp ? 60 : 900;
+    const sec = TF_SEC[tfl], candleTime = o.at15 != null ? Math.floor(o.at15 / trigSec) * trigSec : last.time; // a 15M-close trigger keeps the 1H candle's id so the later 1H close is not a second signal
     sigs.push({
-      id: [m.symbol, o.strat, o.side, o.tf, candleTime, ready ? "r" : "w"].join("|"), symbol: m.symbol, base: m.base, market: m.market, ex: m.ex, side: o.side, strat: o.strat, status: ready ? "ready" : "watch", method: o.method, tf: o.tf,
+      id: [m.symbol, o.strat, o.side, o.tf, candleTime, ready ? "r" : "w"].join("|"), symbol: m.symbol, base: m.base, market: m.market, ex: m.ex, side: o.side, strat: o.strat, status: ready ? "ready" : "watch", method: o.method, tf: tfl as any,
       d1: s1d.trend, h4: s4h.trend, h1: s1h.trend, m15: c, entry: o.entry, stop, tp: tg.tp, tpNote: tg.note, rr: rr.net, rrGross: rr.gross, score, grade: score >= 85 ? "excellent" : score >= 70 ? "good" : "watchlist", parts,
-      time: o.at15 != null ? (o.at15 + 900) * 1000 : (candleTime + sec) * 1000, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
+      time: o.at15 != null ? (o.at15 + confSec) * 1000 : (candleTime + sec) * 1000, scalp: !!cfg.scalp, candleTime, price: pxNow, missing: issues.slice(), zone: o.zone, trig: o.trigLvl, tag: o.tag,
       why: [bk.text, ...o.why, ...pa.notes, vol.note, rs.note, mc.note, c.text, tg.note],
       wait: !ready ? (o.confirmed && !bk.ok ? bk.text : o.wait) || (o.confirmed ? b(`Setup confirmed but ${rr.net < cfg.minRR ? `net R:R ${rr.net.toFixed(1)} is below ${cfg.minRR}` : `quality ${score}/100 is below ${cfg.minScore}`} — watch only`, `ستاپ تأیید شده ولی ${rr.net < cfg.minRR ? `R:R خالص ${rr.net.toFixed(1)} زیر ${cfg.minRR} است` : `کیفیت ${score} از ۱۰۰ زیر ${cfg.minScore} است`} — فقط مراقبت`) : b("Waiting for the confirming candle close", "منتظر بسته‌شدن کندل تأییدکننده")) : undefined,
     });

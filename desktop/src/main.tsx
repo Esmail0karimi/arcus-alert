@@ -1676,6 +1676,7 @@ function App() {
     return true;
   };
   // every symbol of every exchange that is switched on (no de-duplication), for the Agent's scanner
+  const mySyms = useMemo(() => Array.from(new Set([...(favorites || []), ...wlists.flatMap((l) => l.items || [])])), [favorites, wlists]);
   const agentSyms = useMemo(
     () =>
       Object.keys(prices)
@@ -2817,7 +2818,7 @@ function App() {
         )}
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />
