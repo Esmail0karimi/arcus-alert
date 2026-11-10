@@ -11,7 +11,6 @@ import { News } from "./news";
 import { ReportHost, openReport as openReportExt } from "./report";
 import { OrderBook } from "./obtab";
 import { FA_NAME } from "./agent";
-import { ZonesPanel } from "./zonespanel";
 import { Guard } from "./errbound";
 import { AgentTab } from "./agenttab";
 import type { QCandle } from "./qfex";
@@ -2817,7 +2816,6 @@ function App() {
           </>
         )}
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
-        {tab === "Order book" && <Guard name="Zones"><ZonesPanel syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
         <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
         {tab === "Guide" && <Guide />}

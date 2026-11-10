@@ -8,12 +8,13 @@ import { ACTIVE, Cfg, DEF_CFG, STRATS, Sig2, StratId, SymInfo, analyzeSymbol, cl
 import { setLang, useLang } from "./lang";
 import { VoiceControl, getVoice, speak } from "./voice";
 import type { SetupLines } from "./analysispanel";
+import { ZonesPanel } from "./zonespanel";
 import type { QCandle } from "./qfex";
 
 export type AgSym = { symbol: string; base: string; ex: string; market: string };
 type Hist = { key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number; auto?: boolean };
 type Toast = { id: number; text: string; side?: "long" | "short" };
-type View = "ready" | "watch" | "long" | "short" | "market" | "history" | "settings";
+type View = "ready" | "watch" | "long" | "short" | "zones" | "market" | "history" | "settings";
 const jget = <T,>(k: string, d: T): T => {
   try {
     const v = localStorage.getItem(k);
@@ -380,6 +381,7 @@ export function AgentTab(p: {
     ["watch", "👁", T("Watchlist", "مراقبت"), watch.length],
     ["long", "▲", "LONG", longs.length],
     ["short", "▼", "SHORT", shorts.length],
+    ["zones", "🧭", T("Zones", "انباشت/توزیع"), null],
     ["market", "🌐", T("Market", "بازار"), null],
     ["history", "📒", T("Journal", "دفتر"), hist.length || null],
     ["settings", "⚙", T("Settings", "تنظیمات"), null],
@@ -434,6 +436,12 @@ export function AgentTab(p: {
       )}
       {view === "long" && <div className="sg-pane">{List(longs, T("No confirmed LONG signal.", "سیگنال خرید تأییدشده‌ای نیست."))}</div>}
       {view === "short" && <div className="sg-pane">{List(shorts, T("No confirmed SHORT signal.", "سیگنال فروش تأییدشده‌ای نیست."))}</div>}
+
+      {view === "zones" && (
+        <div className="sg-pane">
+          <ZonesPanel syms={p.syms} fetchCandles={p.fetchCandles} onOpenChart={(sym, tf) => p.onOpenChart?.(sym, tf, null) ?? false} />
+        </div>
+      )}
 
       {view === "market" && (
         <div className="sg-pane">
