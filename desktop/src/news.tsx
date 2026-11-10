@@ -8,6 +8,13 @@ const COL: Record<string, string> = { High: "#f23645", Medium: "#ff9800", Low: "
 const IMP_FA: Record<string, string> = { High: "زیاد", Medium: "متوسط", Low: "کم", Holiday: "تعطیل" };
 const SCOPE_ICON: Record<string, string> = { all: "🌍", currency: "💱", symbol: "📈" };
 
+const rateSafe = (r: any) => {
+  try {
+    return rateFa(r);
+  } catch {
+    return r?.hintText ?? "";
+  }
+};
 const rel = (t: number, now: number, fa = false) => {
   const m = Math.round((t - now) / 60000),
     a = Math.abs(m);
@@ -125,7 +132,7 @@ export function News(p: { trackedBases: Set<string>; onOpen: (base: string) => v
       )}
       {sub === "forex" && res?.rates && (
         <div className="news-rates">
-          <b>{T("Fed rate path (rough)", "مسیر نرخ بهره فدرال (تقریبی)")}</b> · {fa ? rateFa(res.rates).replace(/ برآورد تقریبی است.*$/, "") : res.rates.hintText.replace(/ Rough estimate, not CME FedWatch.*$/, "")}{" "}
+          <b>{T("Fed rate path (rough)", "مسیر نرخ بهره فدرال (تقریبی)")}</b> · {String((fa ? rateSafe(res.rates) : res.rates.hintText) ?? "").replace(fa ? / برآورد تقریبی است.*$/ : / Rough estimate, not CME FedWatch.*$/, "")}{" "}
           <a href="https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html" target="_blank" rel="noreferrer">
             CME FedWatch ↗
           </a>
