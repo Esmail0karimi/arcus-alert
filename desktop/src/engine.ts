@@ -249,7 +249,10 @@ const netRR = (entry: number, stop: number, tp: number, costPct: number) => {
 
 /* ---------- per-symbol analysis ---------- */
 export type SymMeta = { symbol: string; base: string; ex: string; market: string };
-export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg: Cfg): { sigs: Sig2[]; info: SymInfo } {
+/** Only the Tradecity strategies are active; the others stay in the code (see git history / docs) but can never run. */
+export const ACTIVE: StratId[] = ["tca", "tcb", "tcf"];
+export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): { sigs: Sig2[]; info: SymInfo } {
+  const cfg: Cfg = { ...cfg0, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: false, pbw: false, prz: false, box: false, tca: !!cfg0.on.tca, tcb: !!cfg0.on.tcb, tcf: !!cfg0.on.tcf } };
   const issues: string[] = [];
   const c1d = closedRows(d["1d"], "1d", now), c4h = closedRows(d["4h"], "4h", now), c1h = closedRows(d["1h"], "1h", now), c15 = closedRows(d["15m"], "15m", now);
   if (c1d.length < 40) issues.push("1D");

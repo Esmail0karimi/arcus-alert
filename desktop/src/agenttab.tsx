@@ -4,7 +4,7 @@
    (1D trend/levels -> 4H structure/zones -> 1H trigger -> 15M confirmation). The rules live in engine.ts. */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bi, FA_NAME, TF_SEC } from "./agent";
-import { Cfg, DEF_CFG, STRATS, Sig2, StratId, SymInfo, analyzeSymbol, closedRows, trendTxt } from "./engine";
+import { ACTIVE, Cfg, DEF_CFG, STRATS, Sig2, StratId, SymInfo, analyzeSymbol, closedRows, trendTxt } from "./engine";
 import { setLang, useLang } from "./lang";
 import { VoiceControl, getVoice, speak } from "./voice";
 import type { SetupLines } from "./analysispanel";
@@ -512,7 +512,7 @@ export function AgentTab(p: {
           <section className="sx-set">
             <h5>{T("Strategies", "استراتژی‌ها")}</h5>
             <div className="sg-set-list">
-              {(Object.keys(STRATS) as StratId[]).map((id) => (
+              {(Object.keys(STRATS) as StratId[]).filter((id) => ACTIVE.includes(id)).map((id) => (
                 <label key={id} className="sg-set-row">
                   <input type="checkbox" checked={cfg.on[id]} onChange={() => toggleStrat(id)} />
                   <span><b>{L(STRATS[id].name)}</b><small>{L(STRATS[id].basis)}</small></span>

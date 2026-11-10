@@ -27,6 +27,9 @@ Test site: https://esmail0karimi.github.io/arcus-alert/qfex-test/ (deployed by `
 - News tab: fixed a crash on incomplete Fed-rates data; `src/errbound.tsx` (`Guard`) keeps a crashing tab from blanking the app.
 - Small fixed robot avatar (`src/avatar.tsx`); voice (`src/voice.tsx`).
 
+## Update 2026-11-10
+Only the three Tradecity strategies (`tca`, `tcb`, `tcf`) are active in the Agent tab (`ACTIVE` in `src/engine.ts`). All other strategies are disabled in code and hidden from Settings; their code remains for reference and can be re-enabled by extending `ACTIVE`.
+
 ## Known limits (be honest with yourself)
 - Strategy rules are NOT backtested. Judge them from the Journal (needs 30+ entries to mean anything).
 - Scanning/alerts work only while the app is open.
