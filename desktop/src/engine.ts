@@ -34,9 +34,9 @@ export type Sig2 = {
   entry: number; stop: number; tp: number; tpNote: Bi; rr: number; rrGross: number;
   score: number; grade: "excellent" | "good" | "watchlist";
   parts: { structure: number; setup: number; pa: number; vol: number; rsi: number; macd: number; entryQ: number; rr: number };
-  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi; tag?: Bi;
+  time: number; candleTime: number; price: number; why: Bi[]; wait?: Bi; trig?: number; missing: string[]; zone?: { lo: number; hi: number }; status2?: Bi; tag?: Bi; kept?: boolean;
 };
-export type SymInfo = { symbol: string; base: string; market: string; ex: string; d1: Trend | null; h4: Trend | null; h1: Trend | null; issues: string[]; stale: boolean; price: number | null; need15?: boolean };
+export type SymInfo = { symbol: string; base: string; market: string; ex: string; d1: Trend | null; h4: Trend | null; h1: Trend | null; issues: string[]; stale: boolean; price: number | null; need15?: boolean; rejects?: string[] };
 
 /* ---------- small maths ---------- */
 const emaArr = (v: number[], n: number) => {
@@ -448,6 +448,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
   // ================= user-defined setups: fake break, weak pullback, range at a major level, box =================
   const n15 = c15.length, atr4 = atrAt(c4h), atr1d = atrAt(c1d), atr15 = n15 > 20 ? atrAt(c15) : 0;
   let need15 = false;
+  const rejects: string[] = [];
   const pxNow = live ?? c1h[c1h.length - 1].close;
   const conf15 = (side: "long" | "short"): { ok: boolean | null; text: Bi } => {
     if (!s15 || n15 < 40) return { ok: null, text: b("15M data unavailable", "داده‌ی ۱۵ دقیقه موجود نیست") };
@@ -466,7 +467,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     const L = side === "long", n = c1h.length;
     const lv: { p: number; i: number }[] = swings(c1h, 2).filter((x) => x.t === (L ? "H" : "L")).slice(-8).map((x) => ({ p: x.p, i: x.i }));
     if (extra != null) lv.push({ p: extra, i: -1 });
-    for (let j = n - 1; j >= n - 2 && j >= 22; j--) {
+    for (let j = n - 1; j >= n - 3 && j >= 22; j--) {
       const cj = c1h[j], pj = c1h[j - 1];
       const hit = lv.filter((x) => x.i < j - 1 && (L ? cj.close > x.p && pj.close <= x.p : cj.close < x.p && pj.close >= x.p)).sort((a, c) => (L ? c.p - a.p : a.p - c.p))[0];
       if (!hit) continue;
@@ -477,7 +478,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     }
     // the level is a 1H level, but the confirming candle may be a closed 15M candle (earlier signal)
     if (n15 >= 40) {
-      for (let j = n15 - 1; j >= n15 - 2; j--) {
+      for (let j = n15 - 1; j >= n15 - 4; j--) {
         const cj = c15[j], pj = c15[j - 1];
         const hit = lv.filter((x) => (L ? cj.close > x.p && pj.close <= x.p : cj.close < x.p && pj.close >= x.p)).sort((a, c) => (L ? c.p - a.p : a.p - c.p))[0];
         if (!hit || !goodCandle(cj, side)) continue;
@@ -495,7 +496,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     if (Math.abs(o.entry - stop) < minRisk) stop = L ? o.entry - minRisk : o.entry + minRisk;
     const risk = Math.abs(o.entry - stop);
     const D2 = (globalThis as any).__ARCUS_DBG as ((x: string) => void) | undefined;
-    if (!(risk > 0) || risk > Math.max(atr1h * 7, atr4 * 3)) { D2?.(`${o.strat} ${o.side} rejected: risk ${(risk / atr1h).toFixed(1)} ATR1h`); return; } // structural stop but never absurdly wide
+    if (!(risk > 0) || risk > Math.max(atr1h * 7, atr4 * 3)) { D2?.(`${o.strat} ${o.side} rejected: risk ${(risk / atr1h).toFixed(1)} ATR1h`); if (o.confirmed) rejects.push(`${STRATS[o.strat].name.en} ${o.side.toUpperCase()}: stop is ${(risk / atr1h).toFixed(1)} ATR away (too wide)`); return; } // structural stop but never absurdly wide
     // target = the NEAREST opposing level (price must cross it first); if that pays less than 1:2 net the setup is rejected
     let tg: { tp: number; note: Bi } = target(o.side, o.entry, risk, zones, atr1h);
     if (L ? tg.tp <= o.entry : tg.tp >= o.entry) {
@@ -504,7 +505,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     }
     if (o.tc && tg.note.en.startsWith("No level")) tg = { tp: L ? o.entry + risk * 4 : o.entry - risk * 4, note: b("Open space ahead — 4R target (or trail the stop under each new higher low / above each lower high)", "فضای باز جلوی قیمت — هدف 4R (یا تریلینگ زیر هر کف بالاتر / بالای هر سقف پایین‌تر)") };
     const rr = netRR(o.entry, stop, tg.tp, cfg.costPct);
-    if (rr.net < cfg.minRR && !o.lenient) { D2?.(`${o.strat} ${o.side} rejected: net R:R ${rr.net.toFixed(2)} (${tg.note.en})`); return; }
+    if (rr.net < cfg.minRR && !o.lenient) { D2?.(`${o.strat} ${o.side} rejected: net R:R ${rr.net.toFixed(2)} (${tg.note.en})`); if (o.confirmed) rejects.push(`${STRATS[o.strat].name.en} ${o.side.toUpperCase()}: net R:R ${rr.net.toFixed(2)} < ${cfg.minRR} (${tg.note.en})`); return; }
     const pa = paScore(rows, o.side, o.rej), rs = rsiScore(rows, o.side), mc = macdScore(rows, o.side), vol = volScore(rows);
     const c = o.c15 ?? conf15(o.side);
     const entryQ = o.method === "retest" ? 8 : Math.abs(pxNow - o.entry) <= atr1h * 0.5 ? 8 : Math.abs(pxNow - o.entry) <= atr1h ? 5 : 2;
@@ -716,12 +717,26 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
       // A. breakout of the last pivot with volume
       const lvA = pv.filter((x) => x.t === (L ? "H" : "L")).slice(-1)[0];
       if (cfg.on.tca && lvA && lastPivStop) {
-        const brk = L ? last.close > lvA.p && prev.close <= lvA.p : last.close < lvA.p && prev.close >= lvA.p;
+        // the break may be 0-2 candles old (a scan can land a candle late); it must still be holding beyond the level
+        let age = -1;
+        for (let a = 0; a <= 2; a++) {
+          const j = n - 1 - a;
+          if (j < 22) break;
+          const crossed = L ? c1h[j].close > lvA.p && c1h[j - 1].close <= lvA.p : c1h[j].close < lvA.p && c1h[j - 1].close >= lvA.p;
+          if (crossed && c1h.slice(j).every((r) => (L ? r.close > lvA.p : r.close < lvA.p))) { age = a; break; }
+        }
+        const brk = age >= 0, kb1 = n - 1 - Math.max(age, 0), avA = c1h.slice(kb1 - 20, kb1).reduce((a, r) => a + r.volume, 0) / 20, vrA = avA > 0 ? c1h[kb1].volume / avA : 0;
+        let age15 = -1;
+        if (n15 >= 40) for (let a = 0; a <= 3; a++) {
+          const j = n15 - 1 - a;
+          const crossed = L ? c15[j].close > lvA.p && c15[j - 1].close <= lvA.p : c15[j].close < lvA.p && c15[j - 1].close >= lvA.p;
+          if (crossed && c15.slice(j).every((r) => (L ? r.close > lvA.p : r.close < lvA.p))) { age15 = a; break; }
+        }
         const over = Math.abs(last.close - lvA.p) > atr1h * 1.2, near = Math.abs(last.close - lvA.p) <= atr1h * 1.0 && (L ? last.close <= lvA.p : last.close >= lvA.p);
         const stop = lastPivStop.p - sgn * atr1h * 0.2;
-        if (brk) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: over ? "retest" : "immediate", entry: over ? lvA.p : last.close, stop, confirmed: vr >= 1.5 && !over, structure: 16 + 2, setup: 12 + (vr >= 2 ? 4 : 0) + (vr >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: vr < 1.5 || over, trigLvl: over ? lvA.p : undefined, why: [trendWhy, b(`1H CLOSE ${L ? "above" : "below"} the last pivot ${lvA.p.toPrecision(5)} with ${vr.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×)`, `کلوز ۱ساعته ${L ? "بالای" : "پایین"} آخرین پیوت ${lvA.p.toPrecision(5)} با حجم ${vr.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵ لازم است)`)], wait: over ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`Closed beyond the pivot but volume is only ${vr.toFixed(1)}× (need ≥ 1.5×)`, `بیرون پیوت بسته شد ولی حجم فقط ${vr.toFixed(1)} برابر است (حداقل ۱.۵)`) });
-        else if (n15 >= 40 && (L ? c15[n15 - 1].close > lvA.p && c15[n15 - 2].close <= lvA.p : c15[n15 - 1].close < lvA.p && c15[n15 - 2].close >= lvA.p)) {
-          const l15 = c15[n15 - 1], av15 = c15.slice(n15 - 21, n15 - 1).reduce((a, r) => a + r.volume, 0) / 20, v15 = av15 > 0 ? l15.volume / av15 : 0, over15 = Math.abs(l15.close - lvA.p) > atr1h * 1.2;
+        if (brk) emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: over ? "retest" : "immediate", entry: over ? lvA.p : last.close, stop, confirmed: vrA >= 1.5 && !over, structure: 16 + 2, setup: 12 + (vrA >= 2 ? 4 : 0) + (vrA >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: vrA < 1.5 || over, trigLvl: over ? lvA.p : undefined, why: [trendWhy, b(`1H CLOSE ${L ? "above" : "below"} the last pivot ${lvA.p.toPrecision(5)} with ${vrA.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×)`, `کلوز ۱ساعته ${L ? "بالای" : "پایین"} آخرین پیوت ${lvA.p.toPrecision(5)} با حجم ${vrA.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵ لازم است)`)], wait: over ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`Closed beyond the pivot but volume is only ${vrA.toFixed(1)}× (need ≥ 1.5×)`, `بیرون پیوت بسته شد ولی حجم فقط ${vrA.toFixed(1)} برابر است (حداقل ۱.۵)`) });
+        else if (age15 >= 0) {
+          const l15 = c15[n15 - 1], kb = n15 - 1 - age15, av15 = c15.slice(kb - 20, kb).reduce((a, r) => a + r.volume, 0) / 20, v15 = av15 > 0 ? c15[kb].volume / av15 : 0, over15 = Math.abs(l15.close - lvA.p) > atr1h * 1.2;
           emit2({ side, strat: "tca", tf: "1h", at15: l15.time, rows: c15, method: over15 ? "retest" : "immediate", entry: over15 ? lvA.p : l15.close, stop, confirmed: v15 >= 1.5 && !over15, structure: 18, setup: 12 + (v15 >= 2 ? 4 : 0) + (v15 >= 3 ? 2 : 0), tag: tcTag, tc: true, lvl: lvA.p, lenient: v15 < 1.5 || over15, trigLvl: over15 ? lvA.p : undefined, why: [trendWhy, b(`15M CLOSE ${L ? "above" : "below"} the 1H pivot ${lvA.p.toPrecision(5)} with ${v15.toFixed(1)}× its 20-bar average volume (needs ≥ 1.5×) — earlier than waiting for the 1H close`, `کلوز ۱۵ دقیقه ${L ? "بالای" : "پایین"} پیوت ۱ساعته ${lvA.p.toPrecision(5)} با حجم ${v15.toFixed(1)} برابر میانگین ۲۰ کندل (حداقل ۱.۵) — زودتر از انتظار برای کلوز ۱ساعته`)], wait: over15 ? b(`Broke out but extended — wait for a retest of ${lvA.p.toPrecision(5)} that holds`, `شکست انجام شد ولی کشیده است — منتظر ریتست ${lvA.p.toPrecision(5)} باش که نگه دارد`) : b(`15M closed beyond the pivot but volume is only ${v15.toFixed(1)}× (need ≥ 1.5×)`, `۱۵ دقیقه بیرون پیوت بسته شد ولی حجم فقط ${v15.toFixed(1)} برابر است (حداقل ۱.۵)`) });
         }
         else if (near) { need15 = true; emit2({ side, strat: "tca", tf: "1h", rows: c1h, method: "none", entry: lvA.p, stop, confirmed: false, structure: 16, setup: 10, tag: tcTag, tc: true, lvl: lvA.p, lenient: true, trigLvl: lvA.p, why: [trendWhy, b(`Price is within 1 ATR of the last 1H pivot ${lvA.p.toPrecision(5)}`, `قیمت کمتر از ۱ ATR تا آخرین پیوت ۱ساعته ${lvA.p.toPrecision(5)} فاصله دارد`)], wait: b(`Wait for a 1H CLOSE ${L ? "above" : "below"} ${lvA.p.toPrecision(5)} with volume ≥ 1.5× average`, `منتظر کلوز ۱ساعته ${L ? "بالای" : "پایین"} ${lvA.p.toPrecision(5)} با حجم ≥ ۱.۵ برابر میانگین باش`) }); }
@@ -756,6 +771,7 @@ export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): {
     }
   }
   info.need15 = need15;
+  info.rejects = rejects;
 
   // keep the best signal per (symbol, strategy, side, status); ready beats watch
   const best = new Map<string, Sig2>();

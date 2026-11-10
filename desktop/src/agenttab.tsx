@@ -103,6 +103,10 @@ export function AgentTab(p: {
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
   const histRef = useRef(hist);
+  const readyRef = useRef<Sig2[]>([]);
+  readyRef.current = ready;
+  const priceRef = useRef(p.priceOf);
+  priceRef.current = p.priceOf;
   histRef.current = hist;
   const [autoJ, setAutoJ] = useState<boolean>(() => jget("arcus.ag3.autoj", true));
   const autoRef = useRef(autoJ);
@@ -207,8 +211,21 @@ export function AgentTab(p: {
       setProg(null);
     }
     if (c.signal.aborted) return;
-    const rd = allSigs.filter((x) => x.status === "ready").sort((a, b) => b.score - a.score);
+    const rd0 = allSigs.filter((x) => x.status === "ready");
     const wt = allSigs.filter((x) => x.status === "watch").sort((a, b) => b.score - a.score);
+    // A READY signal is a state, not a one-candle event: keep earlier ones (up to 6h) until the stop or target is hit,
+    // unless this scan produced the same setup again (as ready or watch).
+    const seenNow = new Set(allSigs.map((x) => x.symbol + "|" + x.strat + "|" + x.side));
+    const nowMs = Date.now();
+    const kept = readyRef.current
+      .filter((x) => !seenNow.has(x.symbol + "|" + x.strat + "|" + x.side) && nowMs - x.time < 6 * 3600 * 1000)
+      .filter((x) => {
+        const lp = priceRef.current?.(x.symbol);
+        if (!lp || !(lp > 0) || Math.abs(lp - x.entry) / x.entry > 0.2) return true;
+        return x.side === "long" ? lp > x.stop && lp < x.tp : lp < x.stop && lp > x.tp;
+      })
+      .map((x) => ({ ...x, kept: true }));
+    const rd = rd0.concat(kept).sort((a, b) => b.score - a.score);
     setReady(rd);
     setWatch(wt);
     setInfos(allInfo);
@@ -312,6 +329,7 @@ export function AgentTab(p: {
     return { d1: cnt("d1"), h4: cnt("h4"), h1: cnt("h1"), by, stale: infos.filter((x) => x.stale), missing: infos.filter((x) => x.issues.filter((q) => q !== "stale").length) };
   }, [infos]);
 
+  const rej = useMemo(() => infos.flatMap((x) => (x.rejects || []).map((msg) => ({ base: x.base, msg }))), [infos]);
   const Row = (s: Sig2) => {
     const id = s.id, o = openId === id, lp = liveOf(s), z = sizeOf(s);
     const Lg = s.side === "long";
@@ -334,6 +352,7 @@ export function AgentTab(p: {
         </header>
         {o && (
           <div className="sx-more">
+            {s.kept && <p className="sx-wait">⏱ {T("Kept from an earlier scan — still valid until the stop or target is hit.", "از اسکن قبلی نگه داشته شده — تا برخورد حد ضرر یا حد سود معتبر است.")}</p>}
             {s.status === "watch" && s.wait && <p className="sx-wait">⏳ {L(s.wait)}{toTrig != null ? ` · ${T("distance to trigger", "فاصله تا ماشه")} ${toTrig >= 0 ? "+" : ""}${toTrig.toFixed(2)}%` : ""}</p>}
             {!s.status2 && <Ladder s={s} live={lp} />}
             <dl className="sx-grid">
@@ -464,6 +483,7 @@ export function AgentTab(p: {
               <div className="sx-ovc wide">
                 <h5>{T("Data integrity", "صحت داده")}</h5>
                 <p>{T("Only closed candles confirm signals. Symbols without enough 1D/4H/1H history are skipped, never guessed.", "فقط کندل بسته‌شده سیگنال را تأیید می‌کند. نمادهای بدون تاریخچه‌ی کافی ۱D/۴H/۱H رد می‌شوند، نه حدس.")}</p>
+                {rej.length > 0 && <p className="sx-miss">🚫 {T("Triggered but rejected (so no signal):", "ماشه خورد ولی رد شد (پس سیگنال نیست):")} {rej.slice(0, 12).map((x) => x.base + " — " + x.msg).join(" · ")}</p>}
                 {ov.stale.length > 0 && <p className="sx-miss">⏸ {T("Stale / market closed", "داده‌ی کهنه / بازار بسته")}: {ov.stale.length} — {ov.stale.slice(0, 10).map((x) => x.base).join(", ")}{ov.stale.length > 10 ? "…" : ""}</p>}
                 {ov.missing.length > 0 && <p className="sx-miss">⚠ {T("Incomplete data", "داده‌ی ناقص")}: {ov.missing.length} — {ov.missing.slice(0, 10).map((x) => x.base + " (" + x.issues.filter((q) => q !== "stale").join("/") + ")").join(", ")}{ov.missing.length > 10 ? "…" : ""}</p>}
               </div>
