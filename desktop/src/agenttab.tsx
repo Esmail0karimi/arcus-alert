@@ -275,8 +275,29 @@ export function AgentTab(p: {
       const nm = (x: Sig2) => (f ? FA_NAME[x.base] || x.base : x.base);
       const line = fresh.slice(0, 4).map((x) => `${nm(x)} ${x.side === "long" ? (f ? "خرید" : "LONG") : f ? "فروش" : "SHORT"} (${x.score})`).join(" · ");
       setToasts((t) => t.concat(fresh.slice(0, 4).map((x, q) => ({ id: Date.now() + q, text: `${nm(x)} ${x.side === "long" ? "LONG" : "SHORT"} · ${L2(x.strat, f)} · ${x.score}/100 · R:R ${x.rr.toFixed(1)}`, side: x.side }))).slice(-6));
-      if (soundRef.current) speak("agent", { en: `${fresh.length} new ready ${fresh.length === 1 ? "signal" : "signals"}.`, fa: `${fresh.length} سیگنال آماده‌ی معامله‌ی جدید.` });
-      if (notifRef.current) sendNotification(f ? "✅ سیگنال آماده‌ی معامله" : "✅ Ready to trade", line, "ag3-" + Date.now());
+      // READY alarm is unconditional: sound + notification every time, whatever the switches say
+      speak("agent", { en: `${fresh.length} new ready ${fresh.length === 1 ? "signal" : "signals"}.`, fa: `${fresh.length} سیگنال آماده‌ی معامله‌ی جدید.` }, true);
+      sendNotification(f ? "✅ سیگنال آماده‌ی معامله" : "✅ Ready to trade", line, "ag3-" + Date.now());
+    }
+    // WATCHLIST alarm: one alarm per scan when new coins entered the watchlist (stable key, no candle time => no repeats)
+    {
+      const rdKeys = new Set(rd.map((x) => x.symbol + "|" + x.strat + "|" + x.side));
+      const wk = (x: Sig2) => [x.symbol, x.strat, x.side, x.tf].join("|");
+      const sw = new Set<string>(jget<string[]>("arcus.ag3.seenw", []));
+      const first = sw.size === 0;
+      const freshW = wt.filter((x) => !sw.has(wk(x)) && !rdKeys.has(x.symbol + "|" + x.strat + "|" + x.side));
+      wt.forEach((x) => sw.add(wk(x)));
+      jset("arcus.ag3.seenw", Array.from(sw).slice(-1500));
+      const names = Array.from(new Set(freshW.map((x) => x.base)));
+      if (freshW.length && !fresh.length) {
+        const f = faRef.current;
+        const n = names.length;
+        const list2 = names.slice(0, 6).map((b) => (f ? FA_NAME[b] || b : b)).join("، ");
+        setToasts((t) => t.concat([{ id: Date.now() + 99, text: f ? `👁 ${n} ارز وارد واچ‌لیست شد: ${list2}` : `👁 ${n} coins entered the watchlist: ${list2}` }]).slice(-6));
+        speak("agent", { en: `${n} ${n === 1 ? "coin is" : "coins are"} in the watchlist.`, fa: `${n} ارز در واچ‌لیست قرار گرفت.` }, true);
+        sendNotification(f ? "👁 واچ‌لیست" : "👁 Watchlist", f ? `${n} ارز در واچ‌لیست: ${list2}` : `${n} coins in watchlist: ${list2}`, "ag3w-" + Date.now());
+      }
+      void first;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
