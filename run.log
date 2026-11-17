@@ -1,33 +1,35 @@
    3s ForexFactory nextweek HTTP 404
-  92s   fallback probe: AAPL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AAPL Earnings Date","announcement":"Earnings announcement* for AAPL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
-  92s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  92s   fallback probe: GOOGL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"GOOGL Earnings Date","announcement":"Earnings announcement* for GOOGL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"
   92s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
   92s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   92s   fallback probe: GOOGL finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   92s   fallback probe: MSFT finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
-  92s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  92s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
   92s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
-  92s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  92s   fallback probe: IWM stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  92s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
   92s   fallback probe: BRK fromFinviz error: HTTP 404
   92s   fallback probe: BRKB fromFinviz error: HTTP 404
   92s   fallback probe: BRK fromSA error: HTTP 404
-  92s earnings-date fallback: 19/113 tracked stocks found
-  92s details: 206 companies, refreshing 105
- 211s   detail fail BF.B finviz HTTP 404
- 227s   detail fail LEN.B finviz HTTP 404
- 242s details written 105, empty 0
- 242s news.json: 277 events, 347 company files
+  92s earnings-date fallback: 17/113 tracked stocks found
+  92s details: 205 companies, refreshing 61
+ 121s   detail fail MOG.A finviz HTTP 404
+ 123s   detail fail MOG.B finviz HTTP 404
+ 151s   detail fail HEI.A finviz HTTP 404
+ 157s   detail fail BF.A finviz HTTP 404
+ 159s details written 61, empty 0
+ 160s news.json: 273 events, 345 company files
 [
+ {
+  "name": "SEC EDGAR",
+  "ok": true,
+  "note": "10404 companies"
+ },
  {
   "name": "Fed calendar",
   "ok": true,
   "note": "9 meetings (official)",
   "n": 9
- },
- {
-  "name": "SEC EDGAR",
-  "ok": true,
-  "note": "10404 companies"
  },
  {
   "name": "Treasury yields",
@@ -43,49 +45,49 @@
  {
   "name": "Nasdaq earnings",
   "ok": true,
-  "note": "143 reports in 55 days",
-  "n": 143
+  "note": "139 reports in 55 days",
+  "n": 139
  },
  {
   "name": "Nasdaq analysts",
   "ok": true,
-  "note": "105/105 companies",
-  "n": 105
+  "note": "61/61 companies",
+  "n": 61
  },
  {
   "name": "StockAnalysis",
   "ok": true,
-  "note": "105/105 companies",
-  "n": 105
+  "note": "61/61 companies",
+  "n": 61
  },
  {
   "name": "SEC press releases",
   "ok": true,
-  "note": "105/105 companies",
-  "n": 105
+  "note": "61/61 companies",
+  "n": 61
  },
  {
   "name": "Finviz headlines",
   "ok": true,
-  "note": "103/105 companies",
-  "n": 103
+  "note": "57/61 companies",
+  "n": 57
  },
  {
   "name": "FXStreet actuals",
   "ok": true,
-  "note": "13 released numbers filled in (426 events checked)",
-  "n": 13
+  "note": "17 released numbers filled in (426 events checked)",
+  "n": 17
  },
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "2 write-ups for 31 recent events",
+  "note": "2 write-ups for 38 recent events",
   "n": 2
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "0 reported companies summarised",
-  "n": 0
+  "note": "1 reported companies summarised",
+  "n": 1
  }
 ]
