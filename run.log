@@ -1,23 +1,30 @@
    3s ForexFactory nextweek HTTP 404
- 100s   fallback probe: AAPL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AAPL Earnings Date","announcement":"Earnings announcement* for AAPL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
- 100s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
- 100s   fallback probe: GOOGL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"GOOGL Earnings Date","announcement":"Earnings announcement* for GOOGL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"
- 100s   fallback probe: GOOGL finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
- 100s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
- 100s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
- 100s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
- 100s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
- 100s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
- 100s   fallback probe: BRKB fromFinviz error: HTTP 404
- 100s   fallback probe: BRK fromFinviz error: HTTP 404
- 100s   fallback probe: BRKB fromSA error: HTTP 404
- 100s earnings-date fallback: 10/112 tracked stocks found
- 100s details: 205 companies, refreshing 104
- 134s   detail fail MOG.A finviz HTTP 404
- 136s   detail fail MOG.B finviz HTTP 404
- 212s details written 104, empty 0
- 214s news.json: 268 events, 290 company files
+  94s   fallback probe: AMZN nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AMZN Earnings Date","announcement":"Earnings announcement* for AMZN: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  94s   fallback probe: AMZN finviz: >Earnings Oct 29 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  94s   fallback probe: AAPL nasdaq: {"data":{"reportText":"Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date.","heading":"AAPL Earnings Date","announcement":"Earnings announcement* for AAPL: ","eQRResposeModel":{"text":null,"boldText":null,"dataLinkUrl":null}},"message":null,"status":{"rC
+  94s   fallback probe: AAPL finviz: >Earnings Nov 02 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  94s   fallback probe: MSFT finviz: >Earnings Oct 28 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  94s   fallback probe: NVDA finviz: >Earnings Nov 17 AMC <td class="snapshot-td2 cursor-pointer max-xl:w-[4%] xl:w-px" align="left" data-boxover-html="Last 
+  94s   fallback probe: SPY stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  94s   fallback probe: DIA stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  94s   fallback probe: QQQ stockanalysis: Earnings Calendar Earnings Calls New By Industry Stock Lists Top Stocks Corporat
+  94s   fallback probe: BRK fromFinviz error: HTTP 404
+  94s   fallback probe: BRKB fromFinviz error: HTTP 404
+  94s   fallback probe: BRK fromSA error: HTTP 404
+  94s earnings-date fallback: 9/115 tracked stocks found
+  94s details: 205 companies, refreshing 101
+ 128s   detail fail MOG.A finviz HTTP 404
+ 129s   detail fail MOG.B finviz HTTP 404
+ 189s   detail fail BF.B finviz HTTP 404
+ 199s   detail fail LEN.B finviz HTTP 404
+ 201s details written 101, empty 0
+ 203s news.json: 264 events, 277 company files
 [
+ {
+  "name": "SEC EDGAR",
+  "ok": true,
+  "note": "10400 companies"
+ },
  {
   "name": "Fed calendar",
   "ok": true,
@@ -25,14 +32,9 @@
   "n": 9
  },
  {
-  "name": "SEC EDGAR",
-  "ok": true,
-  "note": "10400 companies"
- },
- {
   "name": "Treasury yields",
   "ok": true,
-  "note": "curve of 2026-11-17"
+  "note": "curve of 2026-11-18"
  },
  {
   "name": "ForexFactory",
@@ -43,49 +45,49 @@
  {
   "name": "Nasdaq earnings",
   "ok": true,
-  "note": "134 reports in 56 days",
-  "n": 134
+  "note": "133 reports in 57 days",
+  "n": 133
  },
  {
   "name": "Nasdaq analysts",
   "ok": true,
-  "note": "104/104 companies",
-  "n": 104
+  "note": "101/101 companies",
+  "n": 101
  },
  {
   "name": "StockAnalysis",
   "ok": true,
-  "note": "104/104 companies",
-  "n": 104
+  "note": "101/101 companies",
+  "n": 101
  },
  {
   "name": "SEC press releases",
   "ok": true,
-  "note": "104/104 companies",
-  "n": 104
+  "note": "101/101 companies",
+  "n": 101
  },
  {
   "name": "Finviz headlines",
   "ok": true,
-  "note": "102/104 companies",
-  "n": 102
+  "note": "97/101 companies",
+  "n": 97
  },
  {
   "name": "FXStreet actuals",
   "ok": true,
-  "note": "33 released numbers filled in (409 events checked)",
-  "n": 33
+  "note": "38 released numbers filled in (450 events checked)",
+  "n": 38
  },
  {
   "name": "Fed statements & speeches",
   "ok": true,
-  "note": "7 write-ups for 83 recent events",
+  "note": "7 write-ups for 89 recent events",
   "n": 7
  },
  {
   "name": "Earnings write-ups",
   "ok": true,
-  "note": "20 reported companies summarised",
-  "n": 20
+  "note": "13 reported companies summarised",
+  "n": 13
  }
 ]
