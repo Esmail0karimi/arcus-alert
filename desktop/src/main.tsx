@@ -74,7 +74,7 @@ const EMBED_SYM = (() => {
     return "";
   }
 })();
-const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Analysis", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -1700,8 +1700,8 @@ function App() {
   });
   const onAnExtra = (x: { ready: Sig2[]; watch: Sig2[] }) => {
     const map = (s: Sig2): Sig2 => {
-      const m = agentSyms.find((a) => a.base === s.base && a.market === "Stocks");
-      return m ? { ...s, symbol: m.symbol, ex: m.ex } : s;
+      const b0 = s.base.replace(/-USD$/, ""), m = agentSyms.find((a) => a.base === b0);
+      return m ? { ...s, base: b0, symbol: m.symbol, ex: m.ex, market: m.market } : { ...s, base: b0 };
     };
     const v = { ready: x.ready.map(map), watch: x.watch.map(map) };
     setAnExtra(v);
@@ -2839,8 +2839,8 @@ function App() {
         )}
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} extra={anExtra} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
-        <div style={{ display: tab === "Analysis" ? "block" : "none" }}><AnalysisTab mine={mySyms.map((x) => String(assetBase(displayName(x))))} onExtra={onAnExtra} /></div>
+        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} extra={anExtra} analysis={<AnalysisTab syms={agentSyms} onExtra={onAnExtra} />} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />
@@ -4014,7 +4014,7 @@ function App() {
             }}
             key={t}
           >
-            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "🔬", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}

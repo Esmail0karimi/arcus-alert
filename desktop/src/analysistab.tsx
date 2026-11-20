@@ -80,11 +80,19 @@ function PriceChart({ bars, all, kind }: { bars: Bar[]; all: Bar[]; kind: "candl
 const Err = ({ e }: { e: string }) => (e ? <p className="ax-err">⚠ {e}</p> : null);
 const Disc = ({ t }: { t: (a: string, b: string) => string }) => <p className="ax-disc">{t("Research / education only — not financial advice. Yahoo data can be delayed or incomplete; past behaviour does not predict the future.", "فقط برای پژوهش و آموزش — توصیه‌ی مالی نیست. داده‌ی Yahoo ممکن است تأخیر یا نقص داشته باشد؛ رفتار گذشته آینده را تضمین نمی‌کند.")}</p>;
 
-export function AnalysisTab(p: { mine: string[]; onExtra?: (x: { ready: Sig2[]; watch: Sig2[] }) => void }) {
+export function AnalysisTab(p: { syms: { symbol: string; base: string; ex: string; market: string }[]; onExtra?: (x: { ready: Sig2[]; watch: Sig2[] }) => void }) {
   const fa = useLang() === "fa";
   const T = (en: string, f: string) => (fa ? f : en);
   const [sec, setSec] = usePersist<Sec>("arcus.an.sec", "burst");
-  const defList = useMemo(() => (p.mine.length ? p.mine.filter((s) => /^[A-Z]{1,5}$/.test(s)).slice(0, 40).join(" ") : "") || STARTER, [p.mine]);
+  // universe = the symbols of the exchanges that are switched on in the app (Arcus, QFEX, …): stocks and crypto
+  const [scope, setScope] = usePersist<"stocks" | "all">("arcus.an.scope", "stocks");
+  const exs = useMemo(() => Array.from(new Set(p.syms.map((x) => x.ex))), [p.syms]);
+  const uni = useMemo(() => {
+    const pick = p.syms.filter((x) => x.market === "Stocks" || (scope === "all" && x.market === "Crypto"));
+    const out = Array.from(new Set(pick.map((x) => (x.market === "Crypto" ? x.base + "-USD" : x.base))));
+    return out.length ? out : p.syms.length ? [] : parseList(STARTER);
+  }, [p.syms, scope]);
+  const defList = uni.join(" ");
   const tabs: [Sec, string, string][] = [
     ["burst", "🚀 Momentum Burst", "🚀 مومنتوم بِرست"],
     ["market", "📈 Market Pro", "📈 بازار (Pro)"],
@@ -101,9 +109,12 @@ export function AnalysisTab(p: { mine: string[]; onExtra?: (x: { ready: Sig2[]; 
   const onExtraRef = useRef(p.onExtra);
   onExtraRef.current = p.onExtra;
   const busyRef = useRef(false);
+  const uniRef = useRef(uni);
+  uniRef.current = uni;
   const runAuto = async () => {
     if (busyRef.current) return;
-    const list = parseList(jget<string>("arcus.an.b.syms", "") || defList).slice(0, 150);
+    const custom = parseList(jget<string>("arcus.an.b.syms", ""));
+    const list = (custom.length ? custom : uniRef.current).slice(0, 300);
     if (!list.length || !autoSrc.length) return;
     busyRef.current = true;
     setAutoErr("");
@@ -145,21 +156,19 @@ export function AnalysisTab(p: { mine: string[]; onExtra?: (x: { ready: Sig2[]; 
         <button type="button" className="ax-ghost" disabled={!!autoBusy} onClick={() => runAuto()}>{autoBusy ? `${autoBusy.d}/${autoBusy.n}…` : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
         {autoSt && <span className="ax-small">{T("Last", "آخرین")} {new Date(autoSt.at).toLocaleTimeString()} · {autoSt.n} {T("symbols", "نماد")} · 👁 {autoSt.w} · ✅ {autoSt.r}{autoSt.failed ? ` · ⚠ ${autoSt.failed}` : ""} · {T("market gate", "فیلتر بازار")} {autoSt.allow ? T("open", "باز") : T("closed", "بسته")}</span>}
       </div>
-      {autoOn && <p className="ax-small">{T("Uses the Momentum Burst list. Daily candles, long-only, every 30 min while the app is open. WATCH first; READY only after a CLOSED daily candle confirms and SPY/QQQ are above their 50DMA. Signals appear in the Agent tab tagged with the section name, with the same sound + notification alarms.", "از لیست Momentum Burst استفاده می‌کند. کندل روزانه، فقط خرید، هر ۳۰ دقیقه تا وقتی برنامه باز است. اول واچ‌لیست؛ آماده فقط بعد از تأیید کندل روزانه‌ی بسته‌شده و وقتی SPY/QQQ بالای ۵۰DMA باشند. سیگنال‌ها در تب Agent با برچسب نام بخش می‌آیند، با همان هشدار صدا + اعلان.")}</p>}
+      {autoOn && <p className="ax-small">{T("Scans the symbols of your switched-on exchanges (or the Momentum Burst list if you typed one). Daily candles, long-only, every 30 min while the app is open. WATCH first; READY only after a CLOSED daily candle confirms and SPY/QQQ are above their 50DMA. Signals appear in the Agent tab tagged with the section name, with the same sound + notification alarms.", "نمادهای صرافی‌های روشن را اسکن می‌کند (یا لیست Momentum Burst اگر خودت نوشته‌ای). کندل روزانه، فقط خرید، هر ۳۰ دقیقه تا وقتی برنامه باز است. اول واچ‌لیست؛ آماده فقط بعد از تأیید کندل روزانه‌ی بسته‌شده و وقتی SPY/QQQ بالای ۵۰DMA باشند. سیگنال‌ها در تب Agent با برچسب نام بخش می‌آیند، با همان هشدار صدا + اعلان.")}</p>}
       <Err e={autoErr} />
-      <div className="sg-bar">
-        <b className="sg-t">🔬 {T("Analysis", "آنالیز")}</b>
-        <span className="sg-sp" />
-        <button type="button" className="sg-lang" onClick={() => setLang(fa ? "en" : "fa")}>{fa ? "EN" : "فا"}</button>
-      </div>
+      <p className="ax-small">{T("Universe", "دامنه")}: {exs.length ? exs.join(" + ") : T("no exchange switched on", "هیچ صرافی‌ای روشن نیست")} · {uni.length} {T("symbols", "نماد")} ·{" "}
+        <span className="sg-chips"><button type="button" className={scope === "stocks" ? "on" : ""} onClick={() => setScope("stocks")}>{T("Stocks", "سهام")}</button><button type="button" className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>{T("Stocks + crypto", "سهام + کریپتو")}</button></span>
+        {" "}{T("— only the exchanges you switched on in Market are used.", "— فقط صرافی‌هایی که در بازار روشن کرده‌ای استفاده می‌شود.")}</p>
       <div className="sg-tabs ax-tabs" role="tablist">
         {tabs.map(([id, en, f]) => (
           <button key={id} type="button" role="tab" aria-selected={sec === id} className={sec === id ? "on" : ""} onClick={() => setSec(id)}>{fa ? f : en}</button>
         ))}
       </div>
-      {sec === "burst" && <BurstSec T={T} defList={defList} />}
+      {sec === "burst" && <BurstSec T={T} uni={uni} />}
       {sec === "market" && <MarketSec T={T} />}
-      {sec === "corr" && <CorrSec T={T} defList={defList} />}
+      {sec === "corr" && <CorrSec T={T} uni={uni} />}
       {sec === "pro" && <ProSec T={T} />}
       {sec === "an" && <AnSec T={T} />}
       <Disc t={T} />
@@ -169,7 +178,7 @@ export function AnalysisTab(p: { mine: string[]; onExtra?: (x: { ready: Sig2[]; 
 type TT = (a: string, b: string) => string;
 
 /* ---------- 1. Momentum Burst ---------- */
-function BurstSec({ T, defList }: { T: TT; defList: string }) {
+function BurstSec({ T, uni }: { T: TT; uni: string[] }) {
   const [syms, setSyms] = usePersist("arcus.an.b.syms", "");
   const [gate, setGate] = usePersist<Gate>("arcus.an.b.gate", "unknown");
   const [minVol, setMinVol] = usePersist("arcus.an.b.vol", 100000);
@@ -178,9 +187,9 @@ function BurstSec({ T, defList }: { T: TT; defList: string }) {
   const [res, setRes] = useState<{ cutoff: string; list: Burst[]; regime: string; n: number; stale: number } | null>(null);
   const ctl = useRef<AbortController | null>(null);
   useEffect(() => () => ctl.current?.abort(), []);
-  const text = syms || defList;
   const run = async () => {
-    const list = parseList(text).slice(0, 150);
+    const custom = parseList(syms);
+    const list = (custom.length ? custom : uni).slice(0, 300);
     if (!list.length) return setErr(T("Enter at least one ticker.", "حداقل یک نماد وارد کن."));
     setErr("");
     ctl.current?.abort();
@@ -221,7 +230,7 @@ function BurstSec({ T, defList }: { T: TT; defList: string }) {
   return (
     <section className="ax-sec">
       <p className="sx-hint">{T("Stockbee-style Momentum Burst: 4% breakout, dollar breakout or range expansion on the last COMPLETED daily bar, scored 0–100 (trigger, volume, base contraction, close location, risk to the trigger-day low). Candidate generation only — never an order.", "مومنتوم بِرست به سبک Stockbee: بریک‌اوت ۴٪، بریک‌اوت دلاری یا گسترش دامنه روی آخرین کندل روزانه‌ی بسته‌شده؛ امتیاز ۰–۱۰۰ (ماشه، حجم، فشردگی پایه، محل کلوز، ریسک تا کف کندل ماشه). فقط تولید کاندید — هرگز دستور خرید نیست.")}</p>
-      <textarea className="ax-ta" rows={3} value={text} onChange={(e) => setSyms(e.target.value)} placeholder="NVDA SMCI PLTR …" spellCheck={false} />
+      <textarea className="ax-ta" rows={2} value={syms} onChange={(e) => setSyms(e.target.value)} placeholder={T(`Empty = all ${uni.length} symbols of your switched-on exchanges. Or type tickers: NVDA SMCI PLTR …`, `خالی = همه‌ی ${uni.length} نماد صرافی‌های روشن. یا نمادها را بنویس: NVDA SMCI PLTR …`)} spellCheck={false} />
       <div className="ax-row">
         <label>{T("Market gate", "فیلتر بازار")}
           <select value={gate} onChange={(e) => setGate(e.target.value as Gate)}>
@@ -232,9 +241,9 @@ function BurstSec({ T, defList }: { T: TT; defList: string }) {
         </label>
         <label>{T("Min volume", "حداقل حجم")}<input type="number" min={0} step={50000} value={minVol} onChange={(e) => setMinVol(Math.max(0, Number(e.target.value) || 0))} /></label>
         <button type="button" className="sg-go" disabled={!!busy} onClick={run}>{busy ? `${busy.d}/${busy.n}…` : "🔍 " + T("Screen", "اسکرین")}</button>
-        <button type="button" className="ax-ghost" onClick={() => setSyms("")}>{T("Reset list", "لیست پیش‌فرض")}</button>
+        <button type="button" className="ax-ghost" onClick={() => setSyms("")}>{T("Use my exchanges", "نمادهای صرافی‌های من")}</button>
       </div>
-      <p className="sx-hint">{T("Never set the gate to 'allow' without checking the market regime yourself (SPY/QQQ trend). Default list = your favorites/watchlist stocks, else a starter list — edit freely.", "بدون بررسی رژیم بازار (روند SPY/QQQ) گیت را روی allow نگذار. لیست پیش‌فرض = سهام علاقه‌مندی/واچ‌لیست خودت، وگرنه یک لیست اولیه — آزادانه ویرایشش کن.")}</p>
+      <p className="sx-hint">{T("Never set the gate to 'allow' without checking the market regime yourself (SPY/QQQ trend). Empty list = every symbol of your switched-on exchanges (max 300 per scan).", "بدون بررسی رژیم بازار (روند SPY/QQQ) گیت را روی allow نگذار. لیست خالی = همه‌ی نمادهای صرافی‌های روشن (حداکثر ۳۰۰ در هر اسکن).")}</p>
       <Err e={err} />
       {res && (
         <>
@@ -348,7 +357,7 @@ function MarketSec({ T }: { T: TT }) {
 /* ---------- 3. Correlation ---------- */
 type CM = "discover" | "pair" | "cluster" | "realized";
 const heat = (c: number) => (Number.isFinite(c) ? (c >= 0 ? `rgba(61,220,151,${0.12 + 0.7 * c})` : `rgba(255,92,92,${0.12 + 0.7 * -c})`) : "transparent");
-function CorrSec({ T, defList }: { T: TT; defList: string }) {
+function CorrSec({ T, uni }: { T: TT; uni: string[] }) {
   const [mode, setMode] = usePersist<CM>("arcus.an.c.mode", "discover");
   const [a, setA] = usePersist("arcus.an.c.a", "NVDA");
   const [b2, setB] = usePersist("arcus.an.c.b", "AMD");
@@ -357,7 +366,7 @@ function CorrSec({ T, defList }: { T: TT; defList: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [out, setOut] = useState<any>(null);
-  const text = list || defList;
+  const text = list || uni.slice(0, 30).join(" ");
   const run = async () => {
     setErr("");
     setOut(null);

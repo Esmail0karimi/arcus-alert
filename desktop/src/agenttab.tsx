@@ -14,7 +14,7 @@ import type { QCandle } from "./qfex";
 export type AgSym = { symbol: string; base: string; ex: string; market: string };
 type Hist = { scalp?: boolean; key: string; symbol: string; base: string; side: "long" | "short"; strat: StratId; tf: string; entry: number; stop: number; tp: number; rr: number; score: number; time: number; candleTime: number; st: "open" | "win" | "loss" | "exp"; r: number; auto?: boolean };
 type Toast = { id: number; text: string; side?: "long" | "short" };
-type View = "ready" | "watch" | "long" | "short" | "zones" | "market" | "history" | "settings";
+type View = "ready" | "watch" | "long" | "short" | "zones" | "market" | "history" | "settings" | "analysis";
 const jget = <T,>(k: string, d: T): T => {
   try {
     const v = localStorage.getItem(k);
@@ -70,6 +70,7 @@ export function AgentTab(p: {
   syms: AgSym[];
   mySyms?: string[];
   extra?: { ready: Sig2[]; watch: Sig2[] };
+  analysis?: React.ReactNode;
   fetchCandles: (symbol: string, tf: string, signal: AbortSignal) => Promise<QCandle[]>;
   onOpenChart?: (symbol: string, tf: string, setup: SetupLines | null) => boolean;
 }) {
@@ -473,6 +474,7 @@ export function AgentTab(p: {
     ["zones", "🧭", T("Zones", "انباشت/توزیع"), null],
     ["market", "🌐", T("Market", "بازار"), null],
     ["history", "📒", T("Journal", "دفتر"), hist.length || null],
+    ["analysis", "🔬", T("Analysis", "آنالیز"), null],
     ["settings", "⚙", T("Settings", "تنظیمات"), null],
   ];
 
@@ -592,6 +594,9 @@ export function AgentTab(p: {
           {hist.length > 0 && <button type="button" className="sg-go" onClick={() => { if (confirm(T("Clear the history?", "تاریخچه پاک شود؟"))) { setHist([]); jset("arcus.ag3.hist", []); } }}>{T("Clear history", "پاک کردن تاریخچه")}</button>}
         </div>
       )}
+
+      {/* always mounted so the Analysis auto-scan keeps running while another section is open */}
+      <div style={{ display: view === "analysis" ? "block" : "none" }}>{p.analysis}</div>
 
       {view === "settings" && (
         <div className="sg-pane">
