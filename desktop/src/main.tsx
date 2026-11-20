@@ -14,6 +14,7 @@ import { FA_NAME } from "./agent";
 import { Guard } from "./errbound";
 import { AgentTab } from "./agenttab";
 import { AnalysisTab } from "./analysistab";
+import type { Sig2 } from "./engine";
 import type { QCandle } from "./qfex";
 import { VoiceControl, speak } from "./voice";
 import { AvatarHead } from "./avatar";
@@ -1689,6 +1690,25 @@ function App() {
         .filter((x) => /^[A-Z0-9]{2,12}$/.test(x.base)),
     [prices, exOn],
   );
+  // signals produced by the Analysis tab's auto-scan; they appear in the Agent tagged with the section name
+  const [anExtra, setAnExtra] = useState<{ ready: Sig2[]; watch: Sig2[] }>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("arcus.an.extra") || "") || { ready: [], watch: [] };
+    } catch {
+      return { ready: [], watch: [] };
+    }
+  });
+  const onAnExtra = (x: { ready: Sig2[]; watch: Sig2[] }) => {
+    const map = (s: Sig2): Sig2 => {
+      const m = agentSyms.find((a) => a.base === s.base && a.market === "Stocks");
+      return m ? { ...s, symbol: m.symbol, ex: m.ex } : s;
+    };
+    const v = { ready: x.ready.map(map), watch: x.watch.map(map) };
+    setAnExtra(v);
+    try {
+      localStorage.setItem("arcus.an.extra", JSON.stringify(v));
+    } catch {}
+  };
   const agentFetch = async (sym: string, frame: string, signal: AbortSignal): Promise<QCandle[]> => {
     const a = adapterOf(sym);
     const base = String(assetBase(displayName(sym)));
@@ -2819,8 +2839,8 @@ function App() {
         )}
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
-        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
-        {tab === "Analysis" && <AnalysisTab stocks={agentSyms.filter((x) => x.market === "Stocks").map((x) => x.base)} mine={mySyms.map((x) => String(assetBase(displayName(x))))} />}
+        <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} extra={anExtra} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        <div style={{ display: tab === "Analysis" ? "block" : "none" }}><AnalysisTab mine={mySyms.map((x) => String(assetBase(displayName(x))))} onExtra={onAnExtra} /></div>
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />

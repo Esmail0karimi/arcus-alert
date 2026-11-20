@@ -8,7 +8,7 @@ import type { QCandle } from "./qfex";
 
 const b = (en: string, fa: string): Bi => ({ en, fa });
 export type Trend = "up" | "down" | "range";
-export type StratId = "brk" | "fbo" | "vsh" | "mom" | "fbk" | "pbw" | "prz" | "box" | "tca" | "tcb" | "tcf";
+export type StratId = "brk" | "fbo" | "vsh" | "mom" | "fbk" | "pbw" | "prz" | "box" | "tca" | "tcb" | "tcf" | "mbs" | "apr";
 export type Status = "ready" | "watch";
 export type TfKey = "1d" | "4h" | "1h" | "15m";
 export type Candles = Partial<Record<TfKey, QCandle[]>>;
@@ -18,6 +18,8 @@ export const STRATS = {
   vsh: { name: b("V-shaped reversal", "بازگشت V شکل"), basis: b("A fast, deep move then a fast reversal back toward the origin of the move", "حرکت سریع و عمیق و بعد برگشت سریع به‌سمت مبدأ همان حرکت") },
   mom: { name: b("Momentum shift", "تغییر مومنتوم"), basis: b("Structure flips on the 1H (BOS/CHoCH) and the 15M confirms — can be against the 1D/4H trend", "ساختار ۱ساعته می‌چرخد (BOS/CHoCH) و ۱۵ دقیقه تأیید می‌کند — می‌تواند خلاف روند ۱D/۴H باشد") },
 } as unknown as Record<StratId, { name: Bi; basis: Bi }>;
+STRATS.mbs = { name: b("Momentum Burst (daily)", "مومنتوم بِرست (روزانه)"), basis: b("Stockbee-style: a 4% / dollar / range-expansion day out of a quiet base; READY when a later daily CLOSE holds above the trigger-day high on volume and the market gate is open", "سبک Stockbee: روز انفجاری ۴٪ / دلاری / گسترش دامنه از پایه‌ی آرام؛ آماده وقتی کلوز روزانه‌ی بعدی با حجم بالای سقف روز ماشه بماند و فیلتر بازار باز باشد") };
+STRATS.apr = { name: b("Analysis Pro lean (daily)", "تمایل آنالیز Pro (روزانه)"), basis: b("Price-based multi-factor lean is FAVORABLE; READY when a daily CLOSE breaks the 20-day high on volume ≥ 1.3× above the 50DMA", "تمایل چندعاملی قیمتی مطلوب است؛ آماده وقتی کلوز روزانه سقف ۲۰ روزه را با حجم ≥ ۱٫۳ برابر و بالای میانگین ۵۰ روزه بشکند") };
 STRATS.fbk = { name: b("Fake break + 15M range break", "شکست کاذب + شکست رنج ۱۵ دقیقه"), basis: b("4H trend makes a new extreme by a CLOSE beyond the last swing, price closes back inside and ranges; a good 15M candle breaks the range in the direction of the failure", "روند ۴ساعته با بسته‌شدن بیرون از آخرین سقف/کف جدید می‌زند، قیمت برمی‌گردد و رنج می‌زند؛ کندل خوب ۱۵ دقیقه رنج را در جهت شکست‌خورده می‌شکند") };
 STRATS.pbw = { name: b("Weak pullback (trend entry)", "پولبک ضعیف (ورود با روند)"), basis: b("In a 4H Dow trend the pullback cannot reach the previous swing; a 15M box or a high-volume reversal candle at the top of the pullback joins the trend early", "در روند داوی ۴ساعته پولبک به سقف/کف قبلی نمی‌رسد؛ باکس ۱۵ دقیقه یا کندل برگشتی پرحجم در انتهای پولبک، ورود زودهنگام با روند است") };
 STRATS.prz = { name: b("Range at a major level (PRZ)", "رنج در سطح مهم (PRZ)"), basis: b("The trend runs into a major daily/weekly level or Fibonacci zone and starts to range; a strong 1H break up = LONG, a break down = trend continues (SHORT)", "روند به سطح مهم روزانه/هفتگی یا ناحیه‌ی فیبوناچی می‌رسد و رنج می‌زند؛ شکست قوی ۱ساعته به بالا = لانگ، به پایین = ادامه‌ی روند (شورت)") };
@@ -26,7 +28,7 @@ STRATS.tca = { name: b("Tradecity · Level breakout", "تریدسیتی · شک�
 STRATS.tcb = { name: b("Tradecity · Momentum candle setup", "تریدسیتی · ستاپ کندل مومنتوم"), basis: b("Trend direction on 1D+4H, a pullback with falling volume, then an engulfing candle on 1H with returning volume and RSI on the trend side of 50", "جهت روند ۱D+۴H، پولبک با حجم کاهشی، سپس کندل انگالف ۱ساعته با بازگشت حجم و RSI سمت روند نسبت به ۵۰") };
 STRATS.tcf = { name: b("Tradecity · Fake-out of a level", "تریدسیتی · فیک‌اوت سطح"), basis: b("In a 1D+4H trend a 1H pivot level is broken by a close, fails, and price returns with an engulfing / V candle — enter back in the trend direction", "در روند ۱D+۴H یک سطح پیوت ۱ساعته با کلوز شکسته می‌شود، شکست ناموفق است و قیمت با کندل انگالف / V برمی‌گردد — ورود در جهت روند") };
 export type Cfg = { triggers: ("1h" | "4h")[]; costPct: number; minRR: number; minScore: number; on: Record<StratId, boolean>; scalp?: boolean; minRRScalp?: number };
-export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true, tca: true, tcb: true, tcf: true } };
+export const DEF_CFG: Cfg = { triggers: ["1h"], costPct: 0.1, minRR: 2, minScore: 70, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: true, pbw: true, prz: true, box: true, tca: true, tcb: true, tcf: true, mbs: false, apr: false } };
 export type Sig2 = {
   id: string; symbol: string; base: string; market: string; ex: string;
   side: "long" | "short"; strat: StratId; status: Status; method: "immediate" | "retest" | "none"; tf: string;
@@ -252,7 +254,7 @@ export type SymMeta = { symbol: string; base: string; ex: string; market: string
 /** Only the Tradecity strategies are active; the others stay in the code (see git history / docs) but can never run. */
 export const ACTIVE: StratId[] = ["tca", "tcb", "tcf"];
 export function analyzeSymbol(m: SymMeta, d: Candles, now: number, cfg0: Cfg): { sigs: Sig2[]; info: SymInfo } {
-  const cfg: Cfg = { ...cfg0, minRR: cfg0.scalp ? cfg0.minRRScalp ?? 1 : cfg0.minRR, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: false, pbw: false, prz: false, box: false, tca: !!cfg0.on.tca, tcb: !!cfg0.on.tcb, tcf: !!cfg0.on.tcf } };
+  const cfg: Cfg = { ...cfg0, minRR: cfg0.scalp ? cfg0.minRRScalp ?? 1 : cfg0.minRR, on: { brk: false, fbo: false, vsh: false, mom: false, fbk: false, pbw: false, prz: false, box: false, tca: !!cfg0.on.tca, tcb: !!cfg0.on.tcb, tcf: !!cfg0.on.tcf, mbs: false, apr: false } };
   const issues: string[] = [];
   // Scalp mode reuses the same engine one level down: the keys "1d/4h/1h/15m" then hold 1H / 15M / 5M / 1M candles.
   const TFR = cfg.scalp ? ["1h", "15m", "5m", "1m"] : ["1d", "4h", "1h", "15m"];

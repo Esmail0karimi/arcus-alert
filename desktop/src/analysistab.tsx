@@ -2,6 +2,8 @@
    Everything is computed in the browser from Yahoo daily candles. Research / education only — not advice. Nothing here touches the Agent or any other tab. */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { setLang, useLang } from "./lang";
+import { AutoSrc, autoScan } from "./autoscan";
+import type { Sig2 } from "./engine";
 import { Bar, Burst, Daily, Fund, Gate, Pro, alignReturns, burst, cluster, corr, daily, expectedSession, fundRows, loadCtx, mean, pairStats, pool, pro, realized, rolling, sma, tech, ySym } from "./analysislib";
 
 type Sec = "burst" | "market" | "corr" | "pro" | "an";
@@ -78,7 +80,7 @@ function PriceChart({ bars, all, kind }: { bars: Bar[]; all: Bar[]; kind: "candl
 const Err = ({ e }: { e: string }) => (e ? <p className="ax-err">⚠ {e}</p> : null);
 const Disc = ({ t }: { t: (a: string, b: string) => string }) => <p className="ax-disc">{t("Research / education only — not financial advice. Yahoo data can be delayed or incomplete; past behaviour does not predict the future.", "فقط برای پژوهش و آموزش — توصیه‌ی مالی نیست. داده‌ی Yahoo ممکن است تأخیر یا نقص داشته باشد؛ رفتار گذشته آینده را تضمین نمی‌کند.")}</p>;
 
-export function AnalysisTab(p: { stocks: string[]; mine: string[] }) {
+export function AnalysisTab(p: { mine: string[]; onExtra?: (x: { ready: Sig2[]; watch: Sig2[] }) => void }) {
   const fa = useLang() === "fa";
   const T = (en: string, f: string) => (fa ? f : en);
   const [sec, setSec] = usePersist<Sec>("arcus.an.sec", "burst");
@@ -90,8 +92,61 @@ export function AnalysisTab(p: { stocks: string[]; mine: string[] }) {
     ["pro", "🧮 Analysis Pro", "🧮 آنالیز Pro"],
     ["an", "🔬 Analysis", "🔬 آنالیز"],
   ];
+  // ---- auto-scan -> Agent (Momentum Burst / Analysis Pro). Runs while the app is open, even when this tab is hidden. ----
+  const [autoOn, setAutoOn] = usePersist("arcus.an.auto.on", false);
+  const [autoSrc, setAutoSrc] = usePersist<AutoSrc[]>("arcus.an.auto.src", ["burst", "pro"]);
+  const [autoSt, setAutoSt] = useState<{ at: number; n: number; r: number; w: number; failed: number; allow: boolean } | null>(() => jget("arcus.an.auto.st", null));
+  const [autoBusy, setAutoBusy] = useState<{ d: number; n: number } | null>(null);
+  const [autoErr, setAutoErr] = useState("");
+  const onExtraRef = useRef(p.onExtra);
+  onExtraRef.current = p.onExtra;
+  const busyRef = useRef(false);
+  const runAuto = async () => {
+    if (busyRef.current) return;
+    const list = parseList(jget<string>("arcus.an.b.syms", "") || defList).slice(0, 150);
+    if (!list.length || !autoSrc.length) return;
+    busyRef.current = true;
+    setAutoErr("");
+    setAutoBusy({ d: 0, n: list.length });
+    try {
+      const r = await autoScan(list, autoSrc, (d, n) => setAutoBusy({ d, n }));
+      if (r.failed === list.length) throw new Error("no data");
+      onExtraRef.current?.({ ready: r.ready, watch: r.watch });
+      const st = { at: Date.now(), n: r.n, r: r.ready.length, w: r.watch.length, failed: r.failed, allow: r.allow };
+      setAutoSt(st);
+      jset("arcus.an.auto.st", st);
+    } catch (e: any) {
+      setAutoErr((e?.message || "failed") + " — " + T("data sources unreachable; will retry", "منابع داده در دسترس نیست؛ دوباره تلاش می‌شود"));
+    } finally {
+      busyRef.current = false;
+      setAutoBusy(null);
+    }
+  };
+  const runRef = useRef(runAuto);
+  runRef.current = runAuto;
+  useEffect(() => {
+    if (!autoOn) return;
+    const first = window.setTimeout(() => runRef.current(), 1500);
+    const id = window.setInterval(() => runRef.current(), 30 * 60 * 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOn, autoSrc.join(",")]);
+  const toggleSrc = (s: AutoSrc) => setAutoSrc(autoSrc.includes(s) ? autoSrc.filter((x) => x !== s) : [...autoSrc, s]);
   return (
     <div className="ax">
+      <div className="ax-auto">
+        <button type="button" role="switch" aria-checked={autoOn} className={"sg-sw" + (autoOn ? " on" : "")} onClick={() => setAutoOn(!autoOn)} title={T("Auto-scan → Agent", "اسکن خودکار ← ایجنت")}><i /></button>
+        <b>{T("Auto-scan → Agent", "اسکن خودکار ← ایجنت")}</b>
+        <label><input type="checkbox" checked={autoSrc.includes("burst")} onChange={() => toggleSrc("burst")} /> Momentum Burst</label>
+        <label><input type="checkbox" checked={autoSrc.includes("pro")} onChange={() => toggleSrc("pro")} /> Analysis Pro</label>
+        <button type="button" className="ax-ghost" disabled={!!autoBusy} onClick={() => runAuto()}>{autoBusy ? `${autoBusy.d}/${autoBusy.n}…` : "🔍 " + T("Scan now", "اسکن همین حالا")}</button>
+        {autoSt && <span className="ax-small">{T("Last", "آخرین")} {new Date(autoSt.at).toLocaleTimeString()} · {autoSt.n} {T("symbols", "نماد")} · 👁 {autoSt.w} · ✅ {autoSt.r}{autoSt.failed ? ` · ⚠ ${autoSt.failed}` : ""} · {T("market gate", "فیلتر بازار")} {autoSt.allow ? T("open", "باز") : T("closed", "بسته")}</span>}
+      </div>
+      {autoOn && <p className="ax-small">{T("Uses the Momentum Burst list. Daily candles, long-only, every 30 min while the app is open. WATCH first; READY only after a CLOSED daily candle confirms and SPY/QQQ are above their 50DMA. Signals appear in the Agent tab tagged with the section name, with the same sound + notification alarms.", "از لیست Momentum Burst استفاده می‌کند. کندل روزانه، فقط خرید، هر ۳۰ دقیقه تا وقتی برنامه باز است. اول واچ‌لیست؛ آماده فقط بعد از تأیید کندل روزانه‌ی بسته‌شده و وقتی SPY/QQQ بالای ۵۰DMA باشند. سیگنال‌ها در تب Agent با برچسب نام بخش می‌آیند، با همان هشدار صدا + اعلان.")}</p>}
+      <Err e={autoErr} />
       <div className="sg-bar">
         <b className="sg-t">🔬 {T("Analysis", "آنالیز")}</b>
         <span className="sg-sp" />

@@ -1031,3 +1031,5 @@ html[dir=rtl] .av-wrap.av-fixed,[dir=rtl] .av-wrap.av-fixed{left:auto;right:10px
 .ax-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .ax-rep h3{margin:4px 2px 0}.ax-rep h3 small{color:#8aa0bb;font-weight:400}
 .ax-modes{margin-bottom:2px}
+.ax-auto{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border:1px solid #1c3048;border-radius:12px;background:#0a1a2e}
+.ax-auto label{font-size:12px;display:flex;align-items:center;gap:4px}

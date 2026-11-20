@@ -69,6 +69,7 @@ export function AgentTab(p: {
   priceOf?: (symbol: string) => number | undefined;
   syms: AgSym[];
   mySyms?: string[];
+  extra?: { ready: Sig2[]; watch: Sig2[] };
   fetchCandles: (symbol: string, tf: string, signal: AbortSignal) => Promise<QCandle[]>;
   onOpenChart?: (symbol: string, tf: string, setup: SetupLines | null) => boolean;
 }) {
@@ -97,8 +98,8 @@ export function AgentTab(p: {
   const [view, setView] = useState<View>("ready");
   const [readyAll, setReady] = useState<Sig2[]>(() => jget("arcus.ag3.ready", []));
   const [watchAll, setWatch] = useState<Sig2[]>(() => jget("arcus.ag3.watch", []));
-  const ready = useMemo(() => readyAll.filter((x) => !!x.scalp === scalp), [readyAll, scalp]);
-  const watch = useMemo(() => watchAll.filter((x) => !!x.scalp === scalp), [watchAll, scalp]);
+  const ready = useMemo(() => readyAll.filter((x) => !!x.scalp === scalp).concat(scalp ? [] : p.extra?.ready || []), [readyAll, scalp, p.extra]);
+  const watch = useMemo(() => watchAll.filter((x) => !!x.scalp === scalp).concat(scalp ? [] : p.extra?.watch || []), [watchAll, scalp, p.extra]);
   const watchAllRef = useRef<Sig2[]>([]);
   watchAllRef.current = watchAll;
   const [infos, setInfos] = useState<SymInfo[]>([]);
@@ -301,6 +302,31 @@ export function AgentTab(p: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // signals that arrive from the Analysis tab's auto-scan (Momentum Burst / Analysis Pro): same alarms as the Agent's own (sound + notification + toast), once per new signal
+  useEffect(() => {
+    const ex = p.extra;
+    if (!ex) return;
+    const sr = new Set<string>(jget<string[]>("arcus.ag3.xseen", [])), sw = new Set<string>(jget<string[]>("arcus.ag3.xseenw", []));
+    const fr = ex.ready.filter((x) => !sr.has(keyOf(x))), fw = ex.watch.filter((x) => !sw.has([x.symbol, x.strat].join("|")) && !ex.ready.some((r) => r.symbol === x.symbol && r.strat === x.strat));
+    ex.ready.forEach((x) => sr.add(keyOf(x)));
+    ex.watch.forEach((x) => sw.add([x.symbol, x.strat].join("|")));
+    jset("arcus.ag3.xseen", Array.from(sr).slice(-400));
+    jset("arcus.ag3.xseenw", Array.from(sw).slice(-800));
+    const f = faRef.current, tg = (x: Sig2) => (x.tag ? (f ? x.tag.fa : x.tag.en) : "");
+    if (fr.length) {
+      const line = fr.slice(0, 4).map((x) => `${x.base} (${tg(x)})`).join(" · ");
+      setToasts((t) => t.concat(fr.slice(0, 4).map((x, q) => ({ id: Date.now() + 200 + q, text: `${x.base} LONG · ${tg(x)} · ${x.score}/100 · R:R ${x.rr.toFixed(1)}`, side: x.side }))).slice(-6));
+      speak("agent", { en: `${fr.length} new ready ${fr.length === 1 ? "signal" : "signals"} from analysis.`, fa: `${fr.length} سیگنال آماده‌ی جدید از بخش آنالیز.` }, true);
+      sendNotification(f ? "✅ سیگنال آماده‌ی معامله" : "✅ Ready to trade", line, "ag3x-" + Date.now());
+    } else if (fw.length) {
+      const names = Array.from(new Set(fw.map((x) => x.base)));
+      const line = names.slice(0, 6).join(", ");
+      setToasts((t) => t.concat([{ id: Date.now() + 299, text: f ? `👁 ${names.length} ارز/سهم وارد واچ‌لیست شد: ${line}` : `👁 ${names.length} symbols entered the watchlist: ${line}` }]).slice(-6));
+      speak("agent", { en: `${names.length} ${names.length === 1 ? "symbol is" : "symbols are"} in the watchlist.`, fa: `${names.length} نماد در واچ‌لیست قرار گرفت.` }, true);
+      sendNotification(f ? "👁 واچ‌لیست" : "👁 Watchlist", line, "ag3xw-" + Date.now());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.extra]);
   const L2 = (id: StratId, f: boolean) => (f ? STRATS[id].name.fa : STRATS[id].name.en);
 
   // Stage 2 schedule: once after every 15-minute candle close
