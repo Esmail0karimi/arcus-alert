@@ -1,6 +1,6 @@
 /* Analysis tab — data + maths (pure, no React). Ports of five skills: Momentum Burst screener, Market Pro, Correlation, Analysis Pro, Analysis.
    Data = Yahoo Finance daily candles only (the browser cannot reach Yahoo's fundamentals / analyst / earnings endpoints). */
-import { yfGet } from "./exchanges";
+import { externalCandles, yfGet } from "./exchanges";
 
 export type Bar = { t: number; d: string; o: number; h: number; l: number; c: number; v: number };
 export type Meta = { name?: string; currency?: string; exchange?: string; price?: number; prev?: number; hi52?: number; lo52?: number; dayHi?: number; dayLo?: number; vol?: number };
@@ -20,20 +20,31 @@ export async function daily(sym: string, range = "2y", signal?: AbortSignal): Pr
   const key = ySym(sym) + "|" + range;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.v;
-  const j = await yfGet("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(ySym(sym)) + "?interval=1d&range=" + range + "&includePrePost=false", signal);
-  const r = j?.chart?.result?.[0];
-  if (!r) throw new Error("No data for " + ySym(sym));
-  const ts: number[] = r.timestamp || [], q = r.indicators?.quote?.[0] || {};
-  const bars: Bar[] = [];
-  ts.forEach((t, i) => {
-    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i], v = q.volume?.[i];
-    if ([o, h, l, c].every((x) => typeof x === "number" && Number.isFinite(x))) bars.push({ t, d: nyDate(t * 1000), o, h, l, c, v: Number(v) || 0 });
-  });
-  // one bar per date (Yahoo sometimes repeats the live bar)
-  const out = bars.filter((b, i) => i === bars.length - 1 || bars[i + 1].d !== b.d);
-  if (out.length < 2) throw new Error("No price history for " + ySym(sym));
-  const m = r.meta || {};
-  const v: Daily = { bars: out, meta: { name: m.longName || m.shortName, currency: m.currency, exchange: m.fullExchangeName || m.exchangeName, price: m.regularMarketPrice, prev: m.chartPreviousClose ?? m.previousClose, hi52: m.fiftyTwoWeekHigh, lo52: m.fiftyTwoWeekLow, dayHi: m.regularMarketDayHigh, dayLo: m.regularMarketDayLow, vol: m.regularMarketVolume } };
+  let v: Daily | null = null;
+  try {
+    const j = await yfGet("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(ySym(sym)) + "?interval=1d&range=" + range + "&includePrePost=false", signal);
+    const r = j?.chart?.result?.[0];
+    if (!r) throw new Error("No data for " + ySym(sym));
+    const ts: number[] = r.timestamp || [], q = r.indicators?.quote?.[0] || {};
+    const bars: Bar[] = [];
+    ts.forEach((t, i) => {
+      const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i], vv = q.volume?.[i];
+      if ([o, h, l, c].every((x) => typeof x === "number" && Number.isFinite(x))) bars.push({ t, d: nyDate(t * 1000), o, h, l, c, v: Number(vv) || 0 });
+    });
+    const out = bars.filter((b, i) => i === bars.length - 1 || bars[i + 1].d !== b.d); // one bar per date
+    if (out.length < 2) throw new Error("No price history for " + ySym(sym));
+    const m = r.meta || {};
+    v = { bars: out, meta: { name: m.longName || m.shortName, currency: m.currency, exchange: m.fullExchangeName || m.exchangeName, price: m.regularMarketPrice, prev: m.chartPreviousClose ?? m.previousClose, hi52: m.fiftyTwoWeekHigh, lo52: m.fiftyTwoWeekLow, dayHi: m.regularMarketDayHigh, dayLo: m.regularMarketDayLow, vol: m.regularMarketVolume } };
+  } catch (e: any) {
+    if (signal?.aborted) throw e;
+    // Yahoo blocked / unreachable from this network: use the same fallback sources as the rest of the app (exchanges that list stocks, indices, crypto)
+    const T = ySym(sym), crypto = /-USD$/.test(T), base = T.replace(/-USD$/, "").replace(/^\^/, "");
+    const ext = await externalCandles(base, "1d", signal, !crypto);
+    if (ext.rows.length < 30) throw new Error(`${T}: Yahoo unreachable${e?.message ? " (" + e.message + ")" : ""} and no other source has daily candles`);
+    const keep = Math.round(({ "1mo": 21, "3mo": 63, "6mo": 126, "1y": 252, "2y": 504, "5y": 1260 } as Record<string, number>)[range] || 504) + 260;
+    const bars: Bar[] = ext.rows.slice(-keep).map((c) => ({ t: c.time, d: new Date(c.time * 1000).toISOString().slice(0, 10), o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume }));
+    v = { bars, meta: { name: T + " · " + ext.source } };
+  }
   cache.set(key, { at: Date.now(), v });
   return v;
 }
@@ -256,7 +267,7 @@ export function cluster(syms: string[], R: Record<string, number[]>, thr = 0.6) 
 /* ---------------- 4. Analysis Pro (price-based components only) ---------------- */
 export type Comp = { score: number; weight: number; detail: string };
 export type Pro = { ticker: string; crypto: boolean; name?: string; price: number; asof: string; lean: "FAVORABLE" | "NEUTRAL" | "CAUTIOUS"; confidence: number; score: number; coverage: number; comps: Record<string, Comp>; missing: string[]; caveats: string[] };
-export type Ctx = { spy: Bar[]; qqq: Bar[]; vix: Bar[]; vix3m: Bar[] | null; gld: Bar[] | null; tlt: Bar[] | null; uup: Bar[] | null; btc: Bar[] | null };
+export type Ctx = { spy: Bar[] | null; qqq: Bar[] | null; vix: Bar[] | null; vix3m: Bar[] | null; gld: Bar[] | null; tlt: Bar[] | null; uup: Bar[] | null; btc: Bar[] | null };
 export async function loadCtx(signal?: AbortSignal): Promise<Ctx> {
   const g = async (s: string, need = false) => {
     try {
@@ -266,19 +277,20 @@ export async function loadCtx(signal?: AbortSignal): Promise<Ctx> {
       return null;
     }
   };
-  const [spy, qqq, vix, vix3m, gld, tlt, uup, btc] = await Promise.all([g("SPY", true), g("QQQ", true), g("^VIX", true), g("^VIX3M"), g("GLD"), g("TLT"), g("UUP"), g("BTC-USD")]);
-  return { spy: spy!, qqq: qqq!, vix: vix!, vix3m, gld, tlt, uup, btc };
+  const [spy, qqq, vix, vix3m, gld, tlt, uup, btc] = await Promise.all([g("SPY"), g("QQQ"), g("^VIX"), g("^VIX3M"), g("GLD"), g("TLT"), g("UUP"), g("BTC-USD")]);
+  return { spy, qqq, vix, vix3m, gld, tlt, uup, btc };
 }
 const lastC = (b: Bar[]) => b[b.length - 1].c;
-const above50 = (b: Bar[]) => lastC(b) > mean(closes(b).slice(-50));
+const n1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : "n/a");
+const above50 = (b: Bar[] | null) => (b ? lastC(b) > mean(closes(b).slice(-50)) : null);
 export function marketCtx(x: Ctx) {
-  const v = lastC(x.vix);
-  let s = (above50(x.spy) ? 0.4 : -0.4) + (above50(x.qqq) ? 0.3 : -0.3) + (v < 15 ? 0.3 : v >= 20 ? -0.2 : 0);
+  const v = x.vix ? lastC(x.vix) : NaN, a1 = above50(x.spy), a2 = above50(x.qqq);
+  let s = (a1 == null ? 0 : a1 ? 0.4 : -0.4) + (a2 == null ? 0 : a2 ? 0.3 : -0.3) + (!Number.isFinite(v) ? 0 : v < 15 ? 0.3 : v >= 20 ? -0.2 : 0);
   if (v > 30) s -= 0.4;
   const th = { gld: 0.02, tlt: 0.01, uup: 0.01 } as const;
   const moves = (["gld", "tlt", "uup"] as const).map((k) => (x[k] ? ret(closes(x[k]!), 5) : null));
   const riskOff = moves.every((m, i) => m != null && m >= th[(["gld", "tlt", "uup"] as const)[i]]);
-  return { vix: v, spy50: above50(x.spy), qqq50: above50(x.qqq), score: clamp(s), regime: v > 30 ? "stress" : v >= 20 ? "volatile" : "calm", riskOff };
+  return { vix: v, spy50: a1, qqq50: a2, score: clamp(s), regime: !Number.isFinite(v) ? "unknown" : v > 30 ? "stress" : v >= 20 ? "volatile" : "calm", riskOff, have: !!(x.spy || x.qqq || x.vix) };
 }
 const CRYPTO_CAT: Record<string, [string, number]> = {
   "BTC-USD": ["Store of Value", 0.2], "ETH-USD": ["Smart Contract L1", 0], "BNB-USD": ["Exchange / L1", 0], "SOL-USD": ["Smart Contract L1", 0], "XRP-USD": ["Payment", 0], "ADA-USD": ["Smart Contract L1", 0],
@@ -301,7 +313,7 @@ export function pro(sym: string, d: Daily, x: Ctx): Pro {
     const r30 = ret(c, 30) ?? 0;
     ms += clamp(r30 / 0.3) * 0.5;
     comps.momentum = { score: clamp(ms), weight: 40, detail: `RSI ${r == null ? "n/a" : r.toFixed(0)}, ${(pos * 100).toFixed(0)}% of 52w range, 30d ${(r30 * 100).toFixed(1)}%` };
-    comps.market_context = { score: m.score, weight: 20, detail: `VIX ${m.vix.toFixed(1)} (${m.regime}), SPY>50dma ${m.spy50}` };
+    comps.market_context = { score: m.score, weight: 20, detail: `VIX ${n1(m.vix)} (${m.regime}), SPY>50dma ${m.spy50}` };
     miss.push("market_cap");
     cav.push("Crypto is highly volatile and trades 24/7; scores are short-horizon heuristics.");
   } else {
@@ -309,13 +321,13 @@ export function pro(sym: string, d: Daily, x: Ctx): Pro {
     if (r != null) { parts.push(r > 70 ? -0.5 : r < 30 ? 0.3 : r >= 45 && r <= 65 ? 0.3 : 0); det.push(`RSI ${r.toFixed(0)}`); }
     parts.push(pos >= 0.4 && pos <= 0.9 ? 0.2 : pos > 0.97 ? -0.2 : 0);
     det.push(`${(pos * 100).toFixed(0)}% of 52w range`);
-    const rs = ret(c, 63), rm = ret(closes(x.spy), 63);
+    const rs = ret(c, 63), rm = x.spy ? ret(closes(x.spy), 63) : null;
     if (rs != null && rm != null) { parts.push(clamp((rs - rm) / 0.1)); det.push(`3m vs SPY ${((rs - rm) * 100).toFixed(1)}pp`); }
     const v5 = mean(b.slice(-5).map((z) => z.v)), v20 = mean(b.slice(-20).map((z) => z.v));
     if (v20 > 0) det.push(`5d/20d volume ${(v5 / v20).toFixed(2)}x`);
     comps.momentum = { score: clamp(mean(parts)), weight: 15, detail: det.join(", ") };
-    comps.market = { score: m.score, weight: 10, detail: `VIX ${m.vix.toFixed(1)} (${m.regime}), SPY>50dma ${m.spy50}, QQQ>50dma ${m.qqq50}` };
-    if (x.vix3m) {
+    comps.market = { score: m.score, weight: 10, detail: `VIX ${n1(m.vix)} (${m.regime}), SPY>50dma ${m.spy50}, QQQ>50dma ${m.qqq50}` };
+    if (x.vix3m && x.vix) {
       const ratio = m.vix / lastC(x.vix3m);
       comps.sentiment = { score: ratio < 0.9 ? 0.3 : ratio > 1 ? -0.5 : 0, weight: 10, detail: `VIX/VIX3M ${ratio.toFixed(2)} (${ratio < 1 ? "contango" : "backwardation"})` };
     }
@@ -328,7 +340,8 @@ export function pro(sym: string, d: Daily, x: Ctx): Pro {
   let conf = lean === "NEUTRAL" ? 50 : Math.min(100, Math.abs(score) * 150);
   const coverage = tw / full;
   if (r != null && r > 70 && price >= 0.95 * hi) { cav.push(`Overbought (RSI ${r.toFixed(0)}) near the 52-week high: higher-risk entry (confidence -20%).`); conf *= 0.8; }
-  if (m.vix > 30) { cav.push(`High VIX (${m.vix.toFixed(1)}): market stress (confidence -20%).`); conf *= 0.8; }
+  if (!m.have) cav.push("Market context (SPY/QQQ/VIX) could not be loaded — market factor is neutral.");
+  if (m.vix > 30) { cav.push(`High VIX (${n1(m.vix)}): market stress (confidence -20%).`); conf *= 0.8; }
   if (m.riskOff) { cav.push("Risk-off signal: gold, treasuries and USD are all rising together (confidence -30%)."); conf *= 0.7; }
   conf *= 0.5 + 0.5 * coverage;
   cav.push(`Only ${(coverage * 100).toFixed(0)}% of the model's weight could be computed from price data (confidence scaled down). Not available in the browser: ${miss.join(", ")}.`);
