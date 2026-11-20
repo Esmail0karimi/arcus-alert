@@ -44,3 +44,6 @@ Agent tab has a Swing / ⚡ Scalp switch. Scalp reuses the same engine one level
 - Never change the live version; experiments only on `experiment/qfex` and the `qfex-test/` path; nothing to `main`/Release until the owner says so.
 - No personal photo is committed or published.
 - Test deploy: `gh workflow run deploy-qfex-test.yml --ref preview/build-20` (the workflow sets `ELECTRON_SKIP_BINARY_DOWNLOAD=1`; the web build does not need Electron).
+
+## Analysis tab (experiment)
+New tab next to Agent (`src/analysistab.tsx`, `src/analysislib.ts`) with five sections ported from five skills: Momentum Burst screener, Market Pro (quote/chart/10-day history), Correlation (discover/pair/cluster/rolling+regimes), Analysis Pro (price-based multi-factor lean + local portfolio), Analysis (technical report + manual fundamentals). Data: Yahoo daily candles only. Not available in the browser: Yahoo fundamentals/analyst/earnings, Fear&Greed, options, news. No other tab was changed.

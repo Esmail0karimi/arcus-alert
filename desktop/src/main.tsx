@@ -13,6 +13,7 @@ import { OrderBook } from "./obtab";
 import { FA_NAME } from "./agent";
 import { Guard } from "./errbound";
 import { AgentTab } from "./agenttab";
+import { AnalysisTab } from "./analysistab";
 import type { QCandle } from "./qfex";
 import { VoiceControl, speak } from "./voice";
 import { AvatarHead } from "./avatar";
@@ -72,7 +73,7 @@ const EMBED_SYM = (() => {
     return "";
   }
 })();
-const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Analysis", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -2819,6 +2820,7 @@ function App() {
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
         <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        {tab === "Analysis" && <AnalysisTab stocks={agentSyms.filter((x) => x.market === "Stocks").map((x) => x.base)} mine={mySyms.map((x) => String(assetBase(displayName(x))))} />}
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
         <AvatarHead />
@@ -3992,7 +3994,7 @@ function App() {
             }}
             key={t}
           >
-            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "🔬", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
