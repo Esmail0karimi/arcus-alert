@@ -14,6 +14,7 @@ import { FA_NAME } from "./agent";
 import { Guard } from "./errbound";
 import { AgentTab } from "./agenttab";
 import { AnalysisTab } from "./analysistab";
+import { RehumanTab } from "./rehuman";
 import type { Sig2 } from "./engine";
 import type { QCandle } from "./qfex";
 import { VoiceControl, speak } from "./voice";
@@ -74,7 +75,7 @@ const EMBED_SYM = (() => {
     return "";
   }
 })();
-const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Alerts", "Create", "Guide"];
+const TABS = ["Market", "Watchlist", "Chart", "News", "Order book", "Agent", "Rehuman", "Alerts", "Create", "Guide"];
 const CANDLE_CACHE = new Map<string, { at: number; candles: any[] }>();
 let candle429Until = 0,
   candle429Delay = 15000;
@@ -2840,6 +2841,7 @@ function App() {
         {tab === "News" && <Guard name="News"><News trackedBases={newsBases} onOpen={openBase} /></Guard>}
         {tab === "Order book" && <OrderBook bases={obBases} initial={symbol && catOfSymbol(symbol) === "Crypto" ? assetBase(dn(symbol)) : undefined} />}
         <div style={{ display: tab === "Agent" ? "block" : "none" }}><AgentTab priceOf={(sy) => pricesRef.current[sy]?.price} syms={agentSyms} mySyms={mySyms} extra={anExtra} analysis={<AnalysisTab syms={agentSyms} onExtra={onAnExtra} />} fetchCandles={agentFetch} onOpenChart={openFromAgent} /></div>
+        {tab === "Rehuman" && <RehumanTab />}
         
         {tab === "Guide" && <Guide />}
         <ReportHost onOpenChart={openBase} />
@@ -4014,7 +4016,7 @@ function App() {
             }}
             key={t}
           >
-            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "♧", "＋", "?"][i]}</span>
+            <span>{["▦", "☆", "⌁", "◔", "≡", "✦", "🧭", "♧", "＋", "?"][i]}</span>
             {t}
           </button>
         ))}
