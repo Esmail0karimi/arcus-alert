@@ -98,7 +98,7 @@ function ToolA({ T, N, goAsk }: { T: TT; N: NN; goAsk: (s: string) => void }) {
     setErr("");
     try {
       const bars = months * 21;
-      let chg: { bonds: number; stocks: number; comm: number }, secRows: any[] = [], fails: string[] = [];
+      let chg: { bonds: number; stocks: number; comm: number }, secRows: any[] = [], fails: string[] = [], used: Record<string, string> = {};
       if (manual.on) {
         chg = { bonds: Number(manual.bonds), stocks: Number(manual.stocks), comm: Number(manual.comm) };
         if (![chg.bonds, chg.stocks, chg.comm].every(Number.isFinite)) throw new Error(T("Enter the three % changes.", "سه تغییر درصدی را وارد کن."));
@@ -108,10 +108,26 @@ function ToolA({ T, N, goAsk }: { T: TT; N: NN; goAsk: (s: string) => void }) {
           if (b.length <= bars) throw new Error("short");
           return (b[b.length - 1].c / b[b.length - 1 - bars].c - 1) * 100;
         };
-        const g = async (s: string) => { try { return await pct(s); } catch { fails.push(s); return NaN; } };
-        const [bo, st, co] = await Promise.all([g(idx.bonds), g(idx.stocks), g(idx.comm)]);
-        if (![bo, st, co].every(Number.isFinite)) throw new Error(T(`No data for ${fails.join(", ")} (Yahoo may be unreachable from this network). Use manual entry below.`, `داده‌ای برای ${fails.join("، ")} نیامد (Yahoo شاید از این شبکه در دسترس نیست). ورود دستی را استفاده کن.`));
-        chg = { bonds: bo, stocks: st, comm: co };
+        // an indicator tries the symbol you typed, then close substitutes available on the app's other data sources
+        const FB: Record<string, string[]> = { bonds: ["TLT", "IEF", "ZROZ", "VGLT", "EDV"], stocks: ["SPY", "VOO", "IVV", "QQQ", "US500", "SPX"] };
+        const BASKET = ["GLD", "XAU", "SLV", "XAG", "USO", "WTI", "CL", "BRENT", "CPER", "COPPER", "XCU", "DBA"];
+        const first = async (k: "bonds" | "stocks", s0: string) => {
+          for (const s of [s0, ...FB[k].filter((x) => x !== s0)]) {
+            try { return { v: await pct(s), used: s }; } catch {}
+          }
+          fails.push(s0);
+          return { v: NaN, used: "" };
+        };
+        const commo = async (s0: string) => {
+          try { return { v: await pct(s0), used: s0 }; } catch {}
+          const got = (await Promise.all(BASKET.map(async (s) => { try { return { s, v: await pct(s) }; } catch { return null; } }))).filter(Boolean) as { s: string; v: number }[];
+          if (!got.length) { fails.push(s0); return { v: NaN, used: "" }; }
+          return { v: got.reduce((a, x) => a + x.v, 0) / got.length, used: got.map((x) => x.s).join("+") };
+        };
+        const [bo, st, co] = await Promise.all([first("bonds", idx.bonds), first("stocks", idx.stocks), commo(idx.comm)]);
+        used = { bonds: bo.used, stocks: st.used, comm: co.used };
+        if (![bo.v, st.v, co.v].every(Number.isFinite)) throw new Error(T(`No data for ${fails.join(", ")} (neither the symbol nor any substitute is available from your data sources). Use manual entry below.`, `داده‌ای برای ${fails.join("، ")} نیامد (نه خود نماد و نه جایگزین‌هایش از منابع داده‌ات در دسترس است). ورود دستی را استفاده کن.`));
+        chg = { bonds: bo.v, stocks: st.v, comm: co.v };
         secRows = await Promise.all(SECTORS.map(async (x) => {
           try {
             const b = (await daily(x.etf, "2y")).bars, f = (n: number) => (b.length > n ? (b[b.length - 1].c / b[b.length - 1 - n].c - 1) * 100 : NaN);
@@ -122,7 +138,7 @@ function ToolA({ T, N, goAsk }: { T: TT; N: NN; goAsk: (s: string) => void }) {
         }));
       }
       const st = detectStage(chg, thr);
-      setRes({ chg, st, secRows, at: Date.now() });
+      setRes({ chg, st, secRows, used, at: Date.now() });
       const rec = { d: today(), stage: st.stage, m: months };
       setHist([...hist.filter((h) => h.d !== rec.d), rec].slice(-120));
     } catch (e: any) {
@@ -159,7 +175,7 @@ function ToolA({ T, N, goAsk }: { T: TT; N: NN; goAsk: (s: string) => void }) {
           <div className="ax-scroll"><table className="ax-t"><thead><tr><th>{T("Indicator", "شاخص")}</th><th>{T("Change", "تغییر")} ({months}m)</th><th>{T("Direction", "جهت")}</th></tr></thead>
             <tbody>
               {([["bonds", T("Bonds", "اوراق"), idx.bonds], ["stocks", T("Stocks", "سهام"), idx.stocks], ["comm", T("Commodities", "کالا"), idx.comm]] as const).map(([k, nm, sy]) => (
-                <tr key={k}><td>{nm} {!manual.on && <small>({sy})</small>}</td><td className={tone(st.dirs[k])}>{N(res.chg[k], 2)}%</td><td className={tone(st.dirs[k])}>{arrow(st.dirs[k])}</td></tr>
+                <tr key={k}><td>{nm} {!manual.on && <small>({res.used?.[k] || sy}){res.used?.[k] && res.used[k] !== sy ? " ⟵ " + T("substitute for ", "جایگزین ") + sy : ""}</small>}</td><td className={tone(st.dirs[k])}>{N(res.chg[k], 2)}%</td><td className={tone(st.dirs[k])}>{arrow(st.dirs[k])}</td></tr>
               ))}
             </tbody></table></div>
           {S && S.n === 6 && <p className="sx-miss">⚠ {T("Stage 6 vs 1: we enter a real stage 1 only when TLT actually rises — until then we are still on the way into recession.", "تفاوت مرحله ۶ و ۱: وارد مرحله ۱ واقعی وقتی می‌شویم که TLT واقعاً صعود کند — تا آن موقع هنوز در حال ورود به رکودیم.")}</p>}
